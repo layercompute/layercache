@@ -333,6 +333,7 @@ func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
+	tokenExchangeStartedAt := time.Now()
 	response, err := p.client.Do(request)
 	if err != nil {
 		fail(w, ErrDenied)
@@ -341,11 +342,28 @@ func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
 	defer response.Body.Close()
 	var token struct {
 		AccessToken string `json:"access_token"`
+		ExpiresIn   *int64 `json:"expires_in"`
 	}
 	if response.StatusCode != 200 || json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&token) != nil || token.AccessToken == "" {
 		fail(w, ErrDenied)
 		return
 	}
+	// GitHub OAuth Apps can issue eight-hour access tokens. A browser session
+	// must not remain valid after its stored provider token has expired.
+	sessionSeconds := int64(12 * 60 * 60)
+	if token.ExpiresIn != nil {
+		const expiryMarginSeconds = int64(60)
+		if *token.ExpiresIn <= expiryMarginSeconds {
+			fail(w, ErrDenied)
+			return
+		}
+		if remaining := *token.ExpiresIn - expiryMarginSeconds; remaining < sessionSeconds {
+			sessionSeconds = remaining
+		}
+	}
+	// Start the lifetime before the exchange so provider and database latency
+	// cannot extend it. SQLite and PostgreSQL persist expiry at second precision.
+	sessionDeadline := tokenExchangeStartedAt.Add(time.Duration(sessionSeconds) * time.Second).Truncate(time.Second)
 	identity, err := githubauth.VerifyUser(r.Context(), p.cfg.GitHubAPIURL, token.AccessToken)
 	if err != nil {
 		fail(w, ErrDenied)
@@ -356,13 +374,24 @@ func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	cookieSeconds := int(time.Until(sessionDeadline) / time.Second)
+	if cookieSeconds <= 0 {
+		fail(w, ErrDenied)
+		return
+	}
 	sessionToken := randomID("")
-	session := Session{User: user, CSRF: randomID(""), EncryptedToken: p.encrypt(token.AccessToken), ExpiresAt: time.Now().Add(12 * time.Hour).Unix()}
+	session := Session{User: user, CSRF: randomID(""), EncryptedToken: p.encrypt(token.AccessToken), ExpiresAt: sessionDeadline.Unix()}
 	if err = p.store.SaveSession(r.Context(), sessionToken, session); err != nil {
 		fail(w, err)
 		return
 	}
-	p.cookie(w, "session", sessionToken, 12*3600)
+	cookieSeconds = int(time.Until(sessionDeadline) / time.Second)
+	if cookieSeconds <= 0 {
+		_ = p.store.DeleteSession(r.Context(), sessionToken)
+		fail(w, ErrDenied)
+		return
+	}
+	p.cookie(w, "session", sessionToken, cookieSeconds)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 func (p *Portal) sessionInfo(w http.ResponseWriter, r *http.Request, session Session) {

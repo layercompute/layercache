@@ -563,6 +563,35 @@ func TestStoreConcurrentGlobalProjectLimit(t *testing.T) {
 	}
 }
 
+func TestStoreSessionLimitRetainsLongestRemainingExistingSessions(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	now := time.Now()
+	for i := 0; i < 10; i++ {
+		expiry := now.Add(12 * time.Hour).Unix()
+		if i == 9 {
+			expiry = now.Add(2 * time.Minute).Unix()
+		}
+		if err := s.SaveSession(ctx, fmt.Sprintf("existing-%d", i), Session{User: User{ID: "1"}, CSRF: "csrf", ExpiresAt: expiry}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SaveSession(ctx, "new-short-session", Session{User: User{ID: "1"}, CSRF: "csrf", ExpiresAt: now.Add(3 * time.Minute).Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.Session(ctx, "existing-9")
+	requireErr(t, err, ErrDenied)
+	for _, token := range []string{"existing-0", "new-short-session"} {
+		if _, err := s.Session(ctx, token); err != nil {
+			t.Fatalf("retained session %q: %v", token, err)
+		}
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM lc_portal_sessions WHERE user_id='1'`).Scan(&count); err != nil || count != 10 {
+		t.Fatalf("mixed-lifetime session count = %d, want 10: %v", count, err)
+	}
+}
+
 func TestStoreConcurrentSessionLimit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
