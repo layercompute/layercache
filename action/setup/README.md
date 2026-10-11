@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: ziahamza/layercache/action/setup@bd84aee3b6064403e0ce51e6f5dda7599b768c3a
+  - uses: ziahamza/layercache/action/setup@447095385671323a186299e0718d10c6459abb6f
     id: layercache
     with:
       repository: ziahamza/layercache
-      version: v0.1.0-beta.1
+      version: v0.1.0-beta.2
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: ziahamza/layercache/action/cache@bd84aee3b6064403e0ce51e6f5dda7599b768c3a
+  - uses: ziahamza/layercache/action/cache@447095385671323a186299e0718d10c6459abb6f
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,7 +30,7 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The action and release are pinned to the first immutable Team Cache CLI beta.
+The action and release are pinned to the latest Team Cache CLI beta, beta.2.
 Replace `https://cache.example.com` with your separately provisioned Team Cache
 origin; this example does not imply a hosted cloud service is live. Public Builds
 are not qualified by this beta. The installer needs Bash, `gh`, `jq`,
