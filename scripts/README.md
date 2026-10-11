@@ -29,9 +29,10 @@ the policy. The Node test uses a local fake GitHub client to exercise policy
 failures and target preservation.
 
 The [beta.2 release workflow](https://github.com/ziahamza/layercache/actions/runs/38155658632)
-qualifies native Linux amd64/arm64 and macOS arm64 candidates before publication.
-The [published-binary installer workflow](../.github/workflows/beta-release-install.yml)
-is pinned to beta.2 and its exact source commit. Fresh-runner verification for
-this release is pending. Each job must check the immutable release, tag source,
-attestations, archive checksum, `help`, and `setup --preview --json` on a fresh
-Linux x64, Linux arm64, or macOS arm64 runner.
+passed native Linux amd64/arm64 and macOS arm64 qualification before immutable
+publication. The
+[published-binary installer workflow](https://github.com/ziahamza/layercache/actions/runs/38156102533)
+then passed on fresh Linux x64, Linux arm64, and macOS arm64 runners. It pins
+beta.2 and its exact source commit. Each job verified the immutable release,
+tag source, attestations, archive checksum, `help`, and `setup --preview --json`
+after installation into an empty prefix.
