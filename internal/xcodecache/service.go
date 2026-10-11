@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/compatibility"
@@ -44,7 +46,7 @@ type Service struct {
 }
 
 func New(store *artifact.Store, project, abi string) (*Service, error) {
-	if store == nil || project == "" || len(project) > 256 {
+	if store == nil || project == "" || len(project) > 256 || strings.ContainsAny(project, "\x00\r\n\t ") {
 		return nil, errors.New("an artifact store and project are required")
 	}
 	if err := compatibility.Validate(abi); err != nil {
@@ -89,7 +91,8 @@ func inline(blob *cas.CASBytes) ([]byte, error) {
 		}
 		return value.Data, nil
 	case *cas.CASBytes_FilePath:
-		file, err := os.Open(value.FilePath)
+		// A FIFO or device must never block a compiler RPC before it is rejected.
+		file, err := os.OpenFile(value.FilePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return nil, err
 		}
