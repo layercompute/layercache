@@ -333,6 +333,7 @@ func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
+	tokenExchangeStartedAt := time.Now()
 	response, err := p.client.Do(request)
 	if err != nil {
 		fail(w, ErrDenied)
@@ -360,6 +361,9 @@ func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
 			sessionSeconds = remaining
 		}
 	}
+	// Start the lifetime before the exchange so provider and database latency
+	// cannot extend it. SQLite and PostgreSQL persist expiry at second precision.
+	sessionDeadline := tokenExchangeStartedAt.Add(time.Duration(sessionSeconds) * time.Second).Truncate(time.Second)
 	identity, err := githubauth.VerifyUser(r.Context(), p.cfg.GitHubAPIURL, token.AccessToken)
 	if err != nil {
 		fail(w, ErrDenied)
@@ -370,13 +374,24 @@ func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	cookieSeconds := int(time.Until(sessionDeadline) / time.Second)
+	if cookieSeconds <= 0 {
+		fail(w, ErrDenied)
+		return
+	}
 	sessionToken := randomID("")
-	session := Session{User: user, CSRF: randomID(""), EncryptedToken: p.encrypt(token.AccessToken), ExpiresAt: time.Now().Add(time.Duration(sessionSeconds) * time.Second).Unix()}
+	session := Session{User: user, CSRF: randomID(""), EncryptedToken: p.encrypt(token.AccessToken), ExpiresAt: sessionDeadline.Unix()}
 	if err = p.store.SaveSession(r.Context(), sessionToken, session); err != nil {
 		fail(w, err)
 		return
 	}
-	p.cookie(w, "session", sessionToken, int(sessionSeconds))
+	cookieSeconds = int(time.Until(sessionDeadline) / time.Second)
+	if cookieSeconds <= 0 {
+		_ = p.store.DeleteSession(r.Context(), sessionToken)
+		fail(w, ErrDenied)
+		return
+	}
+	p.cookie(w, "session", sessionToken, cookieSeconds)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 func (p *Portal) sessionInfo(w http.ResponseWriter, r *http.Request, session Session) {
