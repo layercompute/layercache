@@ -11,13 +11,13 @@ been deployed.
 | Area | State | Next acceptance target |
 | --- | --- | --- |
 | Existing Team Cache | Public HTTPS restored on October 11. All five configured projects pass authenticated status checks; anonymous Phone access is denied. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
-| Phone Xcode integration | Draft [LayerCache #20](https://github.com/ziahamza/layercache/pull/20), linked to [Phone #218](https://github.com/ziahamza/phone-app/pull/218). Real Xcode replay after deleting native CAS passed. The Phone CI chat owns both PRs. | A closed producer store restored into a separate consumer store on a fresh Mac, empty consumer native CAS and DerivedData, real Clang/module action hits and CAS loads, correct Phone output, and cold/warm timing. |
+| Phone Xcode integration | [LayerCache #20](https://github.com/ziahamza/layercache/pull/20), linked to [Phone #218](https://github.com/ziahamza/phone-app/pull/218). Real Xcode replay after deleting native CAS passed. The Phone CI chat owns both PRs. | A closed producer store restored into a separate consumer store on a fresh Mac, empty consumer native CAS and DerivedData, real Clang/module action hits and CAS loads, correct Phone output, and cold/warm timing. |
 | Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), [#18](https://github.com/ziahamza/layercache/pull/18), and [#19](https://github.com/ziahamza/layercache/pull/19) have passed combined local validation and independent review. | Land each on current main with the required hosted checks. Publish and verify a later immutable CLI beta containing the fixes. |
 | Public self-serve cloud | Draft [config #27](https://github.com/ziahamza/config/pull/27) prepares deployment. No service, dedicated pool, protected cloud configuration, or new public route has been activated. | Real GitHub OAuth, an approved creator cohort, isolated bounded storage, and live two-user acceptance before declaring a hosted beta. |
 | Machine enrollment and hosted runners | Deferred. | Useful cross-machine cache reuse and operating costs measured first. |
 
-This chat owns LayerCache integration, PR disposition, deployment evidence, and
-this plan. The Phone CI chat owns the active Xcode adapter and Phone workflow
+The LayerCache recovery effort owns integration, PR disposition, deployment
+evidence, and this plan. The Phone CI chat owns the active Xcode adapter and workflow
 changes. Keep those branches separate while implementation is underway.
 
 ## Recovery evidence
@@ -38,7 +38,7 @@ The existing gateway still runs image `layercache:qa-16868d9`, digest
 `sha256:d69ec986b4d2e76a0acc560add087a6bc4cd60879446e71aa1c4827492cff727`.
 It predates the Xcode adapter. The physical cache pool is 48 GiB with a 10 GiB
 reserve; roughly 161 MiB was used during recovery. Each of the five projects has
-a 5 GiB Team Cache quota and currently reports zero committed artifacts.
+a 5 GiB Team Cache quota and reported zero committed artifacts during recovery.
 Availability is established. These checks do not establish current reuse or
 build-cost savings.
 
@@ -47,8 +47,15 @@ All four cloud PRs were revalidated together at integration commit
 `3d80c178eac3d1423a8ed8b016b2e8a88cf8e613`. Full Go tests, race tests, vet,
 JavaScript checks and builds, workflow/shell lint, three PostgreSQL 16 store
 race runs, and 78 browser checks across Chromium, Firefox, and WebKit passed.
-Independent review found one interruption-cleanup issue in the new Turbo
-acceptance harness, which must be fixed before #18 lands.
+Further review found that delayed OAuth processing could extend a session past
+the intended provider deadline. #17 now fixes and tests that case, including
+PostgreSQL session expiry and retention. The Turbo acceptance harness in #18
+now handles interruption asynchronously and stops its owned command process
+groups, including Turbo descendants. Actual SIGINT and SIGTERM regressions
+passed. An unrelated CI fixture gave promotion leases only 80 milliseconds;
+the recovery change retains delayed responses, proves three accepted renewals,
+and tests cancellation and invalid-renewal rejection. Fifteen race-test runs
+passed.
 
 The real CLI/Turbo acceptance test produced a cold miss and a second user's
 remote hit from a fresh clone and empty Local Cache after the producer daemon
