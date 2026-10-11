@@ -26,3 +26,22 @@ jobs:
         env:
           HEALTH_URL: ${{ vars.LAYERCACHE_PUBLIC_HEALTH_URL }}
         run: node deploy/pool/monitor.ts --public "$HEALTH_URL"
+      - name: Diagnose public probe transport failure
+        if: failure()
+        env:
+          HEALTH_URL: ${{ vars.LAYERCACHE_PUBLIC_HEALTH_URL }}
+        run: |
+          if host="$(node - <<'NODE'
+          try {
+            const url = new URL(process.env.HEALTH_URL);
+            if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error();
+            console.log(url.hostname);
+          } catch {
+            console.error('Skipping transport diagnostics for an invalid health URL.');
+            process.exit(1);
+          }
+          NODE
+          )"; then
+            getent ahosts "$host" || true
+            curl --proto '=https' --verbose --silent --show-error --head --connect-timeout 5 --max-time 8 "$HEALTH_URL" || true
+          fi

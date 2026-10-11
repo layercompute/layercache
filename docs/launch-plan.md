@@ -1,26 +1,105 @@
-# LayerCache launch plan — 2026-09-26
+# LayerCache launch plan, 2026-10-11
 
-The immediate product is a self-serve **Team Cache**: an engineer installs the CLI, signs in with GitHub, creates a team and repository project, connects a local build, invites a teammate, and sees real cache reuse. The implementation for that flow is merged in [dashboard PR #11](https://github.com/ziahamza/layercache/pull/11) and [cloud PR #12](https://github.com/ziahamza/layercache/pull/12). The [v0.1.0-beta.1 CLI prerelease](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.1) supplies the CLI, but the hosted service is not deployed. [The evidence audit](launch-readiness-research.md) records the earlier, pre-release state and separates implemented code from observed behavior.
+Phone's Xcode compilation cost is the immediate priority. Restore useful compiler
+outputs across fresh Macs before expanding the dashboard, machine management, or
+hosted runners. The existing operator-managed Team Cache is available again.
+The self-serve cloud implementation is present, but its public service has not
+been deployed.
 
-## Launch gates, in order
+## Current state and ownership
 
-| Priority | Gate | Evidence required to close it |
+| Area | State | Next acceptance target |
 | --- | --- | --- |
-| Closed 2026-09-26 | Preserve existing cache availability | [Config PR #26](https://github.com/ziahamza/config/pull/26) pins public replies to the direct route while Tailscale uses an exit node. The [unchanged main-branch external health run](https://github.com/ziahamza/layercache/actions/runs/36220261008) passed; continue monitoring before adding another public route. The existing gateway and project data were untouched. |
-| Closed 2026-09-26 | Bind a project to its immutable GitHub repository identity | [PR #13](https://github.com/ziahamza/layercache/pull/13) binds managed projects to the signed numeric repository ID and denies recreated repositories at the same `owner/repo` path; existing operator-managed projects keep their current policy. |
-| Closed 2026-09-26 | Verify the published beta on fresh runners | [v0.1.0-beta.1](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.1) is an immutable, attested prerelease from protected main commit `bd84aee3b6064403e0ce51e6f5dda7599b768c3a`; its [release run](https://github.com/ziahamza/layercache/actions/runs/36222806673) passed. All six assets passed post-publication package, checksum, and attestation checks. The [published-binary installer run](https://github.com/ziahamza/layercache/actions/runs/36223675118) passed on fresh GitHub-hosted Linux x64, Linux arm64, and macOS arm64 runners, including immutable tag/source checks, `help`, and setup preview. This verifies distribution, not cross-runner Team Cache reuse. Public Builds remain unqualified; stable releases still require native KVM qualification. |
-| Closed 2026-09-26 | Bound beta admission in code | [PR #14](https://github.com/ziahamza/layercache/pull/14) merged the numeric GitHub ID allowlist, direct team-creation denial for other identities, and invitation access for teammates. |
-| P0 | Configure the live beta cohort | Before exposing the route, set approved creator IDs in protected cloud configuration, record the initial cohort and storage budget, then verify denial and invitation acceptance on the live service. |
-| P0 | Deploy one isolated cloud origin | Draft [config PR #27](https://github.com/ziahamza/config/pull/27) prepares a separate route and service but does not activate them. Real GitHub OAuth with device flow; exact HTTPS host/callback; protected secrets; separate bounded storage; a local-only service listener; public health; metadata/key backup and restart recovery remain open. Verify sign-in, project creation, invites, roles, cache requests, and rollback on the real route. |
-| P0 | Prove the customer path | From a clean install, one engineer creates a team and connects a repository. A second identity accepts an invitation. A cold Turbo build uploads, and an independent fresh GitHub runner or machine with an empty Local Cache restores the same output through Team Cache. Confirm source, bytes, hit status and reported timing without counting a same-daemon hit as remote reuse. Verify role downgrade/removal ends access. |
+| Existing Team Cache | Public HTTPS restored on October 11. All five configured projects pass authenticated status checks; anonymous Phone access is denied. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
+| Phone Xcode integration | Draft [LayerCache #20](https://github.com/ziahamza/layercache/pull/20), linked to [Phone #218](https://github.com/ziahamza/phone-app/pull/218). Real Xcode replay after deleting native CAS passed. The Phone CI chat owns both PRs. | A closed producer store restored into a separate consumer store on a fresh Mac, empty consumer native CAS and DerivedData, real Clang/module action hits and CAS loads, correct Phone output, and cold/warm timing. |
+| Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), [#18](https://github.com/ziahamza/layercache/pull/18), and [#19](https://github.com/ziahamza/layercache/pull/19) have passed combined local validation and independent review. | Land each on current main with the required hosted checks. Publish and verify a later immutable CLI beta containing the fixes. |
+| Public self-serve cloud | Draft [config #27](https://github.com/ziahamza/config/pull/27) prepares deployment. No service, dedicated pool, protected cloud configuration, or new public route has been activated. | Real GitHub OAuth, an approved creator cohort, isolated bounded storage, and live two-user acceptance before declaring a hosted beta. |
+| Machine enrollment and hosted runners | Deferred. | Useful cross-machine cache reuse and operating costs measured first. |
 
-The initial launch is a limited beta with an explicit operator budget and cohort. Project creation is already bounded per team and globally; storage admissions fail closed at the physical pool boundary. Configure the team-creator admission gate before exposing the new route. Before unrestricted sign-up, add self-serve billing/quotas, account and project lifecycle, and support escalation. Do not describe an unqualified public signup path as generally available.
+This chat owns LayerCache integration, PR disposition, deployment evidence, and
+this plan. The Phone CI chat owns the active Xcode adapter and Phone workflow
+changes. Keep those branches separate while implementation is underway.
 
-## Next investments
+## Recovery evidence
 
-1. **Make the first successful build easy to repeat.** Generate copyable CI setup for a selected project and immutable release, measure where sign-in, install, repository permission checks, or cache connection fail, and keep cache misses non-blocking for builds. Qualify one more representative workload and publish precise hit/restore evidence. Add an administrator path to reconcile a GitHub repository rename against its stored numeric ID; the current name check stops Actions caching after a rename even though the ID remains the same. BuildKit's managed registry is outside this cloud slice.
-2. **Add machine enrollment once teams use the cache.** Give each machine a revocable project-scoped identity, last-seen state, short credentials, and bounded heartbeat/usage reporting. The current CLI configuration and daemon PID are not cloud machine identities. Add remote cache policy management only after enrollment and audit history are defined.
-3. **Add hosted runners after cache adoption and operating costs are known.** Runner provisioning needs job admission and leases, cancellation, resource limits, network/secrets isolation, cleanup, usage accounting, and recovery. It should be a separate service from Public Builds, whose output publication has a different trust model. Avoid binding the cache beta to runner scheduling.
-4. **Expand platforms and Public Builds with separate evidence.** Public Build release claims still require native arm64 KVM qualification. Actions cache v2, Windows, Xcode, and a wider adapter SDK remain separate product choices rather than launch blockers for the Team Cache beta.
+The public Caddy proxy stopped cleanly on September 26 at 23:00:01 UTC. Its
+`unless-stopped` restart policy kept it down. Cache processes and their loopback
+health remained healthy, while public HTTPS connections were refused. The logs
+do not establish who stopped the proxy.
 
-Review this order after the real two-user, fresh-runner acceptance run. The first material signal is whether users can restore useful work from another environment; an empty dashboard or a same-daemon hit is not enough.
+On October 11, the existing Caddy configuration passed validation in an isolated
+container. Restarting only `platform-ingress` restored the pre-existing routes
+at 15:46:56 UTC. No cache image, app data, firewall, DNS, credential, or cloud
+route changed. The host monitor reports `healthy:true`. The independent
+[GitHub HTTPS and certificate check](https://github.com/ziahamza/layercache/actions/runs/38152753823)
+passed at 15:48:34 UTC.
+
+The existing gateway still runs image `layercache:qa-16868d9`, digest
+`sha256:d69ec986b4d2e76a0acc560add087a6bc4cd60879446e71aa1c4827492cff727`.
+It predates the Xcode adapter. The physical cache pool is 48 GiB with a 10 GiB
+reserve; roughly 161 MiB was used during recovery. Each of the five projects has
+a 5 GiB Team Cache quota and currently reports zero committed artifacts.
+Availability is established. These checks do not establish current reuse or
+build-cost savings.
+
+The former GitHub account billing lock no longer prevents jobs from executing.
+All four cloud PRs were revalidated together at integration commit
+`3d80c178eac3d1423a8ed8b016b2e8a88cf8e613`. Full Go tests, race tests, vet,
+JavaScript checks and builds, workflow/shell lint, three PostgreSQL 16 store
+race runs, and 78 browser checks across Chromium, Firefox, and WebKit passed.
+Independent review found one interruption-cleanup issue in the new Turbo
+acceptance harness, which must be fixed before #18 lands.
+
+The real CLI/Turbo acceptance test produced a cold miss and a second user's
+remote hit from a fresh clone and empty Local Cache after the producer daemon
+stopped. It executed the task once, transferred 261 bytes each way, restored
+matching output, and denied the removed reader's previously issued capability.
+GitHub and the cloud origin were emulated. This is development acceptance, not
+evidence of a live public cloud or customer-machine reuse.
+
+## Priorities and landing gates
+
+1. **Finish Phone compiler reuse.** The corrected
+   [Xcode proof at `0edcbaa`](https://github.com/ziahamza/layercache/actions/runs/38152661755)
+   deletes native CAS before both builds and uses fresh DerivedData. It recorded
+   69 warm action hits and 70 CAS-object hits. This proves protocol replay on
+   one Mac after local compiler-cache deletion; a restored snapshot on another
+   Mac and actual Phone compile timings remain acceptance gates. The newer
+   `f5ebe18` also waits for gRPC handlers before closing storage and tests an
+   uncached retry for backend failures. Reject simultaneous ownership of one
+   adapter data directory before opening its artifact store. Measure Phone
+   compile reuse before enabling the adapter in signed release workflows or
+   claiming savings. Local snapshots alone are not a remotely hosted compiler
+   service.
+2. **Land the reviewed cloud fixes and distribute them.** Keep OAuth fixtures
+   confined to QA. Require current-main hosted checks for #16-19 and native
+   installer verification for the next immutable beta. Do not bypass branch or
+   release protections. None of these four PRs is obsolete.
+3. **Activate one limited cloud beta after its live inputs exist.** Configure
+   the real OAuth app with device flow and callback
+   `https://cloud.services.ziahamza.com/auth/callback`, protected secret files,
+   approved numeric creator IDs, a separate storage pool, and restart/backup
+   recovery. Keep config #27 draft until its reviewed release and real inputs
+   are ready. From two real identities, verify invitation acceptance, a cold
+   upload, a fresh-machine Team Cache restore, role downgrade/removal, and
+   recovery after restart through the public HTTPS origin.
+4. **Make successful onboarding repeatable.** Provide copyable CI setup pinned
+   to a verified release. Show measured source, bytes, hit status, transfer
+   overhead, and timing in the dashboard. Keep misses non-blocking. Resolve
+   repository renames against the stored immutable numeric GitHub repository
+   identity. Qualify Parle's native Safari reuse separately when Phone's cache
+   path is working.
+5. **Expand after useful reuse is measured.** Add revocable machine identities,
+   enrollment, last-seen state, and usage reporting. Then consider runner
+   admission, leases, cancellation, isolation, cleanup, and usage accounting.
+   Public Builds retain their separate publisher trust model and native KVM
+   qualification. Windows, Actions cache v2, and a wider adapter SDK remain
+   later work.
+
+The beta stays limited to an explicit cohort and operator budget. Admission is
+bounded in code, and managed projects bind to signed numeric repository IDs.
+Before unrestricted signup, add billing/quotas, account and project lifecycle,
+and support escalation. The published
+[v0.1.0-beta.1](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.1)
+remains an immutable, attested CLI release with verified native installation;
+it does not make the hosted service live. Public Builds remain unqualified.
