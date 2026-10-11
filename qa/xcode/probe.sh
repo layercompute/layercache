@@ -3,6 +3,7 @@ set -euo pipefail
 binary="${1:?Layer Cache binary required}"
 evidence="${2:?evidence directory required}"
 mkdir -p "$evidence/project" "$evidence/socket"
+chmod 700 "$evidence/socket"
 xcodebuild -version > "$evidence/toolchain.txt"
 abi="xcode-probe-v1-$( { xcodebuild -version; xcrun clang --version; sw_vers -buildVersion; } | shasum -a 256 | cut -d ' ' -f 1)"
 cat > "$evidence/project/main.m" <<'SOURCE'

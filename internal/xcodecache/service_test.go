@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/layercache/layercache/internal/artifact"
@@ -133,5 +134,61 @@ func TestFileAndInlineObjectsHaveSameIdentity(t *testing.T) {
 	inline, err := s.Put(ctx, &cas.CASPutRequest{Data: &cas.CASObject{Blob: blob(data)}})
 	if err != nil || !bytes.Equal(file.GetCasId().Id, inline.GetCasId().Id) {
 		t.Fatalf("canonical bytes: %v %v", inline, err)
+	}
+}
+
+func TestActionMissesWhenAnIndirectCASOutputIsEvicted(t *testing.T) {
+	ctx := context.Background()
+	s := openService(t, t.TempDir(), "project", "toolchain")
+	c, k := connect(t, s)
+	leaf, err := c.Save(ctx, &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: blob([]byte("output"))}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	middle, err := c.Put(ctx, &cas.CASPutRequest{Data: &cas.CASObject{Blob: blob([]byte("middle")), References: []*cas.CASDataID{leaf.GetCasId()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := c.Put(ctx, &cas.CASPutRequest{Data: &cas.CASObject{Blob: blob([]byte("root")), References: []*cas.CASDataID{middle.GetCasId()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := []byte("graph-action")
+	if _, err = k.PutValue(ctx, &kv.PutValueRequest{Key: key, Value: &kv.Value{Entries: map[string][]byte{"CASID": root.GetCasId().Id}}}); err != nil {
+		t.Fatal(err)
+	}
+	warm, err := k.GetValue(ctx, &kv.GetValueRequest{Key: key})
+	if err != nil || warm.GetOutcome() != kv.GetValueResponse_SUCCESS {
+		t.Fatalf("complete graph: %v %v", warm, err)
+	}
+	if err = s.store.Delete(ctx, s.key("cas", leaf.GetCasId().Id)); err != nil {
+		t.Fatal(err)
+	}
+	miss, err := k.GetValue(ctx, &kv.GetValueRequest{Key: key})
+	if err != nil || miss.GetOutcome() != kv.GetValueResponse_KEY_NOT_FOUND {
+		t.Fatalf("missing descendant must miss: %v %v", miss, err)
+	}
+	if stats := s.Stats(); stats.ActionHits != 1 || stats.CASReads != 0 || stats.CASHits != 0 {
+		t.Fatalf("presence checks are not compiler RPCs: %+v", stats)
+	}
+}
+
+func TestMaximumFileBlobIsRejectedBeforeReturningAnUnreplayableID(t *testing.T) {
+	s := openService(t, t.TempDir(), "project", "toolchain")
+	path := filepath.Join(t.TempDir(), "maximum-object")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = file.Truncate(MaxMessageBytes); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	response, err := s.Save(context.Background(), &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: &cas.CASBytes{Contents: &cas.CASBytes_FilePath{FilePath: path}}}})
+	if err == nil || response != nil || !strings.Contains(err.Error(), "encoded CAS object exceeds") {
+		t.Fatalf("unreplayable object accepted: %v %v", response, err)
+	}
+	if stats := s.Stats(); stats.CASWrites != 0 || stats.CacheErrors != 0 {
+		t.Fatalf("oversize request reached storage: %+v", stats)
 	}
 }

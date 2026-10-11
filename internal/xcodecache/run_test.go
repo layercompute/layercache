@@ -47,6 +47,9 @@ func TestXcodeCompilerChild(t *testing.T) {
 	defer cancel()
 	id, err := cas.NewCASDBServiceClient(conn).Save(ctx, &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: blob([]byte("compiled"))}})
 	if err != nil {
+		if os.Getenv("LAYERCACHE_XCODE_QUOTA_TEST") == "1" && os.Getenv("LAYERCACHE_XCODE_CHILD_FAIL") == "1" {
+			os.Exit(7)
+		}
 		os.Exit(4)
 	}
 	_, err = kv.NewKeyValueDBClient(conn).PutValue(ctx, &kv.PutValueRequest{Key: []byte("child-action"), Value: &kv.Value{Entries: map[string][]byte{"CASID": id.GetCasId().Id}}})
@@ -102,7 +105,7 @@ func TestRunOwnsSocketAndClosesStoreEvenForFailedCompiler(t *testing.T) {
 	}
 }
 
-func TestBackendQuotaRetriesWithoutCacheAndPreservesRealCompilerFailure(t *testing.T) {
+func TestBackendErrorPreservesCompilerResultWithoutAnAmbiguousRetry(t *testing.T) {
 	t.Setenv("LAYERCACHE_XCODE_CHILD", "1")
 	t.Setenv("LAYERCACHE_XCODE_QUOTA_TEST", "1")
 	for _, fails := range []bool{false, true} {
@@ -121,8 +124,11 @@ func TestBackendQuotaRetriesWithoutCacheAndPreservesRealCompilerFailure(t *testi
 				if !errors.As(err, &exit) || exit.ExitCode() != 7 {
 					t.Fatalf("real compiler failure: %v %s", err, &output)
 				}
-			} else if err != nil {
-				t.Fatalf("uncached recovery: %v %s", err, &output)
+			} else {
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) || exit.ExitCode() != 4 {
+					t.Fatalf("preserve backend compiler failure: %v %s", err, &output)
+				}
 			}
 			encoded, err := os.ReadFile(options.StatsFile)
 			if err != nil {
@@ -135,8 +141,8 @@ func TestBackendQuotaRetriesWithoutCacheAndPreservesRealCompilerFailure(t *testi
 			if err = json.Unmarshal(encoded, &stats); err != nil {
 				t.Fatal(err)
 			}
-			if stats.CacheErrors == 0 || !stats.UncachedRetry {
-				t.Fatalf("missing backend failure/retry receipt: %s", encoded)
+			if stats.CacheErrors == 0 || stats.UncachedRetry {
+				t.Fatalf("incorrect backend failure/retry receipt: %s", encoded)
 			}
 		})
 	}

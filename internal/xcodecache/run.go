@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/layercache/layercache/internal/artifact"
+	cas "github.com/layercache/layercache/internal/xcodecache/proto/casv1"
+	kv "github.com/layercache/layercache/internal/xcodecache/proto/kvv1"
+	"google.golang.org/grpc"
 	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
-
-	"github.com/layercache/layercache/internal/artifact"
-	cas "github.com/layercache/layercache/internal/xcodecache/proto/casv1"
-	kv "github.com/layercache/layercache/internal/xcodecache/proto/kvv1"
-	"google.golang.org/grpc"
 )
 
 type Options struct {
@@ -23,9 +23,42 @@ type Options struct {
 	MaxBytes                                           int64
 }
 
-// Run starts the cache before xcodebuild and closes SQLite after the child exits.
-// Snapshots taken afterwards contain a closed, consistent store. No background
-// service or launch agent survives the build.
+type runStats struct {
+	Stats
+	UncachedFallback bool `json:"uncachedFallback"`
+	UncachedRetry    bool `json:"uncachedRetry"`
+}
+
+func runChild(ctx context.Context, command []string, arguments []string, stdout, stderr io.Writer) error {
+	child := exec.CommandContext(ctx, command[0], arguments...)
+	child.Stdout, child.Stderr, child.Stdin = stdout, stderr, os.Stdin
+	child.WaitDelay = 5 * time.Second
+	return child.Run()
+}
+
+func reportStats(path string, stats runStats, stderr io.Writer) {
+	if path == "" {
+		return
+	}
+	encoded, err := json.MarshalIndent(stats, "", "  ")
+	if err == nil {
+		err = os.WriteFile(path, append(encoded, '\n'), 0600)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "Layer Cache statistics unavailable: %v\n", err)
+	}
+}
+
+func uncached(ctx context.Context, options Options, command []string, stdout, stderr io.Writer, reason error) error {
+	fmt.Fprintf(stderr, "Layer Cache startup unavailable; compiling without the cache: %v\n", reason)
+	args := append(append([]string{}, command[1:]...), "COMPILATION_CACHE_ENABLE_CACHING=NO", "COMPILATION_CACHE_ENABLE_PLUGIN=NO", "COMPILATION_CACHE_REMOTE_SERVICE_PATH=")
+	err := runChild(ctx, command, args, stdout, stderr)
+	reportStats(options.StatsFile, runStats{Stats: Stats{CacheErrors: 1}, UncachedFallback: true}, stderr)
+	return err
+}
+
+// Run owns the store until all RPC handlers stop and SQLite closes. Only then
+// may callers snapshot it; a second owner cannot run startup reconciliation.
 func Run(ctx context.Context, options Options, command []string, stdout, stderr io.Writer) error {
 	if len(command) == 0 {
 		return errors.New("xcodebuild command required")
@@ -33,12 +66,31 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 	if !filepath.IsAbs(options.Socket) || len(options.Socket) > 100 {
 		return errors.New("an absolute Unix socket path of at most 100 bytes is required")
 	}
-	if options.MaxBytes <= 0 {
-		return errors.New("positive compilation-cache quota required")
+	if options.DataDir == "" || options.MaxBytes <= 0 {
+		return errors.New("a data directory and positive compilation-cache quota are required")
 	}
-	if err := os.MkdirAll(filepath.Dir(options.Socket), 0700); err != nil {
+	// Validate identity before recovery so invalid configuration cannot bypass it.
+	if err := validateIdentity(options.Project, options.Compatibility); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Dir(options.Socket), 0700); err != nil {
+		return uncached(ctx, options, command, stdout, stderr, err)
+	}
+	parent, err := os.Lstat(filepath.Dir(options.Socket))
+	if err != nil || !parent.IsDir() || parent.Mode().Perm()&0077 != 0 {
+		return errors.New("socket parent must be a private directory")
+	}
+	if info, ok := parent.Sys().(*syscall.Stat_t); !ok || info.Uid != uint32(os.Geteuid()) {
+		return errors.New("socket parent must belong to the current user")
+	}
+	lock, err := lockDirectory(options.DataDir)
+	if err != nil {
+		if errors.Is(err, errDirectoryInUse) {
+			return err
+		}
+		return uncached(ctx, options, command, stdout, stderr, err)
+	}
+	defer lock.Close()
 	listener, err := net.Listen("unix", options.Socket)
 	if err != nil {
 		return fmt.Errorf("listen for Xcode cache: %w", err)
@@ -49,7 +101,7 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 	}
 	store, err := artifact.Open(ctx, options.DataDir, options.MaxBytes, 0)
 	if err != nil {
-		return err
+		return uncached(ctx, options, command, stdout, stderr, err)
 	}
 	defer store.Close()
 	service, err := New(store, options.Project, options.Compatibility)
@@ -61,53 +113,21 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 	kv.RegisterKeyValueDBServer(server, service)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
-	// Stop is bounded even if the build left an unfinished cache RPC behind.
 	defer server.Stop()
-	arguments := append([]string{}, command[1:]...)
-	arguments = append(arguments,
-		"COMPILATION_CACHE_ENABLE_CACHING=YES",
-		"COMPILATION_CACHE_ENABLE_PLUGIN=YES",
+	arguments := append(append([]string{}, command[1:]...),
+		"COMPILATION_CACHE_ENABLE_CACHING=YES", "COMPILATION_CACHE_ENABLE_PLUGIN=YES",
 		"COMPILATION_CACHE_REMOTE_SERVICE_PATH="+options.Socket,
-		"COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES",
-		"COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES")
-	child := exec.CommandContext(ctx, command[0], arguments...)
-	child.Stdout, child.Stderr = stdout, stderr
-	child.Stdin = os.Stdin
-	child.WaitDelay = 5 * time.Second
-	err = child.Run()
+		"COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES", "COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES")
+	err = runChild(ctx, command, arguments, stdout, stderr)
 	server.Stop()
 	<-done
-	// Close/checkpoint before reporting success: callers can now safely snapshot.
-	closeErr := store.Close()
-	stats := struct {
-		Stats
-		UncachedRetry bool `json:"uncachedRetry"`
-	}{Stats: service.Stats()}
-	// A full disk or cache-store failure must not turn valid source into a red
-	// build. Retry once with compilation caching disabled only when the cache
-	// recorded a backend error; an ordinary compiler failure is preserved.
-	if err != nil && stats.CacheErrors > 0 && ctx.Err() == nil {
-		stats.UncachedRetry = true
-		fmt.Fprintln(stderr, "Layer Cache backend failed; retrying compilation without the cache.")
-		uncached := append(append([]string{}, command[1:]...),
-			"COMPILATION_CACHE_ENABLE_CACHING=NO", "COMPILATION_CACHE_ENABLE_PLUGIN=NO",
-			"COMPILATION_CACHE_REMOTE_SERVICE_PATH=")
-		retry := exec.CommandContext(ctx, command[0], uncached...)
-		retry.Stdout, retry.Stderr, retry.Stdin = stdout, stderr, os.Stdin
-		retry.WaitDelay = 5 * time.Second
-		err = retry.Run()
+	stats := runStats{Stats: service.Stats()}
+	if closeErr := store.Close(); closeErr != nil {
+		stats.CacheErrors++
+		fmt.Fprintf(stderr, "Layer Cache closure failed: %v\n", closeErr)
 	}
-	if options.StatsFile != "" {
-		encoded, encodeErr := json.MarshalIndent(stats, "", "  ")
-		if encodeErr != nil {
-			return encodeErr
-		}
-		if writeErr := os.WriteFile(options.StatsFile, append(encoded, '\n'), 0600); writeErr != nil {
-			return writeErr
-		}
-	}
-	if err != nil {
-		return err
-	}
-	return closeErr
+	// A cache error does not establish why the compiler failed. Preserve its
+	// result instead of rerunning a genuine compiler failure or masking it.
+	reportStats(options.StatsFile, stats, stderr)
+	return err
 }

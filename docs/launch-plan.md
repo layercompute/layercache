@@ -83,13 +83,16 @@ which remains under its separate qualification.
    [Xcode proof at `0edcbaa`](https://github.com/ziahamza/layercache/actions/runs/38152661755)
    deletes native CAS before both builds and uses fresh DerivedData. It recorded
    69 warm action hits and 70 CAS-object hits. This proves protocol replay on
-   one Mac after local compiler-cache deletion; a restored snapshot on another
-   Mac and actual Phone compile timings remain acceptance gates. The newer
-   `f5ebe18` also waits for gRPC handlers before closing storage and tests an
-   uncached retry for backend failures. Reject simultaneous ownership of one
-   adapter data directory before opening its artifact store. Measure Phone
-   compile reuse before enabling the adapter in signed release workflows or
-   claiming savings. Local snapshots alone are not a remotely hosted compiler
+   one Mac after local compiler-cache deletion. Acceptance also requires a
+   restored snapshot on another Mac, an empty native CAS and DerivedData, and
+   actual Phone action/CAS RPC hits with correct output and compile timings.
+   The adapter holds the runtime data-directory lock before opening the store
+   through gRPC handler shutdown and storage closure. Startup cache failures
+   compile uncached; later cache or report errors preserve the compiler result
+   instead of triggering an ambiguous retry. Phone's `compiler_cache=adapter-only`
+   workflow mode exercises snapshot transport independently of native CAS.
+   Qualify that mode before enabling the adapter in signed release workflows
+   or attributing savings to external-store replay. Local snapshots alone are not a remotely hosted compiler
    service.
 2. **Keep verified distribution pinned.** Keep OAuth fixtures confined to QA.
    The recovery revision passed its current-main hosted checks. Immutable

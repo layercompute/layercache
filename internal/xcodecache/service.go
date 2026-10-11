@@ -46,11 +46,18 @@ type Service struct {
 	casReads, casHits, casWrites, actionReads, actionHits, actionWrites, cacheErrors atomic.Uint64
 }
 
-func New(store *artifact.Store, project, abi string) (*Service, error) {
-	if store == nil || project == "" || len(project) > 256 || strings.ContainsAny(project, "\x00\r\n\t ") {
-		return nil, errors.New("an artifact store and project are required")
+func validateIdentity(project, abi string) error {
+	if project == "" || len(project) > 256 || strings.ContainsAny(project, "\x00\r\n\t ") {
+		return errors.New("a project identity is required")
 	}
-	if err := compatibility.Validate(abi); err != nil {
+	return compatibility.Validate(abi)
+}
+
+func New(store *artifact.Store, project, abi string) (*Service, error) {
+	if store == nil {
+		return nil, errors.New("an artifact store is required")
+	}
+	if err := validateIdentity(project, abi); err != nil {
 		return nil, err
 	}
 	return &Service{store: store, project: project, compatibility: abi}, nil
@@ -66,7 +73,7 @@ func (s *Service) key(kind string, id []byte) artifact.Key {
 
 func (s *Service) put(ctx context.Context, kind string, id, data []byte) error {
 	_, _, err := s.store.Put(ctx, s.key(kind, id), artifact.Metadata{}, bytes.NewReader(data))
-	if err != nil {
+	if err != nil && !errors.Is(err, artifact.ErrConflict) {
 		s.cacheErrors.Add(1)
 	}
 	return err
@@ -135,6 +142,12 @@ func (s *Service) storeObject(ctx context.Context, object *cas.CASObject) (*cas.
 		}
 	}
 	normalized := &cas.CASObject{Blob: &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: data}}, References: object.References}
+	// Include the persisted object and both inline response envelopes.
+	if proto.Size(normalized) > MaxMessageBytes ||
+		proto.Size(&cas.CASGetResponse{Outcome: cas.CASGetResponse_SUCCESS, Contents: &cas.CASGetResponse_Data{Data: normalized}}) > MaxMessageBytes ||
+		proto.Size(&cas.CASLoadResponse{Outcome: cas.CASLoadResponse_SUCCESS, Contents: &cas.CASLoadResponse_Data{Data: &cas.CASBlob{Blob: normalized.Blob}}}) > MaxMessageBytes {
+		return nil, status.Error(codes.ResourceExhausted, "encoded CAS object exceeds message limit")
+	}
 	encoded, err := (proto.MarshalOptions{Deterministic: true}).Marshal(normalized)
 	if err != nil {
 		return nil, err
@@ -150,6 +163,14 @@ func (s *Service) storeObject(ctx context.Context, object *cas.CASObject) (*cas.
 
 func (s *Service) readObject(ctx context.Context, id *cas.CASDataID) (*cas.CASObject, error) {
 	s.casReads.Add(1)
+	object, err := s.lookupObject(ctx, id)
+	if err == nil {
+		s.casHits.Add(1)
+	}
+	return object, err
+}
+
+func (s *Service) lookupObject(ctx context.Context, id *cas.CASDataID) (*cas.CASObject, error) {
 	if len(id.GetId()) != sha256.Size {
 		return nil, status.Error(codes.InvalidArgument, "invalid CAS ID")
 	}
@@ -165,8 +186,39 @@ func (s *Service) readObject(ctx context.Context, id *cas.CASDataID) (*cas.CASOb
 	if err = proto.Unmarshal(data, object); err != nil {
 		return nil, artifact.ErrCorrupt
 	}
-	s.casHits.Add(1)
 	return object, nil
+}
+
+// LLVM action values name their root CASID. Quota eviction can remove a
+// descendant while retaining the index; that must be an action miss.
+func (s *Service) graphAvailable(ctx context.Context, root []byte) (bool, error) {
+	queue := [][]byte{root}
+	seen := make(map[string]bool)
+	for len(queue) > 0 {
+		id := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		if len(id) != sha256.Size {
+			return false, nil
+		}
+		if seen[string(id)] {
+			continue
+		}
+		seen[string(id)] = true
+		if len(seen) > 100000 {
+			return false, nil
+		}
+		object, err := s.lookupObject(ctx, &cas.CASDataID{Id: id})
+		if errors.Is(err, artifact.ErrNotFound) || errors.Is(err, artifact.ErrCorrupt) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		for _, ref := range object.References {
+			queue = append(queue, ref.GetId())
+		}
+	}
+	return true, nil
 }
 
 func (s *Service) Put(ctx context.Context, request *cas.CASPutRequest) (*cas.CASPutResponse, error) {
@@ -224,6 +276,15 @@ func (s *Service) GetValue(ctx context.Context, request *kv.GetValueRequest) (*k
 	value := new(kv.Value)
 	if err = proto.Unmarshal(data, value); err != nil {
 		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
+	}
+	if root, ok := value.Entries["CASID"]; ok {
+		available, err := s.graphAvailable(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		if !available {
+			return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
+		}
 	}
 	s.actionHits.Add(1)
 	return &kv.GetValueResponse{Outcome: kv.GetValueResponse_SUCCESS, Contents: &kv.GetValueResponse_Value{Value: value}}, nil

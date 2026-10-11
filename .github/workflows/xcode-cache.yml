@@ -14,7 +14,10 @@ on:
     paths:
       - 'internal/xcodecache/**'
       - 'internal/cli/xcode.go'
+      - 'internal/cli/run.go'
       - 'qa/xcode/**'
+      - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/xcode-cache.yml'
   workflow_dispatch:
 permissions:
@@ -52,6 +55,8 @@ jobs:
           name: xcode-cache-adapter
           path: ${{ runner.temp }}/xcode-adapter
       - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache"
+      - name: Install the pinned project generator
+        run: gem install --user-install xcodeproj --version 1.27.0 --no-document
       - name: Build with a fresh producer and consumer
         run: bash qa/xcode/probe.sh "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-cache-evidence"
       - uses: actions/upload-artifact@v7
