@@ -494,8 +494,8 @@ func (s *Store) SaveSession(ctx context.Context, token string, session Session) 
 	if _, err = tx.ExecContext(ctx, `DELETE FROM lc_portal_sessions WHERE expires_at<$1`, time.Now().Unix()); err != nil {
 		return err
 	}
-	// Keep the nine newest sessions before inserting the tenth; this also heals
-	// any excess sessions left by an earlier concurrent login race.
+	// Keep the nine existing sessions with the latest expiry before inserting
+	// the tenth. This also heals excess sessions from earlier concurrent logins.
 	if _, err = tx.ExecContext(ctx, `DELETE FROM lc_portal_sessions WHERE user_id=$1 AND id NOT IN (SELECT id FROM lc_portal_sessions WHERE user_id=$1 ORDER BY expires_at DESC,id LIMIT 9)`, session.User.ID); err != nil {
 		return err
 	}
