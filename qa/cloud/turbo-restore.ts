@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
+import { promisify } from 'node:util';
 
 // Exercise the public CLI and Turbo protocol against the real local cloud
 // service. Only GitHub is emulated by qa/cloud/fixture.ts.
@@ -19,6 +20,9 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'layercache-cloud-turbo-'));
 const output = process.env.QA_OUTPUT || fs.mkdtempSync(path.join(os.tmpdir(), 'layercache-cloud-turbo-evidence-'));
 fs.mkdirSync(output, { recursive: true });
 const children = new Set<ChildProcess>();
+const execute = promisify(execFile);
+let interrupted = false;
+let cleanupPromise: Promise<void> | undefined;
 const source = path.resolve('qa/fixtures/turbo');
 const counter = path.join(root, 'executions');
 type Workspace = { path: string; config: string; cache: string; listen: string; projectId: string; teamToken: string };
@@ -26,9 +30,14 @@ type Browser = { cookie: string; csrf: string };
 type Report = { runId: string; eligible: number; hits: number; misses: number; degraded: boolean; bytes: { downloaded: number; uploaded: number }; outcomes: { source: string }[] };
 type Summary = { tasks: { cache: { status: string; source?: string } }[] };
 
-function command(executable: string, args: string[], cwd = process.cwd(), env = process.env): string {
-  const result = spawnSync(executable, args, { cwd, env, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 << 20 });
-  assert.equal(result.status, 0, `${path.basename(executable)} ${args.slice(0, 2).join(' ')} failed: ${result.error || result.stderr || result.stdout}`);
+async function executeCommand(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeout = 60_000): Promise<{ stdout: string; stderr: string }> {
+  assert.equal(interrupted, false, 'cloud acceptance interrupted');
+  const running = execute(executable, args, { cwd, env, encoding: 'utf8', timeout, maxBuffer: 4 << 20 });
+  children.add(running.child);
+  try { return await running; } finally { children.delete(running.child); }
+}
+async function command(executable: string, args: string[], cwd = process.cwd(), env = process.env): Promise<string> {
+  const result = await executeCommand(executable, args, cwd, env);
   return result.stdout;
 }
 function sha256(filename: string): string {
@@ -36,9 +45,21 @@ function sha256(filename: string): string {
 }
 async function stop(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
   child.kill('SIGTERM');
-  for (let i = 0; i < 50 && child.exitCode === null && child.signalCode === null; i++) await delay(100);
-  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  // The cloud fixture itself allows ten seconds to stop its service child.
+  const timeout = setTimeout(() => child.kill('SIGKILL'), 12_000);
+  try { await exited; } finally { clearTimeout(timeout); }
+}
+function cleanup(): Promise<void> {
+  return cleanupPromise ??= Promise.all([...children].reverse().map(stop)).then(() => {});
+}
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    interrupted = true;
+    const code = signal === 'SIGINT' ? 130 : 143;
+    void cleanup().then(() => process.exit(code));
+  });
 }
 async function ready(origin: string): Promise<void> {
   for (let i = 0; i < 100; i++) {
@@ -99,32 +120,32 @@ async function api<T>(origin: string, browser: Browser, method: string, route: s
   assert.equal(response.status, expected, `${method} ${route}: ${contents.slice(0, 300)}`);
   return contents ? JSON.parse(contents) as T : undefined as T;
 }
-function makeWorkspace(template: string, destination: string): void {
-  command('git', ['clone', '--quiet', '--no-hardlinks', template, destination], root);
-  command('git', ['remote', 'set-url', 'origin', 'https://github.com/acme/web'], destination);
+async function makeWorkspace(template: string, destination: string): Promise<void> {
+  await command('git', ['clone', '--quiet', '--no-hardlinks', template, destination], root);
+  await command('git', ['remote', 'set-url', 'origin', 'https://github.com/acme/web'], destination);
   assert.equal(fs.existsSync(path.join(destination, '.turbo')), false, 'workspace inherited Turbo cache');
   assert.equal(fs.existsSync(path.join(destination, 'packages/app/dist')), false, 'workspace inherited build output');
 }
-function makeTemplate(): string {
+async function makeTemplate(): Promise<string> {
   const template = path.join(root, 'template');
   fs.mkdirSync(path.join(template, 'packages/app'), { recursive: true });
   for (const file of ['package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'turbo.json', 'packages/app/package.json', 'packages/app/build.mjs']) {
     fs.copyFileSync(path.join(source, file), path.join(template, file));
   }
   fs.writeFileSync(path.join(template, '.gitignore'), 'node_modules/\n.turbo/\ndist/\n');
-  command('git', ['init', '--quiet', '-b', 'main'], template);
-  command('git', ['add', '.'], template);
-  command('git', ['-c', 'user.name=Layer Cache QA', '-c', 'user.email=qa@layercache.dev', 'commit', '--quiet', '-m', 'Cloud Turbo fixture'], template);
+  await command('git', ['init', '--quiet', '-b', 'main'], template);
+  await command('git', ['add', '.'], template);
+  await command('git', ['-c', 'user.name=Layer Cache QA', '-c', 'user.email=qa@layercache.dev', 'commit', '--quiet', '-m', 'Cloud Turbo fixture'], template);
   return template;
 }
-function connect(origin: string, user: 'alice' | 'bob', project: string): Workspace {
+async function connect(origin: string, user: 'alice' | 'bob', project: string): Promise<Workspace> {
   const directory = path.join(root, user);
   fs.mkdirSync(directory);
   const gh = path.join(directory, 'gh');
   fs.writeFileSync(gh, `#!/bin/sh\nprintf 'fixture-github-${user}\\n'\n`, { mode: 0o700 });
   const config = path.join(directory, 'connected.json');
   const env = { ...process.env, PATH: directory + path.delimiter + process.env.PATH, XDG_CACHE_HOME: path.join(directory, 'xdg-cache'), XDG_CONFIG_HOME: path.join(directory, 'xdg-config') };
-  const result = JSON.parse(command(binary!, ['connect', '--cloud', origin, '--project', project, '--github-cli', '--config', config, '--json'], directory, env)) as { connected: boolean; project: string };
+  const result = JSON.parse(await command(binary!, ['connect', '--cloud', origin, '--project', project, '--github-cli', '--config', config, '--json'], directory, env)) as { connected: boolean; project: string };
   assert.equal(result.connected, true);
   assert.equal(result.project, project);
   const saved = JSON.parse(fs.readFileSync(config, 'utf8')) as { projectId: string; teamUrl: string; dataDir: string; listen: string; teamToken: string };
@@ -135,6 +156,7 @@ function connect(origin: string, user: 'alice' | 'bob', project: string): Worksp
   return { path: directory, config, cache: saved.dataDir, listen: saved.listen, projectId: saved.projectId, teamToken: saved.teamToken };
 }
 async function localDaemon(workspace: Workspace): Promise<ChildProcess> {
+  assert.equal(interrupted, false, 'cloud acceptance interrupted');
   const log = fs.openSync(path.join(workspace.path, 'daemon.log'), 'w', 0o600);
   const child = spawn(binary!, ['serve', '--config', workspace.config], { stdio: ['ignore', log, log] });
   fs.closeSync(log);
@@ -142,15 +164,12 @@ async function localDaemon(workspace: Workspace): Promise<ChildProcess> {
   await ready('http://' + workspace.listen);
   return child;
 }
-function runTurbo(workspace: Workspace, checkout: string): { report: Report; summary: Summary; output: string } {
-  const result = spawnSync(binary!, ['run', '--config', workspace.config, '--', turbo!, 'run', 'build', '--cache=remote:rw', '--summarize'], {
-    cwd: checkout, env: { ...process.env, EXECUTION_COUNTER: counter }, encoding: 'utf8', timeout: 90_000, maxBuffer: 4 << 20,
-  });
-  assert.equal(result.status, 0, `Turbo failed: ${result.error || result.stderr || result.stdout}`);
+async function runTurbo(workspace: Workspace, checkout: string): Promise<{ report: Report; summary: Summary; output: string }> {
+  const result = await executeCommand(binary!, ['run', '--config', workspace.config, '--', turbo!, 'run', 'build', '--cache=remote:rw', '--summarize'], checkout, { ...process.env, EXECUTION_COUNTER: counter }, 90_000);
   assert.doesNotMatch(result.stderr, /bypassing Layer Cache|local daemon is unavailable|Run Summary reconciliation failed/);
   const runId = result.stderr.match(/^Layer Cache run: (run-\S+)$/m)?.[1];
   assert.ok(runId, 'CLI omitted Layer Cache run ID');
-  const report = JSON.parse(command(binary!, ['report', '--config', workspace.config, '--run', runId, '--json'], checkout)) as Report;
+  const report = JSON.parse(await command(binary!, ['report', '--config', workspace.config, '--run', runId, '--json'], checkout)) as Report;
   const summaries = fs.readdirSync(path.join(checkout, '.turbo/runs')).filter(name => name.endsWith('.json'));
   assert.equal(summaries.length, 1, 'expected one native Turbo summary');
   const summary = JSON.parse(fs.readFileSync(path.join(checkout, '.turbo/runs', summaries[0]), 'utf8')) as Summary;
@@ -174,17 +193,17 @@ try {
   const invitation = await api<{ id: string }>(origin, alice, 'POST', `/api/teams/${team.id}/invitations`, { login: 'bob', role: 'reader' }, 201);
   await api<void>(origin, bob, 'POST', `/api/invitations/${invitation.id}/accept`, undefined, 204);
 
-  const producer = connect(origin, 'alice', project.id);
-  const consumer = connect(origin, 'bob', project.id);
+  const producer = await connect(origin, 'alice', project.id);
+  const consumer = await connect(origin, 'bob', project.id);
   assert.notEqual(producer.cache, consumer.cache, 'users share a Local Cache directory');
-  const template = makeTemplate();
+  const template = await makeTemplate();
   const coldCheckout = path.join(root, 'checkout-alice');
   const warmCheckout = path.join(root, 'checkout-bob');
-  makeWorkspace(template, coldCheckout);
-  makeWorkspace(template, warmCheckout);
+  await makeWorkspace(template, coldCheckout);
+  await makeWorkspace(template, warmCheckout);
   assert.equal(executions(), 0);
   const aliceDaemon = await localDaemon(producer);
-  const cold = runTurbo(producer, coldCheckout);
+  const cold = await runTurbo(producer, coldCheckout);
   assert.equal(executions(), 1, 'cold Turbo task did not execute once');
   assert.equal(cold.summary.tasks[0].cache.status.toUpperCase(), 'MISS');
   assert.equal(cold.report.eligible, 1);
@@ -200,7 +219,7 @@ try {
   assert.equal(fs.existsSync(path.join(warmCheckout, '.turbo')), false, 'consumer inherited native Turbo cache');
   assert.deepEqual(fs.readdirSync(consumer.cache), ['.layercache-owned.json'], 'consumer Local Cache contains cache data before restore');
   const bobDaemon = await localDaemon(consumer);
-  const warm = runTurbo(consumer, warmCheckout);
+  const warm = await runTurbo(consumer, warmCheckout);
   assert.equal(executions(), 1, 'warm Turbo task executed rather than restoring');
   assert.equal(warm.summary.tasks[0].cache.status.toUpperCase(), 'HIT');
   assert.equal(warm.summary.tasks[0].cache.source?.toUpperCase(), 'REMOTE');
@@ -231,6 +250,6 @@ try {
   console.log(JSON.stringify({ passed: true, evidence: evidencePath, ...evidence }));
   passed = true;
 } finally {
-  await Promise.all([...children].reverse().map(stop));
+  await cleanup();
   if (passed) fs.rmSync(root, { recursive: true, force: true });
 }

@@ -55,6 +55,12 @@ TURBO_BIN="$PWD/qa/fixtures/turbo/node_modules/.bin/turbo" \
 node qa/cloud/turbo-restore.ts
 ```
 
+Run `node --test qa/cloud/turbo-restore-interruption.test.ts` with the same
+environment to verify cancellation. It launches the real cloud and Local Cache,
+holds the build command open, sends SIGINT and SIGTERM to the harness, and
+requires every owned process to stop before the harness exits nonzero. CI runs
+this regression before the restore acceptance test.
+
 It signs in two emulated GitHub users to an isolated loopback cloud, creates a
 team and repository project, invites the second user as a reader, and connects
 two separate CLI configurations. The pinned Turbo client builds in Alice's

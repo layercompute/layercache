@@ -46,7 +46,9 @@ jobs:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-performance
           TURBO_BIN: ${{ github.workspace }}/qa/fixtures/turbo/node_modules/.bin/turbo
           QA_OUTPUT: ${{ runner.temp }}/cloud-turbo-evidence
-        run: node qa/cloud/turbo-restore.ts
+        run: |
+          node --test qa/cloud/turbo-restore-interruption.test.ts
+          node qa/cloud/turbo-restore.ts
       - name: Preserve measurements and reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
