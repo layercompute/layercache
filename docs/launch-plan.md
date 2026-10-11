@@ -12,7 +12,7 @@ been deployed.
 | --- | --- | --- |
 | Existing Team Cache | Public HTTPS restored on October 11. All five configured projects pass authenticated status checks; anonymous Phone access is denied. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
 | Phone Xcode integration | [LayerCache #20](https://github.com/ziahamza/layercache/pull/20), linked to [Phone #218](https://github.com/ziahamza/phone-app/pull/218). Real Xcode replay after deleting native CAS passed. The Phone CI chat owns both PRs. | A closed producer store restored into a separate consumer store on a fresh Mac, empty consumer native CAS and DerivedData, real Clang/module action hits and CAS loads, correct Phone output, and cold/warm timing. |
-| Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), [#18](https://github.com/ziahamza/layercache/pull/18), and [#19](https://github.com/ziahamza/layercache/pull/19) have passed combined local validation and independent review. | Land each on current main with the required hosted checks. Publish and verify a later immutable CLI beta containing the fixes. |
+| Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), and [#18](https://github.com/ziahamza/layercache/pull/18) are merged. The unchanged device-flow correction from [#19](https://github.com/ziahamza/layercache/pull/19) is included in this recovery revision with the CI fixture repair. | Publish and verify a later immutable CLI beta containing the fixes. |
 | Public self-serve cloud | Draft [config #27](https://github.com/ziahamza/config/pull/27) prepares deployment. No service, dedicated pool, protected cloud configuration, or new public route has been activated. | Real GitHub OAuth, an approved creator cohort, isolated bounded storage, and live two-user acceptance before declaring a hosted beta. |
 | Machine enrollment and hosted runners | Deferred. | Useful cross-machine cache reuse and operating costs measured first. |
 
@@ -78,10 +78,11 @@ evidence of a live public cloud or customer-machine reuse.
    compile reuse before enabling the adapter in signed release workflows or
    claiming savings. Local snapshots alone are not a remotely hosted compiler
    service.
-2. **Land the reviewed cloud fixes and distribute them.** Keep OAuth fixtures
-   confined to QA. Require current-main hosted checks for #16-19 and native
-   installer verification for the next immutable beta. Do not bypass branch or
-   release protections. None of these four PRs is obsolete.
+2. **Distribute the reviewed cloud fixes.** Keep OAuth fixtures confined to QA.
+   Require current-main hosted checks for the recovery revision and native
+   installer verification for the next immutable beta. #19 is superseded by
+   the recovery revision, which includes its exact production change and tests.
+   Do not bypass branch or release protections.
 3. **Activate one limited cloud beta after its live inputs exist.** Configure
    the real OAuth app with device flow and callback
    `https://cloud.services.ziahamza.com/auth/callback`, protected secret files,
