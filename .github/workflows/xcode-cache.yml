@@ -1,0 +1,70 @@
+name: Xcode compiler cache
+on:
+  pull_request:
+    paths:
+      - 'internal/xcodecache/**'
+      - 'internal/cli/xcode.go'
+      - 'internal/cli/run.go'
+      - 'qa/xcode/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/xcode-cache.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'internal/xcodecache/**'
+      - 'internal/cli/xcode.go'
+      - 'internal/cli/run.go'
+      - 'qa/xcode/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/xcode-cache.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: xcode-cache-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  build:
+    name: Cross-compile cache adapter on Linux
+    runs-on: ${{ vars.LAYERCACHE_UBICLOUD_ENABLED == 'true' && github.run_attempt == 1 && 'ubicloud-standard-2-ubuntu-2404' || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.25.13'
+      - run: go test -race ./internal/xcodecache/...
+      - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/layercache" ./cmd/layercache
+      - uses: actions/upload-artifact@v7
+        with:
+          name: xcode-cache-adapter
+          path: ${{ runner.temp }}/layercache
+          if-no-files-found: error
+          retention-days: 1
+  qualify:
+    name: Real Xcode cold and warm replay
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@v8
+        with:
+          name: xcode-cache-adapter
+          path: ${{ runner.temp }}/xcode-adapter
+      - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache"
+      - name: Install the pinned project generator
+        run: gem install --user-install xcodeproj --version 1.27.0 --no-document
+      - name: Build with a fresh producer and consumer
+        run: bash qa/xcode/probe.sh "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-cache-evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: xcode-cache-evidence
+          path: |
+            ${{ runner.temp }}/xcode-cache-evidence/*.log
+            ${{ runner.temp }}/xcode-cache-evidence/*.json
+            ${{ runner.temp }}/xcode-cache-evidence/toolchain.txt
+          retention-days: 3
