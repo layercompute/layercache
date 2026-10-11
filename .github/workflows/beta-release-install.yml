@@ -38,8 +38,8 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.1.0-beta.1
-      SOURCE_SHA: bd84aee3b6064403e0ce51e6f5dda7599b768c3a
+      RELEASE_TAG: v0.1.0-beta.2
+      SOURCE_SHA: 447095385671323a186299e0718d10c6459abb6f
       RELEASE_REPOSITORY: ziahamza/layercache
     steps:
       # The workflow is reviewed on this PR; the script comes from the exact
@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ziahamza/layercache
-          ref: bd84aee3b6064403e0ce51e6f5dda7599b768c3a
+          ref: 447095385671323a186299e0718d10c6459abb6f
           persist-credentials: false
 
       - name: Check published release and exact source commit

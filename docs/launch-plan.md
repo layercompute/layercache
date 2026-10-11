@@ -12,7 +12,7 @@ been deployed.
 | --- | --- | --- |
 | Existing Team Cache | Public HTTPS restored on October 11. All five configured projects pass authenticated status checks; anonymous Phone access is denied. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
 | Phone Xcode integration | [LayerCache #20](https://github.com/ziahamza/layercache/pull/20), linked to [Phone #218](https://github.com/ziahamza/phone-app/pull/218). Real Xcode replay after deleting native CAS passed. The Phone CI chat owns both PRs. | A closed producer store restored into a separate consumer store on a fresh Mac, empty consumer native CAS and DerivedData, real Clang/module action hits and CAS loads, correct Phone output, and cold/warm timing. |
-| Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), and [#18](https://github.com/ziahamza/layercache/pull/18) are merged. The unchanged device-flow correction from [#19](https://github.com/ziahamza/layercache/pull/19) is included in this recovery revision with the CI fixture repair. | Publish and verify a later immutable CLI beta containing the fixes. |
+| Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), and [#18](https://github.com/ziahamza/layercache/pull/18) are merged. Recovery [#21](https://github.com/ziahamza/layercache/pull/21) merged at `447095385671323a186299e0718d10c6459abb6f`, including the unchanged device-flow fix from closed, superseded [#19](https://github.com/ziahamza/layercache/pull/19). Immutable beta.2 pins that exact commit and passed fresh native installation. | Use the verified release for the limited cloud deployment once its real inputs are configured. |
 | Public self-serve cloud | Draft [config #27](https://github.com/ziahamza/config/pull/27) prepares deployment. No service, dedicated pool, protected cloud configuration, or new public route has been activated. | Real GitHub OAuth, an approved creator cohort, isolated bounded storage, and live two-user acceptance before declaring a hosted beta. |
 | Machine enrollment and hosted runners | Deferred. | Useful cross-machine cache reuse and operating costs measured first. |
 
@@ -64,6 +64,19 @@ matching output, and denied the removed reader's previously issued capability.
 GitHub and the cloud origin were emulated. This is development acceptance, not
 evidence of a live public cloud or customer-machine reuse.
 
+The immutable [v0.1.0-beta.2 release](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.2)
+pins protected main commit `447095385671323a186299e0718d10c6459abb6f` after
+all required recovery checks passed. Its
+[release workflow](https://github.com/ziahamza/layercache/actions/runs/38155658632)
+passed native candidate qualification, persistence, performance, and provenance
+checks, then published the immutable release at 16:33:44 UTC. The
+[published-binary installer workflow](https://github.com/ziahamza/layercache/actions/runs/38156102533)
+passed on fresh Linux x64, Linux arm64, and macOS arm64 runners. Each job checked
+the locked tag and source commit, verified attestations and checksums, installed
+into an empty prefix, and exercised `help` and setup preview. The workflow pins
+both beta.2 and the same source checkout. Beta.2 excludes the Xcode adapter,
+which remains under its separate qualification.
+
 ## Priorities and landing gates
 
 1. **Finish Phone compiler reuse.** The corrected
@@ -78,10 +91,11 @@ evidence of a live public cloud or customer-machine reuse.
    compile reuse before enabling the adapter in signed release workflows or
    claiming savings. Local snapshots alone are not a remotely hosted compiler
    service.
-2. **Distribute the reviewed cloud fixes.** Keep OAuth fixtures confined to QA.
-   Require current-main hosted checks for the recovery revision and native
-   installer verification for the next immutable beta. #19 is superseded by
-   the recovery revision, which includes its exact production change and tests.
+2. **Keep verified distribution pinned.** Keep OAuth fixtures confined to QA.
+   The recovery revision passed its current-main hosted checks. Immutable
+   beta.2 publication and fresh native installer verification have passed.
+   #19 is closed as superseded by #21, which includes its exact production
+   change and tests.
    Do not bypass branch or release protections.
 3. **Activate one limited cloud beta after its live inputs exist.** Configure
    the real OAuth app with device flow and callback
@@ -107,7 +121,6 @@ evidence of a live public cloud or customer-machine reuse.
 The beta stays limited to an explicit cohort and operator budget. Admission is
 bounded in code, and managed projects bind to signed numeric repository IDs.
 Before unrestricted signup, add billing/quotas, account and project lifecycle,
-and support escalation. The published
-[v0.1.0-beta.1](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.1)
-remains an immutable, attested CLI release with verified native installation;
-it does not make the hosted service live. Public Builds remain unqualified.
+and support escalation. The
+[v0.1.0-beta.2 CLI beta](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.2)
+does not make the hosted service live. Public Builds remain unqualified.
