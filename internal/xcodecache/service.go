@@ -35,14 +35,15 @@ type Stats struct {
 	ActionReads  uint64 `json:"actionReads"`
 	ActionHits   uint64 `json:"actionHits"`
 	ActionWrites uint64 `json:"actionWrites"`
+	CacheErrors  uint64 `json:"cacheErrors"`
 }
 
 type Service struct {
 	cas.UnimplementedCASDBServiceServer
 	kv.UnimplementedKeyValueDBServer
-	store                                                               *artifact.Store
-	project, compatibility                                              string
-	casReads, casHits, casWrites, actionReads, actionHits, actionWrites atomic.Uint64
+	store                                                                            *artifact.Store
+	project, compatibility                                                           string
+	casReads, casHits, casWrites, actionReads, actionHits, actionWrites, cacheErrors atomic.Uint64
 }
 
 func New(store *artifact.Store, project, abi string) (*Service, error) {
@@ -56,7 +57,7 @@ func New(store *artifact.Store, project, abi string) (*Service, error) {
 }
 
 func (s *Service) Stats() Stats {
-	return Stats{s.casReads.Load(), s.casHits.Load(), s.casWrites.Load(), s.actionReads.Load(), s.actionHits.Load(), s.actionWrites.Load()}
+	return Stats{CASReads: s.casReads.Load(), CASHits: s.casHits.Load(), CASWrites: s.casWrites.Load(), ActionReads: s.actionReads.Load(), ActionHits: s.actionHits.Load(), ActionWrites: s.actionWrites.Load(), CacheErrors: s.cacheErrors.Load()}
 }
 
 func (s *Service) key(kind string, id []byte) artifact.Key {
@@ -65,12 +66,18 @@ func (s *Service) key(kind string, id []byte) artifact.Key {
 
 func (s *Service) put(ctx context.Context, kind string, id, data []byte) error {
 	_, _, err := s.store.Put(ctx, s.key(kind, id), artifact.Metadata{}, bytes.NewReader(data))
+	if err != nil {
+		s.cacheErrors.Add(1)
+	}
 	return err
 }
 
 func (s *Service) get(ctx context.Context, kind string, id []byte) ([]byte, error) {
 	entry, reader, err := s.store.Get(ctx, s.key(kind, id))
 	if err != nil {
+		if !errors.Is(err, artifact.ErrNotFound) && !errors.Is(err, artifact.ErrCorrupt) {
+			s.cacheErrors.Add(1)
+		}
 		return nil, err
 	}
 	defer reader.Close()

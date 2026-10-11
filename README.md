@@ -150,6 +150,10 @@ a local CLI shared across worktrees, and `action/native` for checking verified
 artifacts on Linux before scheduling a project's existing Mac runner. It does
 not host runners or replace production signing, repacking, or OTA delivery.
 
+[Xcode compilation caching](docs/xcode-cache.md) adds a private LLVM protocol
+adapter for Clang/module reuse, with a closed store that CI can snapshot between
+Mac runners. Its Darwin binary can be cross-compiled on Linux.
+
 The daemon implements Turborepo's authenticated v8 artifact API. `layercache run` mints a short-lived Workspace token and injects `TURBO_API`, `TURBO_TOKEN`, and `TURBO_TEAM` for one command:
 
 ```bash

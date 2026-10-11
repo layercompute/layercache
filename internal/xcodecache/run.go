@@ -79,8 +79,26 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 	<-done
 	// Close/checkpoint before reporting success: callers can now safely snapshot.
 	closeErr := store.Close()
+	stats := struct {
+		Stats
+		UncachedRetry bool `json:"uncachedRetry"`
+	}{Stats: service.Stats()}
+	// A full disk or cache-store failure must not turn valid source into a red
+	// build. Retry once with compilation caching disabled only when the cache
+	// recorded a backend error; an ordinary compiler failure is preserved.
+	if err != nil && stats.CacheErrors > 0 && ctx.Err() == nil {
+		stats.UncachedRetry = true
+		fmt.Fprintln(stderr, "Layer Cache backend failed; retrying compilation without the cache.")
+		uncached := append(append([]string{}, command[1:]...),
+			"COMPILATION_CACHE_ENABLE_CACHING=NO", "COMPILATION_CACHE_ENABLE_PLUGIN=NO",
+			"COMPILATION_CACHE_REMOTE_SERVICE_PATH=")
+		retry := exec.CommandContext(ctx, command[0], uncached...)
+		retry.Stdout, retry.Stderr, retry.Stdin = stdout, stderr, os.Stdin
+		retry.WaitDelay = 5 * time.Second
+		err = retry.Run()
+	}
 	if options.StatsFile != "" {
-		encoded, encodeErr := json.MarshalIndent(service.Stats(), "", "  ")
+		encoded, encodeErr := json.MarshalIndent(stats, "", "  ")
 		if encodeErr != nil {
 			return encodeErr
 		}

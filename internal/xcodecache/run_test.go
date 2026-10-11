@@ -3,7 +3,9 @@ package xcodecache
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +25,12 @@ func TestXcodeCompilerChild(t *testing.T) {
 	}
 	socket := ""
 	for _, arg := range os.Args {
+		if arg == "COMPILATION_CACHE_ENABLE_CACHING=NO" && os.Getenv("LAYERCACHE_XCODE_QUOTA_TEST") == "1" {
+			if os.Getenv("LAYERCACHE_XCODE_CHILD_FAIL") == "1" {
+				os.Exit(7)
+			}
+			os.Exit(0)
+		}
 		if strings.HasPrefix(arg, "COMPILATION_CACHE_REMOTE_SERVICE_PATH=") {
 			socket = strings.TrimPrefix(arg, "COMPILATION_CACHE_REMOTE_SERVICE_PATH=")
 		}
@@ -89,6 +97,46 @@ func TestRunOwnsSocketAndClosesStoreEvenForFailedCompiler(t *testing.T) {
 			action, err := consumer.GetValue(context.Background(), &kv.GetValueRequest{Key: []byte("child-action")})
 			if err != nil || action.GetOutcome() != kv.GetValueResponse_SUCCESS {
 				t.Fatalf("closed store replay: %v %v", action, err)
+			}
+		})
+	}
+}
+
+func TestBackendQuotaRetriesWithoutCacheAndPreservesRealCompilerFailure(t *testing.T) {
+	t.Setenv("LAYERCACHE_XCODE_CHILD", "1")
+	t.Setenv("LAYERCACHE_XCODE_QUOTA_TEST", "1")
+	for _, fails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compiler-fails-%v", fails), func(t *testing.T) {
+			t.Setenv("LAYERCACHE_XCODE_CHILD_FAIL", map[bool]string{false: "0", true: "1"}[fails])
+			root, err := os.MkdirTemp("/tmp", "lc-quota-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(root)
+			options := Options{DataDir: filepath.Join(root, "store"), Socket: filepath.Join(root, "cache.sock"), Project: "test-project", Compatibility: "test-toolchain", StatsFile: filepath.Join(root, "stats.json"), MaxBytes: 1}
+			var output bytes.Buffer
+			err = Run(context.Background(), options, []string{os.Args[0], "-test.run=^TestXcodeCompilerChild$", "--"}, &output, &output)
+			if fails {
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) || exit.ExitCode() != 7 {
+					t.Fatalf("real compiler failure: %v %s", err, &output)
+				}
+			} else if err != nil {
+				t.Fatalf("uncached recovery: %v %s", err, &output)
+			}
+			encoded, err := os.ReadFile(options.StatsFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stats struct {
+				CacheErrors   uint64
+				UncachedRetry bool
+			}
+			if err = json.Unmarshal(encoded, &stats); err != nil {
+				t.Fatal(err)
+			}
+			if stats.CacheErrors == 0 || !stats.UncachedRetry {
+				t.Fatalf("missing backend failure/retry receipt: %s", encoded)
 			}
 		})
 	}
