@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build:
     name: Cross-compile cache adapter on Linux
-    runs-on: ${{ github.run_attempt == 1 && 'ubicloud-standard-2-ubuntu-2404' || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.LAYERCACHE_UBICLOUD_ENABLED == 'true' && github.run_attempt == 1 && 'ubicloud-standard-2-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
