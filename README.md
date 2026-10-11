@@ -2,15 +2,15 @@
 
 Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache, speaks native cache protocols, and can fall back to a shared Team Cache or a verified Public Cache.
 
-This repository contains working implementations for Turborepo, GitHub Actions cache v1, and Docker Buildx/BuildKit. It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence, signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The first immutable CLI prerelease, [v0.1.0-beta.1](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.1), covers Team Cache use. Public Builds are not qualified by this beta, and the hosted self-serve cloud requires a separate deployment. npm/CDN mirrors, Bazel, Vite, Next.js, Xcode, Windows, Actions cache v2, and a general adapter SDK remain out of scope.
+This repository contains working implementations for Turborepo, GitHub Actions cache v1, and Docker Buildx/BuildKit. It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence, signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest CLI beta, [v0.1.0-beta.2](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.2), includes the reviewed Team Cache authentication fixes. Public Builds are not qualified by this beta, and the hosted self-serve cloud requires a separate deployment. Phone's Xcode adapter remains under qualification in [PR #20](https://github.com/ziahamza/layercache/pull/20) and is not included in this release. npm/CDN mirrors, Bazel, Vite, Next.js, Windows, Actions cache v2, and a general adapter SDK remain out of scope.
 
 Release and deployment instructions are in the [verified installer](scripts/README.md), [GitHub runner setup](action/setup/README.md), and [Team Cache deployment guide](docs/deployment.md). See [quota administration](docs/cache-administration.md), [retention policies](docs/retention.md), [trust-key rotation](docs/public-trust.md), and [performance qualification](docs/performance.md) for operations. The beta release qualifies native Local/Team Cache clients; it does not establish a hosted cloud service or qualify Public Builds.
 
-To install the beta from an inspected checkout of commit `bd84aee3b6064403e0ce51e6f5dda7599b768c3a`:
+To install the beta from an inspected checkout of commit `447095385671323a186299e0718d10c6459abb6f`:
 
 ```bash
 bash scripts/install.sh --repository ziahamza/layercache \
-  --version v0.1.0-beta.1 --prefix "$HOME/.local/bin"
+  --version v0.1.0-beta.2 --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
 
@@ -129,7 +129,7 @@ permissions:
   id-token: write
 steps:
   # Check out the project, configure Node/pnpm, and install dependencies first.
-  - uses: ziahamza/layercache/action/turbo@bd84aee3b6064403e0ce51e6f5dda7599b768c3a
+  - uses: ziahamza/layercache/action/turbo@447095385671323a186299e0718d10c6459abb6f
     with:
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
@@ -481,7 +481,7 @@ Set standard `OTEL_EXPORTER_OTLP_ENDPOINT` or signal-specific OTLP/HTTP endpoint
 
 ## Platforms and CI
 
-The code targets Linux and macOS. Windows and Xcode/iOS caching are not implemented.
+The code targets Linux and macOS. Windows caching is not implemented. Phone's Xcode integration has separate fresh-Mac acceptance gates in the [launch plan](docs/launch-plan.md).
 
 The CI workflow runs the full Go test suite, vet, and a native binary build on GitHub-hosted Linux x64, Linux arm64, and macOS arm64 runners. The race detector runs on both Linux architectures. Each job asserts the runner architecture before testing.
 

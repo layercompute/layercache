@@ -103,7 +103,9 @@ func TestHTTPPromotionCoordinatorStopsLeaseContentionOnCancellation(t *testing.T
 func TestHTTPPromotionLeaseRenewsUntilPromotionFinishes(t *testing.T) {
 	t.Parallel()
 
+	const leaseDuration = time.Second
 	var renewCalls atomic.Int32
+	thirdRenewalAccepted := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer team-token" {
 			http.Error(writer, "unauthorized", http.StatusUnauthorized)
@@ -121,16 +123,26 @@ func TestHTTPPromotionLeaseRenewsUntilPromotionFinishes(t *testing.T) {
 		case "/v1/buildkit/promotion-leases/acquire":
 			writer.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(writer).Encode(map[string]any{
-				"leaseToken": "lease-renew", "expiresAt": time.Now().UTC().Add(80 * time.Millisecond),
+				"leaseToken": "lease-renew", "expiresAt": time.Now().UTC().Add(leaseDuration),
 			})
 		case "/v1/buildkit/promotion-leases/renew":
 			if body.LeaseToken != "lease-renew" {
 				http.Error(writer, "wrong lease", http.StatusConflict)
 				return
 			}
-			renewCalls.Add(1)
+			if renewCalls.Add(1) == 4 {
+				// A fourth request proves the client accepted the first three
+				// renewals and continued beyond the initial lease's expiry.
+				close(thirdRenewalAccepted)
+				<-request.Context().Done()
+				return
+			}
+			expiresAt := time.Now().UTC().Add(leaseDuration)
+			// CI previously consumed the fixture's 80 ms lease before the
+			// response was validated. Keep that delay in the success path.
+			time.Sleep(100 * time.Millisecond)
 			_ = json.NewEncoder(writer).Encode(map[string]any{
-				"leaseToken": "lease-renew", "expiresAt": time.Now().UTC().Add(80 * time.Millisecond),
+				"leaseToken": "lease-renew", "expiresAt": expiresAt,
 			})
 		default:
 			http.NotFound(writer, request)
@@ -149,12 +161,86 @@ func TestHTTPPromotionLeaseRenewsUntilPromotionFinishes(t *testing.T) {
 	if !ok {
 		t.Fatal("HTTP promotion lease has no renewal loop")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 230*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := maintained.Maintain(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("maintain lease error = %v, want context deadline", err)
+	finished := make(chan error, 1)
+	go func() { finished <- maintained.Maintain(ctx) }()
+	select {
+	case <-thirdRenewalAccepted:
+	case err := <-finished:
+		t.Fatalf("maintain stopped before three accepted renewals: %v", err)
+	case <-ctx.Done():
+		t.Fatalf("promotion lease renewals = %d, want three accepted renewals", renewCalls.Load())
 	}
-	if renewCalls.Load() < 3 {
-		t.Fatalf("promotion lease renewals = %d, want at least 3", renewCalls.Load())
+	cancel()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("maintain lease error = %v, want promotion cancellation", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("maintain did not stop after promotion cancellation")
+	}
+	if renewCalls.Load() != 4 {
+		t.Fatalf("promotion lease renewal requests = %d, want 4", renewCalls.Load())
+	}
+}
+
+func TestHTTPPromotionLeaseRejectsInvalidRenewal(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		leaseToken string
+		expired    bool
+	}{
+		{name: "expired lease", leaseToken: "lease-renew", expired: true},
+		{name: "changed token", leaseToken: "different-lease"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var renewCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				token := "lease-renew"
+				expiresAt := time.Now().UTC().Add(time.Second)
+				switch request.URL.Path {
+				case "/v1/buildkit/promotion-leases/acquire":
+					writer.WriteHeader(http.StatusCreated)
+				case "/v1/buildkit/promotion-leases/renew":
+					renewCalls.Add(1)
+					token = test.leaseToken
+					if test.expired {
+						expiresAt = time.Now().UTC().Add(-time.Second)
+					}
+				default:
+					http.NotFound(writer, request)
+					return
+				}
+				_ = json.NewEncoder(writer).Encode(map[string]any{
+					"leaseToken": token, "expiresAt": expiresAt,
+				})
+			}))
+			defer server.Close()
+			coordinator, err := buildkit.NewHTTPPromotionCoordinator(server.URL, "team-token")
+			if err != nil {
+				t.Fatalf("new coordinator: %v", err)
+			}
+			lease, err := coordinator.Acquire(context.Background(), "registry.example/team/widget/linux-amd64:main")
+			if err != nil {
+				t.Fatalf("acquire lease: %v", err)
+			}
+			maintained, ok := lease.(interface{ Maintain(context.Context) error })
+			if !ok {
+				t.Fatal("HTTP promotion lease has no renewal loop")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := maintained.Maintain(ctx); err == nil || err.Error() != "Team Cache returned an invalid renewed promotion lease" {
+				t.Fatalf("maintain lease error = %v, want invalid renewal rejection", err)
+			}
+			if renewCalls.Load() != 1 {
+				t.Fatalf("invalid lease renewal requests = %d, want 1", renewCalls.Load())
+			}
+		})
 	}
 }
