@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
-import { promisify } from 'node:util';
 
 // Exercise the public CLI and Turbo protocol against the real local cloud
 // service. Only GitHub is emulated by qa/cloud/fixture.ts.
@@ -20,7 +19,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'layercache-cloud-turbo-'));
 const output = process.env.QA_OUTPUT || fs.mkdtempSync(path.join(os.tmpdir(), 'layercache-cloud-turbo-evidence-'));
 fs.mkdirSync(output, { recursive: true });
 const children = new Set<ChildProcess>();
-const execute = promisify(execFile);
+const commandGroups = new Set<ChildProcess>();
 let interrupted = false;
 let cleanupPromise: Promise<void> | undefined;
 const source = path.resolve('qa/fixtures/turbo');
@@ -30,11 +29,41 @@ type Browser = { cookie: string; csrf: string };
 type Report = { runId: string; eligible: number; hits: number; misses: number; degraded: boolean; bytes: { downloaded: number; uploaded: number }; outcomes: { source: string }[] };
 type Summary = { tasks: { cache: { status: string; source?: string } }[] };
 
+function track(child: ChildProcess, processGroup = false): void {
+  children.add(child);
+  if (processGroup) commandGroups.add(child);
+  child.once('close', () => { children.delete(child); commandGroups.delete(child); });
+}
 async function executeCommand(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeout = 60_000): Promise<{ stdout: string; stderr: string }> {
   assert.equal(interrupted, false, 'cloud acceptance interrupted');
-  const running = execute(executable, args, { cwd, env, encoding: 'utf8', timeout, maxBuffer: 4 << 20 });
-  children.add(running.child);
-  try { return await running; } finally { children.delete(running.child); }
+  // A build command can start Turbo and task subprocesses. Give commands an
+  // owned process group so cancellation also reaches those descendants.
+  const detached = process.platform !== 'win32';
+  const child = spawn(executable, args, { cwd, env, detached, stdio: ['ignore', 'pipe', 'pipe'] });
+  track(child, detached);
+  return await new Promise((resolve, reject) => {
+    let stdout = '', stderr = '', bytes = 0, exceeded = false, timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; void stop(child); }, timeout);
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    const collect = (text: string, destination: 'stdout' | 'stderr') => {
+      bytes += Buffer.byteLength(text);
+      if (bytes > 4 << 20) {
+        if (!exceeded) { exceeded = true; void stop(child); }
+        return;
+      }
+      if (destination === 'stdout') stdout += text;
+      else stderr += text;
+    };
+    child.stdout.on('data', text => collect(text, 'stdout'));
+    child.stderr.on('data', text => collect(text, 'stderr'));
+    child.once('error', error => { clearTimeout(timer); reject(error); });
+    child.once('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0 && !timedOut && !exceeded) resolve({ stdout, stderr });
+      else reject(new Error(`${path.basename(executable)} failed (${timedOut ? 'timeout' : exceeded ? 'output limit' : signal || code}): ${stderr || stdout}`));
+    });
+  });
 }
 async function command(executable: string, args: string[], cwd = process.cwd(), env = process.env): Promise<string> {
   const result = await executeCommand(executable, args, cwd, env);
@@ -44,12 +73,21 @@ function sha256(filename: string): string {
   return createHash('sha256').update(fs.readFileSync(filename)).digest('hex');
 }
 async function stop(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
-  child.kill('SIGTERM');
+  if (!children.has(child)) return;
+  // Wait for close, including inherited output pipes, so a CLI exiting before
+  // its Turbo child cannot let the harness finish before that child stops.
+  const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
+  const group = commandGroups.has(child);
+  const terminate = (signal: NodeJS.Signals) => {
+    if (group && child.pid) {
+      try { process.kill(-child.pid, signal); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    } else child.kill(signal);
+  };
+  terminate('SIGTERM');
   // The cloud fixture itself allows ten seconds to stop its service child.
-  const timeout = setTimeout(() => child.kill('SIGKILL'), 12_000);
-  try { await exited; } finally { clearTimeout(timeout); }
+  const timeout = setTimeout(() => terminate('SIGKILL'), 12_000);
+  try { await closed; } finally { clearTimeout(timeout); }
 }
 function cleanup(): Promise<void> {
   return cleanupPromise ??= Promise.all([...children].reverse().map(stop)).then(() => {});
@@ -160,7 +198,7 @@ async function localDaemon(workspace: Workspace): Promise<ChildProcess> {
   const log = fs.openSync(path.join(workspace.path, 'daemon.log'), 'w', 0o600);
   const child = spawn(binary!, ['serve', '--config', workspace.config], { stdio: ['ignore', log, log] });
   fs.closeSync(log);
-  children.add(child);
+  track(child);
   await ready('http://' + workspace.listen);
   return child;
 }
@@ -184,7 +222,7 @@ let fixture: ChildProcess | undefined;
 let passed = false;
 try {
   fixture = spawn(process.execPath, [path.resolve('qa/cloud/fixture.ts')], { stdio: ['ignore', 'pipe', 'inherit'], env: process.env });
-  children.add(fixture);
+  track(fixture);
   const origin = await fixtureOrigin(fixture);
   const alice = await login(origin, 'alice');
   const bob = await login(origin, 'bob');
