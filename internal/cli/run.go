@@ -56,6 +56,7 @@ Usage:
   layercache vm-route issue [options]
   layercache run [options] -- COMMAND [ARG...]
   layercache serve [options]
+  layercache xcode run [options] -- xcodebuild [arguments]
   layercache connect --cloud URL [--github-cli] [--team TEAM] [--project PROJECT]
   layercache serve-cloud --config FILE
   layercache serve-projects --config FILE
@@ -104,6 +105,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runUninstall(ctx, args[1:], stdout, stderr)
 	case "integration":
 		return runIntegration(ctx, args[1:], stdout, stderr)
+	case "xcode":
+		return runXcode(ctx, args[1:], stdout, stderr)
 	case "serve":
 		return runServe(ctx, args[1:], stderr)
 	case "serve-projects":
