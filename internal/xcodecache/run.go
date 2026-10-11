@@ -56,7 +56,7 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 	if err != nil {
 		return err
 	}
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.MaxConcurrentStreams(16))
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.MaxConcurrentStreams(16), grpc.WaitForHandlers(true))
 	cas.RegisterCASDBServiceServer(server, service)
 	kv.RegisterKeyValueDBServer(server, service)
 	done := make(chan error, 1)

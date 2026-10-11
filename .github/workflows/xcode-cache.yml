@@ -58,5 +58,8 @@ jobs:
         if: always()
         with:
           name: xcode-cache-evidence
-          path: ${{ runner.temp }}/xcode-cache-evidence
+          path: |
+            ${{ runner.temp }}/xcode-cache-evidence/*.log
+            ${{ runner.temp }}/xcode-cache-evidence/*.json
+            ${{ runner.temp }}/xcode-cache-evidence/toolchain.txt
           retention-days: 3
