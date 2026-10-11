@@ -22,15 +22,18 @@ import (
 )
 
 type portalQA struct {
-	t         *testing.T
-	p         *Portal
-	cfg       Config
-	github    *httptest.Server
-	mu        sync.Mutex
-	challenge string
-	admin     bool
-	revoked   bool
-	exchanges int
+	t              *testing.T
+	p              *Portal
+	cfg            Config
+	github         *httptest.Server
+	mu             sync.Mutex
+	challenge      string
+	admin          bool
+	revoked        bool
+	exchanges      int
+	tokenExpiresIn int64
+	tokenIssuedAt  time.Time
+	identityDelay  time.Duration
 }
 
 func signPortalOIDCTestToken(t *testing.T, key *rsa.PrivateKey, claims map[string]any) string {
@@ -141,8 +144,14 @@ func newPortalQA(t *testing.T) *portalQA {
 				http.Error(w, "bad PKCE exchange", 400)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "github-" + r.Form.Get("code")})
+			response := map[string]any{"access_token": "github-" + r.Form.Get("code")}
+			if q.tokenExpiresIn > 0 {
+				response["expires_in"] = q.tokenExpiresIn
+			}
+			q.tokenIssuedAt = time.Now()
+			_ = json.NewEncoder(w).Encode(response)
 		case r.URL.Path == "/user":
+			time.Sleep(q.identityDelay)
 			if q.revoked {
 				http.Error(w, "revoked", 401)
 				return
@@ -351,6 +360,87 @@ func TestPortalOAuthStatePKCEReplayAndSessionCSRF(t *testing.T) {
 	q.team(b, "Allowed")
 	requireStatus(t, q.request("POST", "/api/logout", "", b, nil), 204)
 	requireStatus(t, q.request("GET", "/api/session", "", b, nil), 401)
+}
+
+func TestPortalBrowserSessionEndsBeforeExpiringGitHubToken(t *testing.T) {
+	q := newPortalQA(t)
+	q.tokenExpiresIn = 3600
+	cookie, query := q.begin()
+	response := q.request("GET", "/auth/callback?state="+query.Get("state")+"&code=alice", "", &browserQA{cookie: cookie}, nil)
+	requireStatus(t, response, 303)
+	for _, issued := range response.Result().Cookies() {
+		if strings.HasSuffix(issued.Name, "_session") {
+			if issued.MaxAge <= 0 || issued.MaxAge >= 3600 {
+				t.Fatalf("browser session cookie lifetime = %d seconds; provider token expires in 3600 seconds", issued.MaxAge)
+			}
+			requireStatus(t, q.request("GET", "/api/session", "", &browserQA{cookie: issued}, nil), 200)
+			return
+		}
+	}
+	t.Fatal("OAuth callback did not issue a browser session cookie")
+}
+
+func TestPortalRejectsSessionAfterGitHubTokenLifetime(t *testing.T) {
+	q := newPortalQA(t)
+	q.tokenExpiresIn = 63
+	b := q.login("alice")
+	session, err := q.p.store.Session(context.Background(), b.cookie.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Until(time.Unix(session.ExpiresAt, 0)) + 10*time.Millisecond)
+	requireStatus(t, q.request("GET", "/api/session", "", b, nil), 401)
+}
+
+func TestPortalDelayedIdentityDoesNotExtendProviderLifetime(t *testing.T) {
+	q := newPortalQA(t)
+	q.tokenExpiresIn = 3600
+	q.identityDelay = 1500 * time.Millisecond
+	cookie, query := q.begin()
+	response := q.request("GET", "/auth/callback?state="+query.Get("state")+"&code=alice", "", &browserQA{cookie: cookie}, nil)
+	requireStatus(t, response, 303)
+	q.mu.Lock()
+	providerDeadline := q.tokenIssuedAt.Add(3540 * time.Second).Unix()
+	q.mu.Unlock()
+	for _, issued := range response.Result().Cookies() {
+		if !strings.HasSuffix(issued.Name, "_session") {
+			continue
+		}
+		session, err := q.p.store.Session(context.Background(), issued.Value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.ExpiresAt > providerDeadline {
+			t.Fatalf("identity verification extended session expiry: %d, provider deadline %d", session.ExpiresAt, providerDeadline)
+		}
+		if issued.MaxAge <= 0 || issued.MaxAge > 3539 {
+			t.Fatalf("cookie lifetime did not deduct identity verification: %d seconds", issued.MaxAge)
+		}
+		requireStatus(t, q.request("GET", "/api/session", "", &browserQA{cookie: issued}, nil), 200)
+		return
+	}
+	t.Fatal("OAuth callback did not issue a browser session cookie")
+}
+
+func TestPortalRejectsLoginWhenProviderDeadlinePassesDuringIdentityVerification(t *testing.T) {
+	q := newPortalQA(t)
+	q.tokenExpiresIn = 61
+	q.identityDelay = 1500 * time.Millisecond
+	cookie, query := q.begin()
+	response := q.request("GET", "/auth/callback?state="+query.Get("state")+"&code=alice", "", &browserQA{cookie: cookie}, nil)
+	requireStatus(t, response, 403)
+	for _, issued := range response.Result().Cookies() {
+		if strings.HasSuffix(issued.Name, "_session") {
+			t.Fatal("expired provider lifetime issued a session cookie")
+		}
+	}
+	var sessions int
+	if err := q.p.store.db.QueryRow(`SELECT COUNT(*) FROM lc_portal_sessions`).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if sessions != 0 {
+		t.Fatalf("expired provider lifetime saved %d sessions", sessions)
+	}
 }
 func TestPortalProjectPermissionsAndSecretProjection(t *testing.T) {
 	q := newPortalQA(t)
