@@ -162,9 +162,10 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if *syncTeam {
 		// The remote endpoint is our Local Cache daemon. Bypassing Turbo's
 		// Workspace cache keeps both cold and local-hit results publishable.
-		injected["TURBO_CACHE"] = "local:,remote:rw"
+		command.Env = withTurboSyncPolicy(command.Env)
 	}
 	if isAdapterBypassed(cfg, "turbo") {
+		command.Env = withoutTurboSyncPolicy(command.Env)
 		injected["TURBO_API"] = ""
 		injected["TURBO_TOKEN"] = ""
 		injected["TURBO_TEAM"] = ""
@@ -210,7 +211,7 @@ func runCommandWithoutCache(ctx context.Context, commandArgs []string, stdout, s
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
-	command.Env = os.Environ()
+	command.Env = withoutTurboSyncPolicy(os.Environ())
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("command failed while Layer Cache was unavailable: %w", err)
 	}
@@ -222,7 +223,7 @@ func runCommandWithScopeBypass(ctx context.Context, commandArgs []string, stdout
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
-	command.Env = os.Environ()
+	command.Env = withoutTurboSyncPolicy(os.Environ())
 	// A nested invocation may inherit capabilities from its parent's checkout.
 	// Remove those as well as suppressing new credentials. Nested Buildx commands
 	// honor the all-adapter bypass even when passed an explicit configuration.

@@ -26,6 +26,8 @@ the loopback Local Cache daemon, so repeats use LayerCache's bounded storage
 instead of a separate workspace cache. Remove explicit Turbo `--cache` flags
 that would override this setting. Run from the Turbo workspace root so the CLI
 can collect the invocation's run summaries.
+Nested commands that bypass LayerCache restore the caller's original Turbo
+cache policy, so ordinary workspace reuse remains available.
 
 After the child finishes, LayerCache checks only its successful cacheable task
 hashes in Team Cache. It republishes matching Local artifacts when needed and
