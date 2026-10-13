@@ -197,12 +197,46 @@ func TestTurboSyncNeverCountsInvalidTeamMetadataAsReady(t *testing.T) {
 
 func TestTurboSyncRechecksEarlierHitsAfterPublicationCanEvictThem(t *testing.T) {
 	team := &turboSyncTeam{artifacts: make(map[string][]byte), maxEntries: 1}
-	server, cfg := newTurboSyncServer(t, http.HandlerFunc(team.serve))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var initialHit, rechecked atomic.Bool
+	server, cfg := newTurboSyncServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		team.serve(writer, request)
+		if request.Method == http.MethodHead && strings.HasSuffix(request.URL.Path, "/already") {
+			team.mu.Lock()
+			published := team.puts > 0
+			team.mu.Unlock()
+			if published {
+				// End confirmation only after the earlier hit was checked again
+				// following the write that evicted it. Cancellation may also omit
+				// the remaining hit, which is conservatively still unconfirmed.
+				rechecked.Store(true)
+				cancel()
+			} else {
+				initialHit.Store(true)
+			}
+		}
+	}))
 	team.artifacts[cfg.CompatibilityID+":already"] = []byte("earlier-hit")
 	localTurboSyncArtifact(t, server, "new", cfg.CompatibilityID, "later-upload")
-	response, result := callTurboSync(t, server, cfg.LocalToken, `{"hashes":["already","new"],"timeoutMs":40}`)
-	if response.Code != http.StatusOK || result != (turboSyncResult{Requested: 2, Ready: 1, Pending: 1}) {
+	request := httptest.NewRequest(http.MethodPost, "/v1/sync/turbo", strings.NewReader(`{"hashes":["already","new"],"timeoutMs":1000}`)).WithContext(ctx)
+	request.Header.Set("Authorization", "Bearer "+cfg.LocalToken)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	var result turboSyncResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !initialHit.Load() || !rechecked.Load() {
+		t.Fatal("confirmation did not recheck the initial Team hit after publication")
+	}
+	if response.Code != http.StatusOK || result.Requested != 2 || result.Ready < 0 || result.Ready > 1 || result.Pending < 1 || result.Ready+result.Pending != 2 {
 		t.Fatalf("post-eviction sync = HTTP %d %+v", response.Code, result)
+	}
+	team.mu.Lock()
+	defer team.mu.Unlock()
+	if team.puts != 1 || team.artifacts[cfg.CompatibilityID+":already"] != nil || string(team.artifacts[cfg.CompatibilityID+":new"]) != "later-upload" {
+		t.Fatalf("publication did not evict the earlier hit: puts=%d artifacts=%v", team.puts, team.artifacts)
 	}
 }
 

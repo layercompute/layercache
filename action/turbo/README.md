@@ -17,16 +17,15 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@v4
-  - uses: ziahamza/layercache/action/turbo@main
+  - uses: ziahamza/layercache/action/turbo@d99e6f685b5db878b924181926399c57be9f16d7
     with:
       team-url: https://layer-cache.ziahamza.com
       compatibility: linux-amd64-node24-schema1
   - run: pnpm turbo run build
 ```
 
-`main` tracks the latest action code, including changes between workflow reruns.
-This is the current pre-versioning integration policy. Use a reviewed commit SHA
-when reproducibility is required. Repository visibility and action access must
+The examples pin beta.3's reviewed source commit so workflow reruns use the same
+action code. Repository visibility and action access must
 permit the caller to use it. Configure the language tools
 and dependencies as usual. The project defaults to the lowercase GitHub repository
 identity. Choose compatibility explicitly; only compatible builds should share it.
@@ -62,7 +61,7 @@ Required PR checks can keep running their Turbo commands while reusing matching
 results. To force fresh tasks on main, choose a policy in the workflow:
 
 ```yaml
-- uses: ziahamza/layercache/action/turbo@main
+- uses: ziahamza/layercache/action/turbo@d99e6f685b5db878b924181926399c57be9f16d7
   with:
     team-url: https://layer-cache.ziahamza.com
     compatibility: linux-amd64-node24-schema1
@@ -106,4 +105,4 @@ Reports are bounded to 32 new summaries, 4,096 total tasks, 8 MiB input, and a
 24-hour job window. Files must remain within the workspace and may not be
 symlinks. Failed report collection, expired OIDC access or an older server without
 the reporting endpoint produces a warning and does not change the build result.
-Deploy the server update before expecting reports from `action/turbo@main`.
+Deploy the server update before expecting reports from this action revision.

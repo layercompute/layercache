@@ -1,9 +1,17 @@
 # Install a release
 
-The latest CLI beta is [v0.1.0-beta.2](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.2), pinned to protected main commit `447095385671323a186299e0718d10c6459abb6f`. It includes the reviewed Team Cache authentication fixes. Public Builds are not qualified by this prerelease; a hosted self-serve cloud requires separate deployment. Run the installer from an inspected checkout pinned to that source commit:
+The latest CLI beta is [v0.1.0-beta.3](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.3),
+pinned to protected main commit `d99e6f685b5db878b924181926399c57be9f16d7`.
+It includes the reviewed Team Cache authentication fixes, confirmed publication
+of successful local Turbo tasks for CI reuse, and the Xcode adapter. Required
+checks can reuse matching tasks with `cache-mode: read-only`; a fresh task lane
+uses `cache-mode: fresh`. Complete Xcode graph protection under eviction remains
+tracked in [#25](https://github.com/ziahamza/layercache/issues/25). Public Builds
+are not qualified by this prerelease; a hosted self-serve cloud requires separate
+deployment. Run the installer from an inspected checkout pinned to that source commit:
 
 ```sh
-bash scripts/install.sh --repository ziahamza/layercache --version v0.1.0-beta.2 \
+bash scripts/install.sh --repository ziahamza/layercache --version v0.1.0-beta.3 \
   --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
@@ -28,7 +36,18 @@ An old `gh` without the required verification flags fails rather than weakening
 the policy. The Node test uses a local fake GitHub client to exercise policy
 failures and target preservation.
 
-The [beta.2 release workflow](https://github.com/ziahamza/layercache/actions/runs/38155658632)
+The [beta.3 release workflow](https://github.com/ziahamza/layercache/actions/runs/38478627110)
+qualifies native release candidates before immutable publication. The
+[published installer workflow](../.github/workflows/beta-release-install.yml)
+pins beta.3 and its exact source commit. It verifies the locked tag, attestations,
+checksum, installation into an empty prefix, `help`, and setup preview on Linux
+x64, Linux arm64, and macOS arm64. Each job then runs the
+[17-scenario real Turbo acceptance](../qa/local-ci-reuse/README.md) using the
+installed release binary, with no candidate compilation. The retained JSON
+contains task execution, restore, changed-input and offline-recovery evidence;
+it contains no daemon configuration or credentials.
+
+The earlier [beta.2 release workflow](https://github.com/ziahamza/layercache/actions/runs/38155658632)
 passed native Linux amd64/arm64 and macOS arm64 qualification before immutable
 publication. The
 [published-binary installer workflow](https://github.com/ziahamza/layercache/actions/runs/38156102533)

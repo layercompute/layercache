@@ -2,15 +2,25 @@
 
 Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache, speaks native cache protocols, and can fall back to a shared Team Cache or a verified Public Cache.
 
-This repository contains working implementations for Turborepo, GitHub Actions cache v1, and Docker Buildx/BuildKit. It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence, signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest CLI beta, [v0.1.0-beta.2](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.2), includes the reviewed Team Cache authentication fixes. Public Builds are not qualified by this beta, and the hosted self-serve cloud requires a separate deployment. Phone's Xcode adapter remains under qualification in [PR #20](https://github.com/ziahamza/layercache/pull/20) and is not included in this release. npm/CDN mirrors, Bazel, Vite, Next.js, Windows, Actions cache v2, and a general adapter SDK remain out of scope.
+This repository contains working implementations for Turborepo, GitHub Actions
+cache v1, Docker Buildx/BuildKit, and Xcode's LLVM compilation-cache protocol.
+It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
+signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest
+CLI beta, [v0.1.0-beta.3](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.3),
+adds confirmed publication of successful local Turbo tasks for CI reuse and
+includes the Xcode adapter. Complete Xcode graph protection under eviction
+remains a separate qualification in [#25](https://github.com/ziahamza/layercache/issues/25).
+Public Builds are not qualified by this beta, and the hosted self-serve cloud
+requires a separate deployment. npm/CDN mirrors, Bazel, Vite, Next.js, Windows,
+Actions cache v2, and a general adapter SDK remain out of scope.
 
 Release and deployment instructions are in the [verified installer](scripts/README.md), [GitHub runner setup](action/setup/README.md), and [Team Cache deployment guide](docs/deployment.md). See [quota administration](docs/cache-administration.md), [retention policies](docs/retention.md), [trust-key rotation](docs/public-trust.md), and [performance qualification](docs/performance.md) for operations. The beta release qualifies native Local/Team Cache clients; it does not establish a hosted cloud service or qualify Public Builds.
 
-To install the beta from an inspected checkout of commit `447095385671323a186299e0718d10c6459abb6f`:
+To install the beta from an inspected checkout of commit `d99e6f685b5db878b924181926399c57be9f16d7`:
 
 ```bash
 bash scripts/install.sh --repository ziahamza/layercache \
-  --version v0.1.0-beta.2 --prefix "$HOME/.local/bin"
+  --version v0.1.0-beta.3 --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
 
@@ -129,17 +139,20 @@ permissions:
   id-token: write
 steps:
   # Check out the project, configure Node/pnpm, and install dependencies first.
-  - uses: ziahamza/layercache/action/turbo@447095385671323a186299e0718d10c6459abb6f
+  - uses: ziahamza/layercache/action/turbo@d99e6f685b5db878b924181926399c57be9f16d7
     with:
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
+      cache-mode: read-only
   - run: pnpm turbo run build
 ```
 
 Use your Team Cache origin and a compatibility identity for your build toolchain.
-The server must authorize your repository. This action is pinned to the beta's
-source commit. Public action source does not grant access
-to anyone else's Team Cache. See the [publication checklist](docs/open-source-preparation.md)
+The server must authorize your repository. This action is pinned to beta.3's
+source commit and reads Team results while keeping required task commands present.
+Use `cache-mode: read-write` for an authorized publishing lane or `cache-mode: fresh`
+to execute without Turbo task-result reads or writes. Public action source does
+not grant access to anyone else's Team Cache. See the [publication checklist](docs/open-source-preparation.md)
 for the remaining source-publication gates.
 
 The [four-project rollout report](docs/rollout-2026-09-12.md) records main-branch
