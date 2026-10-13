@@ -94,11 +94,27 @@ func (server *Server) pinTurboUpload(ctx context.Context, key artifact.Key, entr
 }
 
 func (server *Server) enqueuePinnedTurboUpload(ctx context.Context, prepared preparedTurboUpload) error {
+	return server.queuePinnedTurboUpload(ctx, prepared, false)
+}
+
+func (server *Server) requeuePinnedTurboUpload(ctx context.Context, prepared preparedTurboUpload) error {
+	return server.queuePinnedTurboUpload(ctx, prepared, true)
+}
+
+func (server *Server) queuePinnedTurboUpload(ctx context.Context, prepared preparedTurboUpload, repair bool) error {
 	if server.uploads == nil {
 		server.releaseTurboUploadPin(prepared.pin.Owner)
 		return errors.New("Team Cache upload queue is unavailable")
 	}
-	result, err := server.uploads.Enqueue(ctx, prepared.request)
+	var job uploadqueue.Job
+	var err error
+	if repair {
+		job, err = server.uploads.Requeue(ctx, prepared.request)
+	} else {
+		var result uploadqueue.EnqueueResult
+		result, err = server.uploads.Enqueue(ctx, prepared.request)
+		job = result.Job
+	}
 	if err != nil {
 		// The pin is owned by this enqueue attempt until a durable queue row
 		// exists. Any failure, including cancellation or SQLite errors, must
@@ -106,7 +122,7 @@ func (server *Server) enqueuePinnedTurboUpload(ctx context.Context, prepared pre
 		server.releaseTurboUploadPin(prepared.pin.Owner)
 		return err
 	}
-	if result.Job.State == uploadqueue.StateCompleted {
+	if job.State == uploadqueue.StateCompleted {
 		server.releaseTurboUploadPin(prepared.pin.Owner)
 		return nil
 	}

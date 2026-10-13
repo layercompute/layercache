@@ -20,6 +20,7 @@ import (
 var (
 	ErrMiss         = errors.New("remote cache miss")
 	ErrUnauthorized = errors.New("remote cache authorization failed")
+	ErrMetadata     = errors.New("remote cache metadata is invalid")
 )
 
 type TurboClient struct {
@@ -36,6 +37,52 @@ type TurboDownload struct {
 	ExpectedDigest string
 	Size           int64
 	Metadata       artifact.Metadata
+}
+
+type TurboMetadata struct {
+	Digest string
+	Size   int64
+}
+
+// Head confirms a complete Team Cache artifact without downloading its archive.
+// A successful status alone is insufficient: both immutable digest and size must
+// be present. The caller still relies on the Team's trusted-writer contract.
+func (client *TurboClient) Head(ctx context.Context, hash string) (TurboMetadata, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodHead, client.baseURL+"/v8/artifacts/"+url.PathEscape(hash), nil)
+	if err != nil {
+		return TurboMetadata{}, err
+	}
+	client.authorize(request)
+	response, err := client.http.Do(request)
+	if err != nil {
+		return TurboMetadata{}, fmt.Errorf("check remote cache: %w", err)
+	}
+	defer response.Body.Close()
+	switch response.StatusCode {
+	case http.StatusNotFound:
+		return TurboMetadata{}, ErrMiss
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return TurboMetadata{}, ErrUnauthorized
+	case http.StatusOK:
+	default:
+		return TurboMetadata{}, fmt.Errorf("remote cache check returned HTTP %d", response.StatusCode)
+	}
+	digests := response.Header.Values("x-layercache-digest")
+	if len(digests) != 1 || response.ContentLength < 0 {
+		return TurboMetadata{}, ErrMetadata
+	}
+	digest := strings.TrimPrefix(digests[0], "sha256:")
+	if len(digest) != 64 {
+		return TurboMetadata{}, ErrMetadata
+	}
+	for _, character := range digest {
+		if character < '0' || character > '9' {
+			if character < 'a' || character > 'f' {
+				return TurboMetadata{}, ErrMetadata
+			}
+		}
+	}
+	return TurboMetadata{Digest: digest, Size: response.ContentLength}, nil
 }
 
 // NewTurboClient preserves the original constructor with an OS/architecture

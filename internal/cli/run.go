@@ -54,7 +54,7 @@ Usage:
   layercache public-build request|status|logs|cancel [options]
   layercache public-build worker run|lease|append-log|heartbeat|complete|fail [options]
   layercache vm-route issue [options]
-  layercache run [options] -- COMMAND [ARG...]
+  layercache run [--sync-team] [--sync-timeout DURATION] [options] -- COMMAND [ARG...]
   layercache serve [options]
   layercache xcode run [options] -- xcodebuild [arguments]
   layercache connect --cloud URL [--github-cli] [--team TEAM] [--project PROJECT]

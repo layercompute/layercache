@@ -1,0 +1,8 @@
+{
+  "name": "layercache-local-ci-reuse-fixture",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "devDependencies": {
+    "turbo": "2.10.12"
+  }
+}

@@ -160,6 +160,14 @@ The daemon implements Turborepo's authenticated v8 artifact API. `layercache run
 bin/layercache run -- pnpm exec turbo run build --summarize
 ```
 
+To make completed local tasks available to CI before pushing, use
+`layercache run --sync-team -- pnpm exec turbo run typecheck test build`.
+LayerCache confirms those successful task hashes in Team Cache. Required PR
+checks can reuse them with `action/turbo`'s `cache-mode: read-only`; a fresh main
+test lane uses `cache-mode: fresh`. See the
+[local-to-CI guide](docs/local-ci-reuse.md) for execution profiles, task inputs
+and publication recovery.
+
 If the local daemon is unavailable, `layercache run` prints a warning and runs the child without cache environment injection. A cache outage therefore does not replace a correct local build failure or success.
 
 The first build stores opaque Turbo artifacts. A later worktree or clone with the same Turbo hash and Layer Cache compatibility identity can restore them. Resolution order is Local Cache, Team Cache, then Public Cache. Team and Public hits are verified and warmed into Local Cache.
