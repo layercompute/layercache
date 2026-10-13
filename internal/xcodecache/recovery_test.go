@@ -21,7 +21,7 @@ func reviewOptions(t *testing.T) Options {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
-	return Options{DataDir: filepath.Join(root, "store"), Socket: filepath.Join(root, "cache.sock"), Project: "test-project", Compatibility: "test-toolchain", StatsFile: filepath.Join(root, "stats.json"), MaxBytes: 32 << 20}
+	return Options{DataDir: filepath.Join(t.TempDir(), "store"), Socket: filepath.Join(root, "cache.sock"), Project: "test-project", Compatibility: "test-toolchain", StatsFile: filepath.Join(root, "stats.json"), MaxBytes: 32 << 20}
 }
 
 func compilerCommand() []string {

@@ -27,13 +27,13 @@ func TestSyncTeamRejectsMissingInconsistentOrOversizeConfirmation(t *testing.T) 
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost || r.URL.Path != "/v1/sync/turbo" || r.Header.Get("Authorization") != "Bearer local-owner" {
+				if r.Method != http.MethodPost || r.URL.Path != "/v1/sync/turbo" || r.Header.Get("Authorization") != "Bearer local-owner" || r.Header.Get("X-LayerCache-Compatibility") != "linux-node24.21.0-tests-v2" {
 					t.Errorf("unexpected synchronization request")
 				}
 				_, _ = io.WriteString(w, test.body)
 			}))
 			defer daemon.Close()
-			cfg := config.Config{Listen: strings.TrimPrefix(daemon.URL, "http://"), LocalToken: "local-owner", TeamURL: "https://team.example", TeamToken: "team-writer"}
+			cfg := config.Config{Listen: strings.TrimPrefix(daemon.URL, "http://"), LocalToken: "local-owner", TeamURL: "https://team.example", TeamToken: "team-writer", CompatibilityID: "linux-node24.21.0-tests-v2"}
 			err := syncTurboTeamResults(context.Background(), cfg, []string{"first", "second"}, time.Second)
 			if (err != nil) != test.wantError {
 				t.Fatalf("confirmation error = %v, wantError=%v", err, test.wantError)

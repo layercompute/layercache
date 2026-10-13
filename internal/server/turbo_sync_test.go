@@ -334,6 +334,65 @@ func TestTurboSyncOfflinePublicationIsQueuedAndTimeoutRemainsBounded(t *testing.
 	}
 }
 
+func TestTurboSyncRequeuesCompletedUploadAfterTeamEvictionAndOfflineRestart(t *testing.T) {
+	team := &turboSyncTeam{artifacts: make(map[string][]byte)}
+	server, cfg := newTurboSyncServer(t, http.HandlerFunc(team.serve))
+	entry := localTurboSyncArtifact(t, server, "task", cfg.CompatibilityID, "successful-test-output")
+	if err := server.enqueueTurboUpload(context.Background(), entry.Key, entry); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		stats, err := server.uploads.Stats(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.CompletedJobs == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("initial queued upload did not complete")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	team.mu.Lock()
+	delete(team.artifacts, cfg.CompatibilityID+":task")
+	team.offline = true
+	team.mu.Unlock()
+	response, result := callTurboSync(t, server, cfg.LocalToken, `{"hashes":["task"],"timeoutMs":40}`)
+	if response.Code != http.StatusOK || result != (turboSyncResult{Requested: 1, Pending: 1}) {
+		t.Fatalf("offline repair = HTTP %d %+v", response.Code, result)
+	}
+	jobs, err := server.uploads.Unfinished(context.Background())
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("completed upload was not durably requeued: %+v, %v", jobs, err)
+	}
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	team.mu.Lock()
+	team.offline = false
+	team.mu.Unlock()
+	restarted, err := New(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = restarted.Close() })
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		team.mu.Lock()
+		body := string(team.artifacts[cfg.CompatibilityID+":task"])
+		team.mu.Unlock()
+		if body == "successful-test-output" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("restarted daemon did not repair the evicted Team result")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestTurboSyncRejectsReaderWrongIntegrationAndOtherRoles(t *testing.T) {
 	team := &turboSyncTeam{artifacts: make(map[string][]byte)}
 	server, cfg := newTurboSyncServer(t, http.HandlerFunc(team.serve))

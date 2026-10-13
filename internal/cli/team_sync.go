@@ -45,6 +45,7 @@ func syncTurboTeamResults(ctx context.Context, cfg config.Config, hashes []strin
 		return err
 	}
 	request.Header.Set("Authorization", "Bearer "+cfg.LocalToken)
+	request.Header.Set("X-LayerCache-Compatibility", cfg.CompatibilityID)
 	request.Header.Set("Content-Type", "application/json")
 	// A publication can run longer than the standard control-header timeout.
 	client := newLocalCLIHTTPClient(timeout + 2*time.Second)

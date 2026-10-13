@@ -150,7 +150,7 @@ func (server *Server) syncTurbo(writer http.ResponseWriter, request *http.Reques
 		if lastReady[hash] {
 			server.releaseTurboUploadPin(prepared.pin.Owner)
 		} else {
-			_ = server.enqueuePinnedTurboUpload(cleanupCtx, prepared)
+			_ = server.requeuePinnedTurboUpload(cleanupCtx, prepared)
 		}
 	}
 	for _, hash := range hashes {
@@ -166,7 +166,9 @@ func (server *Server) syncTurbo(writer http.ResponseWriter, request *http.Reques
 		key := artifact.Key{Integration: "turbo", Project: server.config.ProjectID, Compatibility: compatibilityID, Native: hash}
 		if entry, body, err := server.store.Get(cleanupCtx, key); err == nil {
 			_ = body.Close()
-			_ = server.enqueueTurboUpload(cleanupCtx, key, entry)
+			if prepared, err := server.pinTurboUpload(cleanupCtx, key, entry); err == nil {
+				_ = server.requeuePinnedTurboUpload(cleanupCtx, prepared)
+			}
 		}
 	}
 	writeJSON(writer, http.StatusOK, turboSyncResult{Requested: len(hashes), Ready: len(ready), Pending: len(hashes) - len(ready)})
@@ -198,7 +200,7 @@ func (server *Server) publishTurboForSync(ctx context.Context, team *remote.Turb
 		if ctx.Err() != nil {
 			return &prepared
 		}
-		_ = server.enqueuePinnedTurboUpload(ctx, prepared)
+		_ = server.requeuePinnedTurboUpload(ctx, prepared)
 		return nil
 	}
 	server.releaseTurboUploadPin(prepared.pin.Owner)

@@ -195,6 +195,142 @@ func TestCompleteIsFinalAndReleasesQueuedByteQuota(t *testing.T) {
 	}
 }
 
+func TestRequeueCompletedUploadPreservesQuotaMetadataAndLeaseFencing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	queue, err := uploadqueue.Open(uploadqueue.Config{Path: filepath.Join(t.TempDir(), "uploads.db"), MaxQueuedBytes: 128})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = queue.Close() })
+	request := turboUpload("evicted", strings.Repeat("a", 64), 128)
+	first, err := queue.Enqueue(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldLease, err := queue.Claim(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Complete(ctx, oldLease); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Enqueue(ctx, turboUpload("other", strings.Repeat("b", 64), 128)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Requeue(ctx, request); !errors.Is(err, uploadqueue.ErrQueueFull) {
+		t.Fatalf("requeue exceeded the shared byte quota: %v", err)
+	}
+	conflicting := request
+	conflicting.Digest = strings.Repeat("c", 64)
+	if _, err := queue.Requeue(ctx, conflicting); !errors.Is(err, uploadqueue.ErrConflict) {
+		t.Fatalf("requeue changed immutable artifact metadata: %v", err)
+	}
+	completed, err := queue.Get(ctx, first.Job.ID)
+	if err != nil || completed.State != uploadqueue.StateCompleted {
+		t.Fatalf("rejected repair changed completed job: %+v, %v", completed, err)
+	}
+	otherLease, err := queue.Claim(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Complete(ctx, otherLease); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := queue.Requeue(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired.ID != first.Job.ID || repaired.State != uploadqueue.StatePending || repaired.LeaseGeneration != oldLease.Generation || repaired.CompletedAt != nil || repaired.Outcome != "" {
+		t.Fatalf("repair changed identity or left final state: %+v", repaired)
+	}
+	if _, err := queue.Complete(ctx, oldLease); !errors.Is(err, uploadqueue.ErrLeaseLost) {
+		t.Fatalf("stale completion finalized a requeued job: %v", err)
+	}
+	duplicate, err := queue.Requeue(ctx, request)
+	if err != nil || duplicate.State != uploadqueue.StatePending || duplicate.LeaseGeneration != repaired.LeaseGeneration || !duplicate.NextAttemptAt.Equal(repaired.NextAttemptAt) {
+		t.Fatalf("pending repair was not idempotent: %+v, %v", duplicate, err)
+	}
+	newLease, err := queue.Claim(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newLease.Job.ID != repaired.ID || newLease.Generation != oldLease.Generation+1 {
+		t.Fatalf("new repair lease lost generation fencing: %+v", newLease)
+	}
+	duplicate, err = queue.Requeue(ctx, request)
+	if err != nil || duplicate.State != uploadqueue.StateLeased || duplicate.LeaseGeneration != newLease.Generation {
+		t.Fatalf("repair replaced an active lease: %+v, %v", duplicate, err)
+	}
+	for _, operation := range []func() error{
+		func() error { _, err := queue.Complete(ctx, oldLease); return err },
+		func() error { _, err := queue.Retry(ctx, oldLease, "offline"); return err },
+	} {
+		if err := operation(); !errors.Is(err, uploadqueue.ErrLeaseLost) {
+			t.Fatalf("old lease changed the repaired upload: %v", err)
+		}
+	}
+	stats, err := queue.Stats(ctx)
+	if err != nil || stats.QueuedBytes != 128 || stats.QueuedJobs != 1 {
+		t.Fatalf("repair did not charge shared quota once: %+v, %v", stats, err)
+	}
+	if _, err := queue.Complete(ctx, newLease); err != nil {
+		t.Fatal(err)
+	}
+	ordinary, err := queue.Enqueue(ctx, request)
+	if err != nil || ordinary.Created || ordinary.Job.State != uploadqueue.StateCompleted {
+		t.Fatalf("ordinary enqueue stopped preserving completed jobs: %+v, %v", ordinary, err)
+	}
+}
+
+func TestConcurrentRepairsShareThePersistedByteQuota(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cfg := uploadqueue.Config{Path: filepath.Join(t.TempDir(), "uploads.db"), MaxQueuedBytes: 128}
+	queues := make([]*uploadqueue.Queue, 2)
+	requests := []uploadqueue.EnqueueRequest{
+		turboUpload("first-repair", strings.Repeat("a", 64), 80),
+		turboUpload("second-repair", strings.Repeat("b", 64), 80),
+	}
+	for index := range queues {
+		var err error
+		queues[index], err = uploadqueue.Open(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = queues[index].Close() })
+		if _, err := queues[index].Enqueue(ctx, requests[index]); err != nil {
+			t.Fatal(err)
+		}
+		lease, err := queues[index].Claim(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := queues[index].Complete(ctx, lease); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := make(chan struct{})
+	results := make(chan error, 32)
+	for index := 0; index < cap(results); index++ {
+		go func(index int) {
+			<-start
+			_, err := queues[index%2].Requeue(ctx, requests[index%2])
+			results <- err
+		}(index)
+	}
+	close(start)
+	for index := 0; index < cap(results); index++ {
+		if err := <-results; err != nil && !errors.Is(err, uploadqueue.ErrQueueFull) {
+			t.Fatalf("concurrent repair failed unexpectedly: %v", err)
+		}
+	}
+	stats, err := queues[0].Stats(ctx)
+	if err != nil || stats.QueuedBytes != 80 || stats.QueuedJobs != 1 || stats.CompletedJobs != 1 {
+		t.Fatalf("concurrent repairs bypassed their shared quota: %+v, %v", stats, err)
+	}
+}
+
 func TestRetryUsesPersistentBoundedExponentialBackoff(t *testing.T) {
 	t.Parallel()
 

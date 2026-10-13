@@ -243,6 +243,19 @@ func RequestID(request EnqueueRequest) (string, error) {
 }
 
 func (queue *Queue) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueResult, error) {
+	return queue.enqueue(ctx, request, false)
+}
+
+// Requeue repairs an artifact that is no longer confirmed at its destination.
+// It reactivates a matching completed upload within the same byte quota, while
+// leaving pending uploads and active leases unchanged. Ordinary Enqueue keeps
+// completed uploads final. Lease generations remain monotonic across repairs.
+func (queue *Queue) Requeue(ctx context.Context, request EnqueueRequest) (Job, error) {
+	result, err := queue.enqueue(ctx, request, true)
+	return result.Job, err
+}
+
+func (queue *Queue) enqueue(ctx context.Context, request EnqueueRequest, repair bool) (EnqueueResult, error) {
 	normalized, err := normalizeRequest(request)
 	if err != nil {
 		return EnqueueResult{}, err
@@ -263,7 +276,17 @@ func (queue *Queue) Enqueue(ctx context.Context, request EnqueueRequest) (Enqueu
 			FROM team_upload_jobs_v1
 			WHERE state IN ('pending', 'leased')
 		) <= ?
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (id) DO UPDATE
+		SET state = 'pending',
+			last_error_code = '',
+			next_attempt_at = excluded.next_attempt_at,
+			lease_expires_at = NULL,
+			final_outcome = '',
+			updated_at = excluded.updated_at,
+			completed_at = NULL
+		WHERE ? AND state = 'completed'
+		  AND expected_digest = excluded.expected_digest
+		  AND expected_size = excluded.expected_size`,
 		id,
 		normalized.Adapter,
 		normalized.Target.Scope,
@@ -276,6 +299,7 @@ func (queue *Queue) Enqueue(ctx context.Context, request EnqueueRequest) (Enqueu
 		now.UnixNano(),
 		now.UnixNano(),
 		remainingBytes,
+		repair,
 	)
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("enqueue Team Cache upload: %w", err)
@@ -293,6 +317,9 @@ func (queue *Queue) Enqueue(ctx context.Context, request EnqueueRequest) (Enqueu
 	}
 	if job.Digest != normalized.Digest || job.Size != normalized.Size {
 		return EnqueueResult{}, ErrConflict
+	}
+	if repair && inserted == 0 && job.State == StateCompleted {
+		return EnqueueResult{}, ErrQueueFull
 	}
 	return EnqueueResult{Job: job, Created: inserted == 1}, nil
 }
