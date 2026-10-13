@@ -38,8 +38,8 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.1.0-beta.2
-      SOURCE_SHA: 447095385671323a186299e0718d10c6459abb6f
+      RELEASE_TAG: v0.1.0-beta.3
+      SOURCE_SHA: d99e6f685b5db878b924181926399c57be9f16d7
       RELEASE_REPOSITORY: ziahamza/layercache
     steps:
       # The workflow is reviewed on this PR; the script comes from the exact
@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ziahamza/layercache
-          ref: 447095385671323a186299e0718d10c6459abb6f
+          ref: d99e6f685b5db878b924181926399c57be9f16d7
           persist-credentials: false
 
       - name: Check published release and exact source commit
@@ -94,7 +94,7 @@ jobs:
             --project github.com/ziahamza/layercache \
             --data-dir "$RUNNER_TEMP/layercache-beta-preview-data" \
             --max-size 1073741824 \
-            --min-free-bytes 0 \
+            --min-free-bytes 5368709120 \
             --preview --json >"$RUNNER_TEMP/layercache-preview.json"
           jq -e '
             .preview == true and .configured == false and
@@ -102,3 +102,34 @@ jobs:
             .maxBytes == 1073741824
           ' "$RUNNER_TEMP/layercache-preview.json" >/dev/null
           test ! -e "$RUNNER_TEMP/layercache-beta-preview.json"
+
+      - name: Set up Node.js for installed-binary Turbo acceptance
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24.13.0"
+
+      - name: Install the locked real Turbo client
+        run: |
+          npm install --global pnpm@10.34.5
+          pnpm --dir qa/fixtures/local-ci-reuse install --frozen-lockfile
+
+      - name: Prove successful local tasks restore using the published binary
+        run: |
+          set -euo pipefail
+          python3 qa/local-ci-reuse/run.py \
+            --binary "$RUNNER_TEMP/layercache-beta-install/layercache" \
+            --turbo "$GITHUB_WORKSPACE/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
+            --output "$RUNNER_TEMP/beta3-local-ci-reuse.json"
+          jq -e '
+            .schemaVersion == "local-ci-reuse-v1" and .passed == true and
+            (.scenarios | length) == 17
+          ' "$RUNNER_TEMP/beta3-local-ci-reuse.json" >/dev/null
+
+      - name: Preserve installed-binary reuse evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: beta3-local-ci-reuse-${{ matrix.name }}
+          path: ${{ runner.temp }}/beta3-local-ci-reuse.json
+          if-no-files-found: warn
+          retention-days: 30
