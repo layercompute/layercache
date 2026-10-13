@@ -93,8 +93,22 @@ func TestNestedRunRestoresTurboPolicyWhenCacheIsBypassed(t *testing.T) {
 				if err := json.Unmarshal([]byte(stdout), &observed); err != nil {
 					t.Fatalf("child output = %q: %v", stdout, err)
 				}
-				if observed["policy"] != want || observed["marker"] != "" || observed["api"] != "" || observed["token"] != "" {
-					t.Fatalf("child observed environment = %+v, want restored policy %q and no owned credentials", observed, want)
+				if observed["policy"] != want || observed["marker"] != "" {
+					t.Fatalf("child observed policy = %+v, want restored policy %q", observed, want)
+				}
+				if path == "unavailable" {
+					wantAPI := daemon.URL
+					if policy == "changed" {
+						wantAPI = "https://caller.example"
+						if observed["token"] != "caller-token" {
+							t.Fatalf("fallback lost caller credential: %+v", observed)
+						}
+					}
+					if observed["api"] != wantAPI || observed["token"] == "" {
+						t.Fatalf("fallback lost inherited Turbo connection: %+v", observed)
+					}
+				} else if observed["api"] != "" || observed["token"] != "" {
+					t.Fatalf("bypass retained Turbo credentials: %+v", observed)
 				}
 			})
 		}
@@ -120,6 +134,8 @@ func TestTurboPolicyChildProcess(t *testing.T) {
 			_ = os.Setenv("LAYERCACHE_POLICY_HELPER", "observe")
 			if changed := os.Getenv("LAYERCACHE_POLICY_CHANGE"); changed != "" {
 				_ = os.Setenv("TURBO_CACHE", changed)
+				_ = os.Setenv("TURBO_API", "https://caller.example")
+				_ = os.Setenv("TURBO_TOKEN", "caller-token")
 			}
 			switch os.Getenv("LAYERCACHE_POLICY_PATH") {
 			case "scope":

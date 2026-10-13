@@ -27,10 +27,7 @@ func withoutTurboSyncPolicy(environment []string) []string {
 	if environmentValue(environment, "TURBO_CACHE") == turboSyncPolicy {
 		environment = replaceEnvironment(environment, "TURBO_CACHE", original)
 	}
-	for _, key := range []string{turboOriginalPolicyEnvironment, "TURBO_API", "TURBO_TOKEN", "TURBO_TEAM", "TURBO_RUN_SUMMARY"} {
-		environment = replaceEnvironment(environment, key, "")
-	}
-	return environment
+	return replaceEnvironment(environment, turboOriginalPolicyEnvironment, "")
 }
 
 func originalTurboPolicy(environment []string) (string, bool) {
