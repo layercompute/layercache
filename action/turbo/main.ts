@@ -23,6 +23,15 @@ export async function setupTurbo(
     .trim()
     .toLowerCase();
   const compatibility = (env.INPUT_COMPATIBILITY || '').trim();
+  const cacheMode = env['INPUT_CACHE-MODE'] || '';
+  const cachePolicies = new Map([
+    ['read-only', 'local:rw,remote:r'],
+    ['read-write', 'local:rw,remote:rw'],
+    ['fresh', 'local:,remote:'],
+  ]);
+  const turboCache = cachePolicies.get(cacheMode);
+  if (cacheMode !== '' && turboCache === undefined)
+    throw new Error('Invalid cache mode; use read-only, read-write, or fresh');
   const minutes = Number(env['INPUT_TTL-MINUTES'] || '30');
   const url = endpointURL(endpoint);
   if (url.protocol !== 'https:' || url.pathname !== '/')
@@ -72,6 +81,7 @@ export async function setupTurbo(
     TURBO_TEAM: project,
     TURBO_TOKEN: result.teamToken,
     TURBO_RUN_SUMMARY: 'true',
+    ...(turboCache === undefined ? {} : { TURBO_CACHE: turboCache }),
   }))
     write(env.GITHUB_ENV, key, value);
   if (state) write(env.GITHUB_STATE, 'layercache_turbo', JSON.stringify(state));
@@ -87,7 +97,7 @@ if (
 ) {
   setupTurbo().catch(() => {
     process.stdout.write(
-      '::error::Layer Cache authentication failed. Check the endpoint, project, compatibility, and id-token permission.\n',
+      '::error::Layer Cache authentication failed. Check the endpoint, project, compatibility, cache-mode, and id-token permission.\n',
     );
     process.exitCode = 1;
   });

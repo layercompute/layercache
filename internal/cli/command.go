@@ -33,6 +33,8 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", defaultPath, "configuration file")
+	syncTeam := flags.Bool("sync-team", false, "confirm successful Turbo task results are available to CI in Team Cache")
+	syncTimeout := flags.Duration("sync-timeout", 30*time.Second, "Team Cache confirmation timeout, from 1ms to 60s")
 	var transientBypasses stringList
 	flags.Var(&transientBypasses, "bypass", "bypass turbo, actions, buildkit, or all for this command (repeatable)")
 	if err := flags.Parse(args); err != nil {
@@ -41,6 +43,9 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	commandArgs := flags.Args()
 	if len(commandArgs) == 0 {
 		return errors.New("a command is required after --")
+	}
+	if *syncTimeout < time.Millisecond || *syncTimeout > time.Minute {
+		return errors.New("--sync-timeout must be from 1ms to 60s")
 	}
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -63,6 +68,9 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		activeBypasses[adapter] = true
 	}
 	cfg.BypassAdapters = canonicalAdapters(activeBypasses)
+	if *syncTeam && isAdapterBypassed(cfg, "turbo") {
+		return errors.New("--sync-team cannot be combined with Turbo bypass")
+	}
 	discovered, scopeErr := discoverConfiguredProject(ctx, cfg, "", flagWasSet(flags, "config") || cfg.ProjectRoot == "")
 	if scopeErr != nil {
 		_, _ = fmt.Fprintf(stderr, "Layer Cache warning: %v; bypassing Layer Cache for this command\n", scopeErr)
@@ -151,6 +159,11 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		// completed task graph is available after the child exits.
 		injected["TURBO_RUN_SUMMARY"] = "true"
 	}
+	if *syncTeam {
+		// The remote endpoint is our Local Cache daemon. Bypassing Turbo's
+		// Workspace cache keeps both cold and local-hit results publishable.
+		injected["TURBO_CACHE"] = "local:,remote:rw"
+	}
 	if isAdapterBypassed(cfg, "turbo") {
 		injected["TURBO_API"] = ""
 		injected["TURBO_TOKEN"] = ""
@@ -165,8 +178,10 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}
 	commandErr := command.Run()
 	finishedAt := time.Now().UTC()
+	var documents [][]byte
 	if summaryEnabled {
-		documents, summaryErr := turboSummaryDocuments(summaryRoots, summaryCollector.paths())
+		var summaryErr error
+		documents, summaryErr = turboSummaryDocuments(summaryRoots, summaryCollector.paths())
 		if summaryErr == nil && len(documents) > 0 {
 			var reconciled int
 			reconciled, summaryErr = reconcileTurboSummaries(
@@ -179,6 +194,9 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		if summaryErr != nil {
 			_, _ = fmt.Fprintf(stderr, "Layer Cache warning: Turbo Run Summary reconciliation failed: %v; Turbo ROI was not recorded\n", summaryErr)
 		}
+	}
+	if *syncTeam {
+		confirmTurboTeamResults(ctx, cfg, documents, now, finishedAt, *syncTimeout, stderr)
 	}
 	_, _ = fmt.Fprintf(stderr, "Layer Cache run: %s\n", runID)
 	if commandErr != nil {

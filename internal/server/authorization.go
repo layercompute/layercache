@@ -103,6 +103,9 @@ func (server *Server) localAdministratorClaims(request *http.Request, integratio
 
 func requiredRequestCapability(request *http.Request) (access.Capability, string) {
 	path := request.URL.Path
+	if path == "/v1/sync/turbo" {
+		return access.CapabilityWrite, "turbo"
+	}
 	if path == "/v1/reports/turbo" {
 		// Read-only PR capabilities may report their own signed job outcomes;
 		// this does not grant artifact publication or arbitrary run authority.

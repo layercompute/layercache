@@ -354,6 +354,7 @@ func (server *Server) routes() {
 	server.mux.Handle("GET /v1/reports", server.requireToken(http.HandlerFunc(server.periodReport)))
 	server.mux.Handle("GET /v1/reports/{runID}", server.requireToken(http.HandlerFunc(server.runReport)))
 	server.mux.Handle("POST /v1/reports/turbo", server.requireToken(http.HandlerFunc(server.reconcileTurboReport)))
+	server.mux.Handle("POST /v1/sync/turbo", server.requireToken(http.HandlerFunc(server.syncTurbo)))
 	server.cloudRoutes()
 	server.mux.Handle("GET /v8/artifacts/status", server.requireToken(http.HandlerFunc(server.turboStatus)))
 	server.mux.Handle("POST /v8/artifacts/events", server.requireToken(http.HandlerFunc(server.turboEvents)))

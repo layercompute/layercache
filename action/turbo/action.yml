@@ -9,6 +9,8 @@ inputs:
   compatibility:
     description: Explicit artifact ABI shared by compatible CI and local builds.
     required: true
+  cache-mode:
+    description: Optional Turbo policy, read-only, read-write, or fresh. Unset preserves the existing policy.
   ttl-minutes:
     description: Credential lifetime, from 1 to 60 minutes.
     default: '30'

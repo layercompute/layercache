@@ -44,9 +44,41 @@ GitHub's signature, issuer, expiry, repository, and project audience are checked
 workflow filenames are not separately allowlisted. Project members and the cache
 administrator remain trusted writers through their own credentials.
 
+## Cache policy
+
+Set the optional `cache-mode` input to control subsequent Turbo commands:
+
+| Mode | `TURBO_CACHE` | Behavior |
+| --- | --- | --- |
+| `read-only` | `local:rw,remote:r` | Reuse workspace and Team Cache results; write only to the workspace cache. |
+| `read-write` | `local:rw,remote:rw` | Reuse and publish results where the credential permits writes. |
+| `fresh` | `local:,remote:` | Execute tasks without reading or writing either cache. |
+
+Leaving the input unset exports no `TURBO_CACHE` value and preserves existing
+behavior. Mode names are exact and case-sensitive. `read-write` does not grant
+additional authority; the server still enforces the writer rules above.
+
+Required PR checks can keep running their Turbo commands while reusing matching
+results. To force fresh tasks on main, choose a policy in the workflow:
+
+```yaml
+- uses: ziahamza/layercache/action/turbo@main
+  with:
+    team-url: https://layer-cache.ziahamza.com
+    compatibility: linux-amd64-node24-schema1
+    cache-mode: ${{ github.ref == 'refs/heads/main' && 'fresh' || 'read-only' }}
+- run: pnpm turbo run test build
+```
+
+Fresh mode still authenticates and collects run summaries. It applies to Turbo's
+task-result caches; test runners and build tools may have their own caches.
+An explicit Turbo `--cache` flag overrides `TURBO_CACHE`, so remove conflicting
+flags when selecting policy through this input. See the
+[Turbo cache options](https://turborepo.dev/docs/reference/run#--cache-options).
+
 This action does not require Public Builds or a published CLI release. Turbo
-keeps its ordinary local cache. Full Local Cache management is provided by
-`action/setup`.
+keeps its ordinary local cache unless `cache-mode: fresh` disables it. Full Local
+Cache management is provided by `action/setup`.
 
 ## Build-time reports
 

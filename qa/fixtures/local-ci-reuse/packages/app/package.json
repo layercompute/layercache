@@ -1,0 +1,8 @@
+{
+  "name": "@layercache/local-ci-reuse-app",
+  "private": true,
+  "scripts": {
+    "build": "node task.mjs build",
+    "test": "node task.mjs test"
+  }
+}

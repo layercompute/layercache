@@ -59,11 +59,73 @@ test('invalid configuration makes no request or environment write', async () => 
     );
   }
 });
+test('cache modes export Turbo policy only after authentication succeeds', async () => {
+  for (const [mode, policy] of [
+    ['read-only', 'local:rw,remote:r'],
+    ['read-write', 'local:rw,remote:rw'],
+    ['fresh', 'local:,remote:'],
+  ]) {
+    const writes: Array<[string, string, string]> = [];
+    let requests = 0;
+    await setupTurbo({ ...env, 'INPUT_CACHE-MODE': mode }, {
+      fetcher: async () => {
+        assert.equal(writes.length, 0, 'policy must wait for authentication');
+        requests++;
+        return Response.json(
+          requests === 1
+            ? { value: 'identity-fixture' }
+            : {
+                teamToken: 'token-fixture',
+                expiresAt: new Date(Date.now() + 1800_000).toISOString(),
+              },
+        );
+      },
+      log: () => {},
+      write: (...args) => writes.push(args),
+    });
+    assert.equal(requests, 2);
+    assert.deepEqual(
+      writes.filter(([path, key]) => path === 'env' && key === 'TURBO_CACHE'),
+      [['env', 'TURBO_CACHE', policy]],
+    );
+  }
+});
+test('invalid cache modes fail before authentication or exports', async () => {
+  for (const mode of [
+    'Read-only',
+    'READ-WRITE',
+    'read_only',
+    'read-write,fresh',
+    'local:rw,remote:r',
+    ' read-only',
+    'fresh\n',
+    'constructor',
+  ]) {
+    await assert.rejects(
+      setupTurbo({ ...env, 'INPUT_CACHE-MODE': mode }, {
+        fetcher: () => assert.fail('request'),
+        write: () => assert.fail('write'),
+      }),
+      /Invalid cache mode/,
+    );
+  }
+});
 test('authentication failure exports no credential', async () => {
-  await assert.rejects(
-    setupTurbo(env, {
-      fetcher: async () => new Response(null, { status: 403 }),
-      write: () => assert.fail('write'),
-    }),
-  );
+  for (const mode of ['', 'read-only', 'read-write', 'fresh']) {
+    for (const deniedRequest of [1, 2]) {
+      let requests = 0;
+      await assert.rejects(
+        setupTurbo({ ...env, 'INPUT_CACHE-MODE': mode }, {
+          fetcher: async () => {
+            requests++;
+            return requests === deniedRequest
+              ? new Response(null, { status: 403 })
+              : Response.json({ value: 'identity-fixture' });
+          },
+          log: () => {},
+          write: () => assert.fail('write'),
+        }),
+      );
+    }
+  }
 });
