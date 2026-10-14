@@ -58,8 +58,8 @@ producer's results. The existing PR lane uses read-only remote access. The
 actual source and timings: 3m20.413s in Turbo and 8m28s for the complete unit job.
 Setup takes 2m22s, native tooling contracts 1m03s, resource checks 36s and post-job
 work 54s. Those are observed job spans, not billing receipts or a controlled
-before/after comparison. Required Android/iOS native QA is still running before
-landing. Keep local task, hosted job and monthly cost measures separate.
+before/after comparison. Required Android/iOS native acceptance remains pending before landing.
+The first iOS RunCloud attempt failed; its build log is under diagnosis. Keep local task, hosted job and monthly cost measures separate.
 
 The active Phone CI owner keeps signed-provider trials, setup and required
 retained-artifact transfers in [#295](https://github.com/ziahamza/phone-app/pull/295).
