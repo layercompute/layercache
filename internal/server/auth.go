@@ -164,6 +164,11 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 			server.writeCapabilityExchangeFailure(writer, request)
 			return
 		}
+		role, err := server.projectAuthority.GitHubActionsRole(request.Context(), server.config.ProjectID, identity.ActorID)
+		if err != nil || role != "writer" {
+			server.writeCapabilityExchangeFailure(writer, request)
+			return
+		}
 	}
 	recipe, platform, toolchain, builder := "", "", "", ""
 	validPublicIdentity := true
@@ -220,7 +225,8 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 		WorkspaceID:   "github-actions-check:" + strings.ToLower(identity.Repository) + ":" + identity.CheckRunID,
 		Compatibility: input.Compatibility, Repository: strings.ToLower(identity.Repository),
 		Ref: identity.Ref, DefaultRef: server.config.ActionsDefaultRef, SourceCommit: strings.ToLower(identity.Commit),
-		RecipeDigest: recipe, Target: target, Platform: platform, Toolchain: toolchain, Builder: builder,
+		ActionsActorID: identity.ActorID,
+		RecipeDigest:   recipe, Target: target, Platform: platform, Toolchain: toolchain, Builder: builder,
 		Capabilities: capabilities, ExpiresAt: expiresAt,
 	}, now)
 	if err != nil {

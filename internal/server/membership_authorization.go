@@ -11,8 +11,13 @@ import (
 // issuance. Database failures deny access; token capabilities remain an upper bound.
 func (server *Server) currentMembershipAllows(ctx context.Context, claims access.Claims, required access.Capability) bool {
 	if server.projectAuthority != nil {
-		if strings.HasPrefix(claims.Subject, "runtime-admin:") || strings.HasPrefix(claims.Subject, "github-actions:") {
+		if strings.HasPrefix(claims.Subject, "runtime-admin:") {
 			return true
+		}
+		if strings.HasPrefix(claims.Subject, "github-actions:") {
+			role, err := server.projectAuthority.GitHubActionsRole(ctx, server.config.ProjectID, claims.ActionsActorID)
+			capabilities, ok := capabilitiesForRole(role)
+			return err == nil && ok && (access.Claims{Capabilities: capabilities}).Allows(required)
 		}
 		role, err := server.projectAuthority.MemberRole(ctx, server.config.ProjectID, claims.Subject)
 		capabilities, ok := capabilitiesForRole(role)

@@ -5,15 +5,20 @@ Layer Cache describes how engineers reuse build artifacts across machines and tr
 ## Language
 
 **Local Cache**:
-A private cache shared by builds on one engineer's machine.
+A bounded cache on one machine that stores reusable artifacts from authorized visibility tiers.
 _Avoid_: Local Store, local tier
+
+**Personal Cache**:
+A private cache owned by one stable user identity and reusable across that user's machines and authorized CI.
+_Avoid_: Local Cache when describing access scope, personal team
 
 **Team**:
 A group of engineers sharing project access through administrator, writer, and reader roles.
-_Avoid_: Organization, tenant
+An organization can use one or more teams.
+_Avoid_: tenant
 
 **Project**:
-A team's repository-backed boundary for cache artifacts and build activity. The same repository can belong to distinct projects in different teams without sharing their artifacts.
+A repository-backed boundary for cache artifacts and build activity within Personal Cache or Team Cache. The same repository can belong to distinct projects without sharing their artifacts.
 _Avoid_: Workspace, cache namespace
 
 **Team Cache**:
@@ -23,6 +28,10 @@ _Avoid_: Project Cache, team store, team tier
 **Public Cache**:
 A globally readable cache containing artifacts produced only by Public Builds.
 _Avoid_: Global Cache, global tier, public store
+
+**Full build context**:
+The source, dependencies, toolchain, configuration and environment declared by the native build system as inputs to a task. Personal Cache and Team Cache reuse outputs for that complete input identity.
+_Avoid_: Commit-only cache identity, cached commit check
 
 **Public Build**:
 A Layer Cache-controlled build whose outputs may be published to the Public Cache. Engineers may request a Public Build but cannot publish its artifacts themselves.

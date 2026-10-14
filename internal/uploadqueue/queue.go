@@ -51,7 +51,10 @@ const (
 
 type Outcome string
 
-const OutcomeUploaded Outcome = "uploaded"
+const (
+	OutcomeUploaded       Outcome = "uploaded"
+	OutcomeAlreadyPresent Outcome = "already_present"
+)
 
 type Target struct {
 	Scope    Scope
@@ -369,7 +372,7 @@ func (queue *Queue) Stats(ctx context.Context) (Stats, error) {
 
 // Unfinished returns the durable work that still needs its referenced Local
 // Cache artifact. Both pending jobs and jobs with a live or expired worker
-// lease remain unfinished until Complete records the upload outcome.
+// lease remain unfinished until a terminal publication outcome is recorded.
 func (queue *Queue) Unfinished(ctx context.Context) ([]Job, error) {
 	rows, err := queue.database.QueryContext(ctx, selectJob+`
 		WHERE state IN ('pending', 'leased')
@@ -438,6 +441,17 @@ func (queue *Queue) Claim(ctx context.Context) (Lease, error) {
 // Complete marks a claimed job as uploaded. Repeating completion with the
 // lease that finalized the job returns the same final job.
 func (queue *Queue) Complete(ctx context.Context, lease Lease) (Job, error) {
+	return queue.complete(ctx, lease, OutcomeUploaded)
+}
+
+// CompleteAlreadyPresent records that the destination already has a valid
+// artifact at this identity, without claiming these Local bytes were uploaded.
+// The caller must verify the destination's authenticated metadata first.
+func (queue *Queue) CompleteAlreadyPresent(ctx context.Context, lease Lease) (Job, error) {
+	return queue.complete(ctx, lease, OutcomeAlreadyPresent)
+}
+
+func (queue *Queue) complete(ctx context.Context, lease Lease, outcome Outcome) (Job, error) {
 	if lease.Job.ID == "" || lease.Generation <= 0 {
 		return Job{}, ErrLeaseLost
 	}
@@ -446,11 +460,12 @@ func (queue *Queue) Complete(ctx context.Context, lease Lease) (Job, error) {
 		UPDATE team_upload_jobs_v1
 		SET state = 'completed',
 			lease_expires_at = NULL,
-			final_outcome = 'uploaded',
+			final_outcome = ?,
 			updated_at = ?,
 			completed_at = ?
 		WHERE id = ? AND state = 'leased' AND lease_generation = ?
 		RETURNING `+jobColumns,
+		outcome,
 		now.UnixNano(),
 		now.UnixNano(),
 		lease.Job.ID,
@@ -470,7 +485,7 @@ func (queue *Queue) Complete(ctx context.Context, lease Lease) (Job, error) {
 		return Job{}, getErr
 	}
 	if existing.State == StateCompleted &&
-		existing.Outcome == OutcomeUploaded &&
+		existing.Outcome == outcome &&
 		existing.LeaseGeneration == lease.Generation {
 		return existing, nil
 	}

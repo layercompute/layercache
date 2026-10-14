@@ -96,6 +96,9 @@ type ProjectAuthority interface {
 	// RepositoryID is the original immutable GitHub repository identity captured
 	// when an administrator provisioned the managed project.
 	RepositoryID(context.Context, string) (string, error)
+	// GitHubActionsRole applies the project's workflow delegation policy to the
+	// signed stable actor identity. Personal projects authorize only their owner.
+	GitHubActionsRole(context.Context, string, string) (string, error)
 }
 
 func NewWithProjectAuthority(ctx context.Context, cfg config.Config, authority ProjectAuthority) (*Server, error) {

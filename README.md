@@ -1,6 +1,6 @@
 # Layer Cache
 
-Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache, speaks native cache protocols, and can fall back to a shared Team Cache or a verified Public Cache.
+Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache and speaks native cache protocols. Cache visibility has three tiers: Personal Cache, Team Cache and verified Public Cache.
 
 This repository contains working implementations for Turborepo, GitHub Actions
 cache v1, Docker Buildx/BuildKit, Xcode's LLVM compilation-cache protocol, and
@@ -33,10 +33,16 @@ The installer requires `gh`, `jq`, `tar`, and `shasum`; it checks the immutable 
 
 | Name | Who can read or request | Who can write or complete | Current implementation |
 | --- | --- | --- | --- |
-| Local Cache | One machine | Local Builds | Filesystem CAS and SQLite metadata with a configured quota, default LRU, and opt-in impact-based eviction |
+| Personal Cache | The owner and owner-authorized CI | The owner and owner-authorized CI | Owner-only projects on the existing private cache engine, with distinct project identities and no invitations |
 | Team Cache | Authorized members and project capabilities | Project writers and administrators | PostgreSQL logical records and S3-compatible immutable bytes; embedded persistence remains available for local development |
 | Public Cache | Verified readers | Only the trusted collector | Signed immutable publications, online revocation, ambiguity handling, and complete digest verification |
-| Public Build | Authorized clients | Fenced workers and the trusted host collector | PostgreSQL-backed coordination plus a Linux KVM/QEMU worker with no guest network, read-only source, bounded resources, and host-side publication |
+
+Local Cache is the bounded storage on each machine, underneath those visibility
+tiers. Public Builds are the controlled publication path for Public Cache.
+Personal Cache and Team Cache use full build context by default through the
+native build system's declared inputs, outputs and toolchain identity. Private
+artifacts are never automatically promoted to Public Cache. See the
+[tier and input contract](docs/cache-tiers.md) for access, context and qualification.
 
 A Workspace is a checkout and execution environment, including a Git worktree or disposable VM. A Workspace can disappear while Local Cache or Team Cache artifacts remain reusable.
 

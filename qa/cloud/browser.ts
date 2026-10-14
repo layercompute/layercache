@@ -85,6 +85,28 @@ try{
  await check('reader can see cache and cannot administer or create teams',async()=>{assert.equal(await bob.getByRole('button',{name:'Create team',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Create project',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Send invitation',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Save role',exact:true}).count(),0);assert.match(await bob.locator('main').innerText(),/reader/);});
  await check('administrator promotes reader to writer',async()=>{await alice.getByRole('button',{name:'Refresh',exact:true}).click();await alice.getByLabel('Role for bob').selectOption('writer');const member=alice.locator('.member').filter({has:alice.getByText('@bob',{exact:true})});await member.getByRole('button',{name:'Save role'}).click();await alice.getByText('Role updated.',{exact:true}).waitFor();await bob.getByRole('button',{name:'Refresh',exact:true}).click();await bob.getByText('Acme engineering / writer',{exact:true}).waitFor();assert.equal(await bob.getByRole('button',{name:'Create project',exact:true}).count(),0);});
  await check('session survives reload and reporting period changes',async()=>{await bob.reload();await bob.getByText('10.0 KiB',{exact:true}).waitFor();const response=bob.waitForResponse(r=>r.url().includes('/snapshot?period=7d'));await bob.getByLabel('Reporting period').selectOption('7d');assert.equal((await response).status(),200);});
+ await check('personal cache is owner-only and preserves the shared project',async()=>{
+  assert.equal(await bob.getByRole('button',{name:'Create Personal Cache',exact:true}).count(),0);
+  await alice.getByRole('button',{name:'Create Personal Cache',exact:true}).click();
+  await alice.getByText('Personal Cache created. Only your account can access it.',{exact:true}).waitFor();
+  await alice.getByRole('heading',{name:'Personal access',exact:true}).waitFor();
+  assert.equal(await alice.getByRole('button',{name:'Send invitation',exact:true}).count(),0);
+  assert.equal(await alice.getByRole('button',{name:'Save role',exact:true}).count(),0);
+  const add=form(alice,'Add project');await add.getByLabel('Project name').fill('Private web');await add.getByLabel('GitHub repository').fill('acme/web');await add.getByRole('button',{name:'Create project',exact:true}).click();
+  await alice.getByText('Project created. Connect your CLI to start caching.',{exact:true}).waitFor();
+  await alice.getByText('No measured lookups',{exact:true}).waitFor();
+  const command=await alice.locator('pre').innerText(),privateProject=command.match(/--project '([^']+)'/)![1]!;
+  assert.notEqual(privateProject,project);
+  await bob.getByRole('button',{name:'Refresh',exact:true}).click();
+  assert.equal(await bob.getByRole('heading',{name:'Private web',exact:true}).count(),0);
+  assert.equal((await bob.request.get(origin+`/api/projects/${privateProject}/snapshot`)).status(),403);
+  const info=await (await alice.request.get(origin+'/api/session')).json() as {csrfToken:string;teams:{id:string;kind:string}[]};
+  const personal=info.teams.find(t=>t.kind==='personal')!;
+  assert.equal((await alice.request.post(origin+`/api/teams/${personal.id}/invitations`,{headers:{Origin:origin,'X-CSRF-Token':info.csrfToken},data:{login:'bob',role:'reader'}})).status(),403);
+  await alice.reload();await alice.getByLabel('Team',{exact:true}).selectOption({label:'Personal Cache'});await alice.getByRole('heading',{name:'Private web',exact:true}).waitFor();
+  assert.equal(await alice.getByRole('button',{name:'Create Personal Cache',exact:true}).count(),0);
+  await alice.getByLabel('Team',{exact:true}).selectOption({label:'Acme engineering'});await alice.getByText('10.0 KiB',{exact:true}).waitFor();
+ });
  for(const width of [320,390,768,1440])await check(`viewport ${width}`,async()=>{await alice.setViewportSize({width,height:900});assert.equal(await alice.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await alice.screenshot({path:path.join(output,`viewport-${width}.png`),fullPage:true});});
  await check('last administrator protection reaches UI',async()=>{await alice.getByLabel('Role for alice').selectOption('reader');const member=alice.locator('.member').filter({has:alice.getByText('@alice',{exact:true})});await member.getByRole('button',{name:'Save role'}).click();await alice.getByRole('alert').filter({hasText:'last administrator'}).waitFor();});
  await check('remove member immediately removes project visibility',async()=>{alice.once('dialog',dialog=>dialog.accept());await alice.locator('.member').filter({has:alice.getByText('@bob',{exact:true})}).getByRole('button',{name:'Remove'}).click();await alice.getByText('Member removed.',{exact:true}).waitFor();await bob.getByRole('button',{name:'Refresh',exact:true}).click();await bob.getByRole('heading',{name:'Welcome to your cloud workspace'}).waitFor();assert.equal(await bob.getByRole('heading',{name:'Web app',exact:true}).count(),0);});
