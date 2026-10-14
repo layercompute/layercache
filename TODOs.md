@@ -140,29 +140,39 @@ hit counts alone.
 ## P2: broaden after measured value
 
 - [ ] **Qualify an isolated pinned bazel-remote sidecar, then sccache.**
-  Start with a real personal workload. Preserve per-project/profile isolation;
+  Owner: LayerCache. Next: select a real personal workload and pin the engine.
+  Preserve per-project/profile isolation;
   an instance-name label alone is not an access boundary. Reuse permissively
   licensed engines and native clients. Follow [the OSS plan](docs/oss-integration-plan.md).
-- [ ] **Qualify the existing operator gateway upgrade.** Preserve current
+- [ ] **Qualify the existing operator gateway upgrade.**
+  Owner: LayerCache/operator. Next: build an exact-source candidate and test a
+  disposable recovery copy before changing the gateway. Preserve current
   project configs/backends/routes and unrelated deployment edits. Build an
   exact-source image, test an isolated recovery copy and authenticated restores,
   then update only the gateway. Record rollback compatibility for issued tokens.
 - [ ] **Deploy limited self-serve only after live inputs are configured.**
+  Owner: LayerCache/operator. Next: configure the approved cohort and real OAuth.
   Real OAuth, numeric cohort, isolated bounded storage and two-user upload,
   fresh restore, removal and restart acceptance remain launch gates.
-- [ ] **Make private CI onboarding repeatable.** Provide copyable setup pinned
-  to a verified release and execution profile. Prove publication and an empty
+- [ ] **Make private CI onboarding repeatable.**
+  Owner: LayerCache, with application workflow owners. Next: qualify one pinned
+  example through a trusted producer and an empty compatible consumer.
+  Provide copyable setup pinned to a verified release and execution profile.
+  Prove publication and an empty
   consumer restore, preserve task execution on misses, and report source,
   bytes, hit status, transfer overhead and whole-job time in the dashboard.
   Resolve repository renames against the stored immutable numeric GitHub
   repository identity. Qualify Parle's native Safari reuse separately after
   Phone's cache path is working.
-- [ ] **Improve measured cache admission and reporting.** Preserve hard
-  budgets and correct graph/read leases. Collect representative native traces
+- [ ] **Improve measured cache admission and reporting.**
+  Owner: LayerCache. Next: collect native traces with physical storage and
+  whole-job timings. Preserve hard budgets and correct graph/read leases.
+  Collect representative native traces
   before changing LRU. Count physical staging/deletion/metadata and report
   avoided work after lookup/transfer/verification overhead.
 - [ ] **Revisit machine management, hosted runners, Windows, Actions v2,
   a wider adapter SDK and Public Builds.**
+  Owner: LayerCache. Next: reassess scope after useful private reuse is measured.
   Promote only after useful cross-machine reuse and costs are established.
   Public population stays confined to LayerCache-controlled builds.
 
