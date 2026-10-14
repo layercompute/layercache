@@ -56,6 +56,7 @@ type observations struct {
 	QueryToLastGraphReadNanos  int64    `json:"queryToLastPromisedReadNanos"`
 	PromisedRoot               string   `json:"promisedRoot"`
 	InlineActionRoot           bool     `json:"inlineActionRoot"`
+	NativeExternalRoots        int      `json:"nativeExternalRoots"`
 	PromisedObjects            int      `json:"promisedObjects"`
 	GraphObjectsInspected      int      `json:"graphObjectsInspected"`
 	AvailablePromisedObjects   int      `json:"availablePromisedObjects"`
@@ -75,6 +76,7 @@ type pressureProxy struct {
 	actions        kv.KeyValueDBClient
 	db             *sql.DB
 	storeRoot      string
+	minNativeRoots int
 	mu             sync.Mutex
 	once           sync.Once
 	graph          map[string]bool
@@ -91,7 +93,7 @@ type pressureProxy struct {
 }
 
 func newProxy(objects cas.CASDBServiceClient, actions kv.KeyValueDBClient, db *sql.DB, quota int64) *pressureProxy {
-	return &pressureProxy{objects: objects, actions: actions, db: db, graph: make(map[string]bool), reads: make(map[string]int), references: make(map[string][]string), fetched: make(map[string]bool), failed: make(map[string]bool), stats: observations{QuotaBytes: quota}}
+	return &pressureProxy{objects: objects, actions: actions, db: db, minNativeRoots: 1, graph: make(map[string]bool), reads: make(map[string]int), references: make(map[string][]string), fetched: make(map[string]bool), failed: make(map[string]bool), stats: observations{QuotaBytes: quota}}
 }
 
 func (p *pressureProxy) usage(ctx context.Context) (int64, error) {
@@ -364,9 +366,26 @@ func (p *pressureProxy) GetValue(ctx context.Context, request *kv.GetValueReques
 			return nil, status.Error(codes.Internal, "successful action contains an unsupported graph")
 		}
 		if len(roots) > 0 {
+			nativeRoots := 0
+			_, native := response.GetValue().GetEntries()["value"]
+			if native {
+				identities := make(map[string]bool)
+				for _, root := range roots {
+					identities[string(root.ID)] = true
+				}
+				nativeRoots = len(identities)
+			}
+			if (native || p.minNativeRoots > 1) && nativeRoots < p.minNativeRoots {
+				return response, err
+			}
 			_, relay := response.GetValue().GetEntries()["CASID"]
 			inline := !relay
-			p.once.Do(func() { p.applyPressure(ctx, roots, inline, queried) })
+			p.once.Do(func() {
+				p.mu.Lock()
+				p.stats.NativeExternalRoots = nativeRoots
+				p.mu.Unlock()
+				p.applyPressure(ctx, roots, inline, queried)
+			})
 			p.mu.Lock()
 			pressureError := p.stats.PressureError
 			p.mu.Unlock()
@@ -451,15 +470,17 @@ func run(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("pressure-proxy", flag.ContinueOnError)
 	var socket, store, statsPath string
 	var quota int64
+	var minNativeRoots int
 	flags.StringVar(&socket, "socket", "", "private absolute proxy socket")
 	flags.StringVar(&store, "store", "", "existing adapter store")
 	flags.StringVar(&statsPath, "stats", "", "pressure evidence JSON")
 	flags.Int64Var(&quota, "quota", 0, "candidate committed artifact quota")
+	flags.IntVar(&minNativeRoots, "min-native-roots", 1, "minimum distinct external roots in a native action selected for pressure")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	command := append([]string(nil), flags.Args()...)
-	if len(command) == 0 || !filepath.IsAbs(socket) || len(socket) > 100 || quota < 64 || quota > 2<<30 || store == "" || statsPath == "" {
+	if len(command) == 0 || !filepath.IsAbs(socket) || len(socket) > 100 || quota < 64 || quota > 2<<30 || store == "" || statsPath == "" || minNativeRoots < 1 || minNativeRoots > maximumObservedObjects {
 		return errors.New("socket, store, bounded quota, stats and compiler command are required")
 	}
 	const prefix = "COMPILATION_CACHE_REMOTE_SERVICE_PATH="
@@ -491,6 +512,7 @@ func run(ctx context.Context, args []string) error {
 	defer db.Close()
 	proxy := newProxy(cas.NewCASDBServiceClient(connection), kv.NewKeyValueDBClient(connection), db, quota)
 	proxy.storeRoot = store
+	proxy.minNativeRoots = minNativeRoots
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		return err

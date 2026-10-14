@@ -89,7 +89,7 @@ PY
     --max-size "$quota" \
     --project github.com/ziahamza/layercache --compatibility "$abi" \
     --stats-file "$evidence/pressure-stats.json" \
-    -- "$pressure_proxy" --store "$evidence/pressure-store" --quota "$quota" \
+    -- "$pressure_proxy" --store "$evidence/pressure-store" --quota "$quota" --min-native-roots 2 \
     --socket "$evidence/socket/pressure.sock" --stats "$evidence/pressure-proxy.json" \
     -- xcodebuild -project "$evidence/project/Probe.xcodeproj" -scheme Probe \
     -configuration Release -derivedDataPath "$evidence/derived-pressure" \
@@ -105,7 +105,8 @@ stats=json.loads((root/'pressure-stats.json').read_text())
 assert pressure['pressurePayloadBytes'] > pressure['quotaBytes'], pressure
 assert pressure['evictedBytes'] > 0, pressure
 assert pressure['maxObservedUsageBytes'] <= pressure['quotaBytes'], pressure
-assert pressure['graphObjectsInspected'] == pressure['promisedObjects'] > 0, pressure
+assert pressure['inlineActionRoot'] and pressure['nativeExternalRoots'] >= 2, pressure
+assert pressure['graphObjectsInspected'] == pressure['promisedObjects'] >= 2, pressure
 assert pressure['availablePromisedObjects'] == pressure['promisedObjects'], pressure
 assert pressure['pressureDurationNanos'] > 0, pressure
 assert pressure['pressureDurationNanos'] <= pressure['queryToFirstPromisedReadNanos'] <= pressure['queryToLastPromisedReadNanos'] < 120_000_000_000, pressure

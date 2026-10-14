@@ -102,15 +102,70 @@ func TestNativePressureRejectsEvictedUnconsumedDescendantBeforeForwardingHit(t *
 }
 
 func qaNativeNode(data []byte, id []byte, node bool) []byte {
+	return qaNativeRoots(data, xcodecache.GraphReference{ID: id, NativeNode: node})
+}
+
+func qaNativeRoots(data []byte, refs ...xcodecache.GraphReference) []byte {
 	field := func(number protowire.Number, value []byte) []byte {
 		return protowire.AppendBytes(protowire.AppendTag(nil, number, protowire.BytesType), value)
 	}
 	encoded := field(1, field(1, data))
-	descriptor := append(field(1, make([]byte, 65)), field(2, id)...)
-	if node {
-		descriptor = protowire.AppendVarint(protowire.AppendTag(descriptor, 3, protowire.VarintType), 1)
+	for _, ref := range refs {
+		descriptor := append(field(1, make([]byte, 65)), field(2, ref.ID)...)
+		if ref.NativeNode {
+			descriptor = protowire.AppendVarint(protowire.AppendTag(descriptor, 3, protowire.VarintType), 1)
+		}
+		encoded = append(encoded, field(2, field(2, descriptor))...)
 	}
-	return append(encoded, field(2, field(2, descriptor))...)
+	return encoded
+}
+
+func TestNativePressureSelectsDistinctExternalRootsWithoutConsumingEarlierHit(t *testing.T) {
+	fixture := newNativePressureFixture(t)
+	fixture.proxy.minNativeRoots = 2
+	objects, actions := connect(t, fixture.proxy)
+	ctx := context.Background()
+	if hit, err := actions.GetValue(ctx, &kv.GetValueRequest{Key: []byte("native-action")}); err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS || !bytes.Equal(hit.GetValue().Entries["value"], fixture.value) {
+		t.Fatalf("earlier single-root hit was not forwarded normally: %v %v", hit, err)
+	}
+	if output, err := objects.Load(ctx, &cas.CASLoadRequest{CasId: fixture.leaf}); err != nil || output.GetOutcome() != cas.CASLoadResponse_SUCCESS {
+		t.Fatalf("earlier ordinary compiler read: %v %v", output, err)
+	}
+	if stats := fixture.proxy.snapshot(); stats.PressureWrites != 0 || stats.PromisedRoot != "" || stats.validate() == nil {
+		t.Fatalf("single-root-only producer falsely qualified: %+v", stats)
+	}
+	if _, err := fixture.actions.PutValue(ctx, &kv.PutValueRequest{Key: []byte("relay-root"), Value: &kv.Value{Entries: map[string][]byte{"CASID": fixture.node.Id}}}); err != nil {
+		t.Fatal(err)
+	}
+	if hit, err := actions.GetValue(ctx, &kv.GetValueRequest{Key: []byte("relay-root")}); err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS || fixture.proxy.snapshot().PressureWrites != 0 {
+		t.Fatalf("relay root consumed the native multiple-root attempt: %v %v", hit, err)
+	}
+	nodeRef := xcodecache.GraphReference{ID: fixture.node.Id, NativeNode: true}
+	for _, item := range []struct {
+		key  string
+		refs []xcodecache.GraphReference
+	}{
+		{"duplicate-root", []xcodecache.GraphReference{nodeRef, nodeRef}},
+		{"multiple-roots", []xcodecache.GraphReference{nodeRef, {ID: fixture.leaf.Id}}},
+	} {
+		value := qaNativeRoots([]byte(item.key), item.refs...)
+		if response, err := fixture.actions.PutValue(ctx, &kv.PutValueRequest{Key: []byte(item.key), Value: &kv.Value{Entries: map[string][]byte{"value": value}}}); err != nil || response.GetError() != nil {
+			t.Fatalf("store %s action: %v %v", item.key, response, err)
+		}
+		if response, err := actions.GetValue(ctx, &kv.GetValueRequest{Key: []byte(item.key)}); err != nil || response.GetOutcome() != kv.GetValueResponse_SUCCESS {
+			t.Fatalf("lookup %s action: %v %v", item.key, response, err)
+		}
+		if item.key == "duplicate-root" && fixture.proxy.snapshot().PressureWrites != 0 {
+			t.Fatal("duplicate descriptors substituted for two distinct external roots")
+		}
+	}
+	if output, err := objects.Load(ctx, &cas.CASLoadRequest{CasId: fixture.leaf}); err != nil || output.GetOutcome() != cas.CASLoadResponse_SUCCESS {
+		t.Fatalf("selected action output lost after pressure: %v %v", output, err)
+	}
+	stats := fixture.proxy.snapshot()
+	if err := stats.validate(); err != nil || stats.NativeExternalRoots != 2 || stats.PromisedObjects != 2 || stats.AvailablePromisedObjects != 2 || stats.CompilerGraphReads != 1 {
+		t.Fatalf("multiple-root pressure qualification: %v %+v", err, stats)
+	}
 }
 
 type nativePressureFixture struct {

@@ -69,6 +69,9 @@ until quota eviction occurs, then forwards the response. Before and after those
 writes, bounded read-only SQLite and blob inspection verifies every promised
 object's metadata, bytes, hash and complete reachable graph. It sends no helper
 CAS read RPCs, so the inspection does not inflate compiler hit counts.
+The Mac fixture selects a native action with at least two distinct external
+roots and requires both to survive; earlier single-root hits pass through
+normally. A producer with only single-root actions cannot qualify this gate.
 
 The compiler must actually read at least one promised object after pressure,
 produce the correct executable, and report no failed promised reads, retry or
