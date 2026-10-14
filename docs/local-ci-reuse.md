@@ -59,7 +59,7 @@ permissions:
   id-token: write
 steps:
   # Check out the project and install its pinned tools and dependencies first.
-  - uses: ziahamza/layercache/action/turbo@d99e6f685b5db878b924181926399c57be9f16d7
+  - uses: ziahamza/layercache/action/turbo@ca3d5889a52815bce9565d3825b081839ac7077b
     with:
       team-url: https://cache.example.com
       compatibility: linux-x64-node24.13.0-pnpm10.34.5-tests-v1

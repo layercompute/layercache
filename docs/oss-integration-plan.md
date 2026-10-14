@@ -1,55 +1,81 @@
 # Native OSS integrations and three visibility tiers
 
-Research snapshot: 2026-10-14. Repository baseline
-`1d7ebdffafb81fa00e81721113264122bbb0aa65`. Recommendations below are proposed,
-unless marked implemented. No provider migration or adapter implementation is
-implied by this note.
+## Current implementation status, 2026-10-14
+
+Owner-only Personal Cache projects merged in
+[#28](https://github.com/ziahamza/layercache/pull/28). Permanent Turbo conflict
+handling and pin retirement merged in
+[#27](https://github.com/ziahamza/layercache/pull/27), and installed-release QA
+corrections merged in [#29](https://github.com/ziahamza/layercache/pull/29).
+
+Nx [#31](https://github.com/ziahamza/layercache/pull/31) merged using the
+released native client for Local and direct Personal/Team HTTP endpoints.
+Linux and macOS real-client CI passed. Local-to-private read-through, durable
+Nx publication, publication confirmation and reporting remain unimplemented.
+
+Complete Xcode graph retention merged in
+[#30](https://github.com/ziahamza/layercache/pull/30) after the real macOS gate
+restored an action with two distinct native output roots under eviction.
+Beta.4 includes both integrations and the owner-only Personal model; see the
+[release and installer qualification](../scripts/README.md). These features do
+not activate the hosted self-serve service.
+
+Complete the Nx private-cache bridge and measure real Phone whole-job savings
+first. Qualify native Gradle HTTP for Phone Android next, then an isolated,
+pinned `bazel-remote` sidecar and sccache. Keep native clients responsible for
+task hashing, execution and archive packing.
+
+The protocol research below began at repository baseline
+`1d7ebdffafb81fa00e81721113264122bbb0aa65` on 2026-10-14. Its pinned-source
+observations are retained; the status above and remaining-work sections describe
+the later implementation state.
 
 ## Keep visibility separate from storage location
 
 Personal, team/organization and public are access boundaries. Local disk and a
-remote service are storage locations. A personal cache can eventually span an
-owner's machines without becoming team-readable. Both private tiers should
+remote service are storage locations. A personal cache can span an owner's
+machines without becoming team-readable. Both private tiers
 retain the native tool's complete cache payload, including declared outputs and
 logs, by default. Complete task inputs remain the tool's responsibility; an
 opaque archive cannot repair an incomplete fingerprint.
 
-| Boundary | Implemented baseline | Required next behavior |
+| Boundary | Current implementation | Required next behavior |
 | --- | --- | --- |
-| Personal | Owner-only local files/configuration and a single-user loopback daemon. No first-class owner-only remote collection. | Stable numeric owner identity, private project namespaces, owner-only authorization and explicit workflow delegation. A shared engine can serve this scope without sharing artifacts. |
+| Personal | Owner-only remote projects with stable numeric ownership, separate project identities and explicit owner-authorized CI, merged in #28. | Qualify useful cross-machine reuse. Team membership or stale membership records must never grant personal access. |
 | Team/organization | Project-scoped capabilities, membership roles, quotas and private Team Cache. | Keep full native payloads, authorized local writers and read-only PR credentials. Membership removal must affect continued access. |
 | Public | Signed publications populated by the trusted collector, with verification/revocation and a separate Public Build contract. Hosted Public Builds remain unqualified. | Preserve collector-only population. A developer or team upload cannot promote itself into public scope. Qualify every new public protocol independently. |
 
 These observations follow [capability validation](../internal/access/capability.go),
 [runtime roles](../internal/config/config.go), [private artifact keys](../internal/artifact/store.go),
 [Turbo resolution](../internal/server/server.go), and [public collection](../internal/server/public.go).
-Currently the private transport uses role `team`; that is not a reason to expose
-personal bytes to team members. A proposed `kind: personal|team` above existing
-project IDs can add the missing owner boundary. Existing records should retain
-team semantics. Invitations, arbitrary member mutations, repository membership
-and stale membership rows must not bypass personal ownership. Any CI access to
-personal scope needs an explicit owner delegation rule.
+The private transport uses role `team` for both private visibility tiers.
+The implemented `kind: personal|team` collection and distinct project IDs enforce
+the owner boundary; existing records retain team semantics. Invitations,
+arbitrary member mutations, repository membership and stale membership rows
+cannot bypass personal ownership. Personal CI additionally requires the owner's
+signed stable actor identity. See the [tier contract](cache-tiers.md).
 
 ## What already plugs in
 
 Turbo v8, Actions cache v1 and BuildKit integrations are implemented. Successful
 Turbo publication confirmation and explicit read-only/read-write/fresh task
 policies are in beta.3. Xcode LLVM replay is implemented with local snapshot
-transport; streamed graph protection remains [#25](https://github.com/ziahamza/layercache/issues/25).
-Bazel, Nx, Gradle HTTP and sccache remote adapters are not implemented. The
-capability and upload-queue adapter allowlists currently name only Turbo,
-Actions and BuildKit. New routes must extend those boundaries deliberately;
-renaming a Turbo key is insufficient.
+transport; complete streamed graph retention merged in #30 for
+[#25](https://github.com/ziahamza/layercache/issues/25). Nx's native Local and
+direct private endpoints merged in #31. Bazel, Gradle HTTP and
+sccache remote adapters remain future work. Nx capability support does not provide an Nx upload queue or remote read-through. New
+adapters must extend those boundaries deliberately.
 
-## Smallest next adapter: Nx's native HTTP client
+## Native Nx and the remaining private-cache bridge
 
-Use the current OSS client and its published API. Do not create a task runner,
+Use the pinned OSS client and its published API. Do not create a task runner,
 fingerprinter or archive packer. Nx provides bearer-authenticated
 `GET/PUT /v1/cache/{hash}`, selected by `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and
 `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`. [Official self-hosted API](https://nx.dev/docs/kb/self-hosted-caching).
 
-I downloaded stable `nx@23.3.0`, matched its npm integrity, inspected its shipped
-JS/native declarations, and loaded the compiled native client on Linux x64.
+The original research downloaded `nx@23.3.0`, matched its npm integrity,
+inspected its shipped JS/native declarations, and loaded the compiled native
+client on Linux x64.
 The [23.3.0 source](https://github.com/nrwl/nx/tree/2b305ee85b8db033e4ab998f31282cbff66ac2a8)
 is [MIT licensed](https://github.com/nrwl/nx/blob/2b305ee85b8db033e4ab998f31282cbff66ac2a8/LICENSE).
 Pin both Nx and its matching native package through a lockfile.
@@ -82,33 +108,37 @@ concurrent first-writer behavior and a miss after deletion. This exercised a
 loopback fixture server, not LayerCache or application performance. Temporary
 evidence is `/tmp/layercache-nx-contract-lkd1fnhi/evidence.json`.
 
-Build the following slice after storage fixes:
+The adapter in #31 adds scoped GET/PUT handling over the bounded artifact
+store, immutable first-writer behavior, native status/error mapping and private
+cache-control. Project and compatibility come from the credential. Its real
+compiled-client fixture proves cold execution, Local/restart replay and a fresh
+read-only direct consumer with empty native and LayerCache caches, exact outputs
+and logs, changed-input/profile misses and failed-test reruns. Private project
+and owner isolation remain enforced. This is protocol and fixture acceptance,
+not evidence of Phone whole-job savings or a Local-to-private bridge.
 
-1. Add an `nx` integration and protocol-specific GET/PUT response handling over
-   the existing bounded artifact store. Scope every key by authenticated project,
-   integration, execution compatibility and opaque native hash. Take project and
-   compatibility from the credential. The native client sends neither custom
-   compatibility headers nor a SHA-256 task-key promise.
-2. Return 409 for every existing Nx key, including an identical-byte duplicate,
-   without overwriting the winner. Enforce length limits, atomic admission,
-   digest verification, quotas, idle timeouts and expiry using existing storage.
-   Return private cache-control headers so shared proxies cannot retain private
-   context. HTTP cache-control does not disable Nx's own filesystem cache.
-3. Wire loopback Local Cache to authenticated personal/team read-through and
-   durable publication. Extend upload jobs with `nx`, preserving the repaired
-   conflict/pin lifecycle. Keep Nx public reads and writes disabled until the
-   trusted Public Build recipe and publication verification are implemented.
-4. Add a pinned real Nx CLI fixture with a build and test, external execution
-   counters and output digests. Prove producer execution, local reuse and a fresh
-   read-only consumer with empty native/LayerCache caches. Include changed
-   source/dependency/environment/profile misses, failed-test reruns, TTL/quota
-   eviction, concurrent writers, identity isolation and daemon restart. Test
-   actual outage behavior before promising a non-blocking direct CI endpoint.
-5. Account for Nx's separate native DB/cache directory. The initial server quota
+Remaining work:
+
+1. Wire Local Cache to authenticated Personal/Team read-through and durable Nx
+   publication. Extend upload jobs with `nx`, preserving the repaired conflict,
+   pin and interruption lifecycle. Make destination authority explicit. Keep Nx
+   Public Cache reads and writes disabled until its trusted recipe and verified
+   publication path are qualified.
+2. Add exact requested-hash publication confirmation and reporting. A local
+   task hit cannot establish that the result reached the private endpoint.
+   Include transfer overhead and distinguish conflicts from completed uploads.
+3. Extend the real-client fixture through the bridge: stop the producer, restore
+   on an empty consumer, and cover owner-authorized CI, read-only PRs, outages,
+   queue restart and quota pressure. Preserve input/profile misses, failed-test
+   reruns and private-project isolation. Test outage behavior before promising
+   a non-blocking direct CI endpoint.
+4. Account for Nx's separate native DB/cache directory. The initial server quota
    bounds LayerCache bytes only. A later owned scratch-directory lifecycle can
    prevent a second unbounded local cache; do not claim a total disk cap before
-   that exists. Add publication confirmation only after exact requested native
-   hashes can be verified, as Turbo already does.
+   that exists.
+5. Measure audited Phone jobs end to end, including restore, transfer,
+   publication and unavoidable fresh work. Keep task hits separate from
+   whole-job time saved before broadening adoption.
 
 The older `@nx/s3-cache`, `@nx/gcs-cache`, `@nx/azure-cache` and shared-fs packages
 were deprecated in May 2026. Current upstream requires immutable keys and
@@ -119,8 +149,8 @@ separated writer authority. Use the native API rather than those plugins.
 
 | Integration | Reuse | Concrete next work |
 | --- | --- | --- |
-| Gradle | Native task hashing and `HttpBuildCache`; Gradle is [Apache-2.0](https://github.com/gradle/gradle/blob/master/LICENSE). | Add bounded GET/PUT opaque artifacts and a narrow Basic-auth bridge to scoped credentials. An init script can configure it without a custom Gradle plugin. Qualify audited Android tasks; cache outputs and task execution remain distinct from live runtime tests. |
-| Bazel | [bazel-remote, Apache-2.0](https://github.com/buchgr/bazel-remote/blob/1605e32b5921d05e373407b98b3c021e40c277da/LICENSE), pinned executable first. | Put an authorization gateway above isolated per-project/profile instances with explicit byte budgets. Add a real Bazel fixture before moving a repository. |
+| Gradle, next | Native task hashing and `HttpBuildCache`; Gradle is [Apache-2.0](https://github.com/gradle/gradle/blob/master/LICENSE). | Add bounded GET/PUT opaque artifacts and a narrow Basic-auth bridge to scoped credentials. An init script can configure it without a custom Gradle plugin. Qualify audited Phone Android tasks; cache outputs and task execution remain distinct from live runtime tests. |
+| Bazel, after protocol qualification | [bazel-remote, Apache-2.0](https://github.com/buchgr/bazel-remote/blob/1605e32b5921d05e373407b98b3c021e40c277da/LICENSE), pinned executable first. | Put an authorization gateway above isolated per-project/profile instances with explicit byte budgets. Add a real Bazel fixture before moving a repository. |
 | sccache | [Apache-2.0 compiler client](https://github.com/mozilla/sccache/blob/7bdb9bdcde435fd365e291715a6003f3ca28c2f9/LICENSE). | Add a separate bounded WebDAV namespace and use its bearer token, key prefix and READ_ONLY mode. Set `SCCACHE_WEBDAV_DISABLE_CREATE_DIR=true` when the gateway implements only object operations. |
 
 Gradle's built-in remote protocol uses GET/PUT opaque keys, 404 misses and 2xx

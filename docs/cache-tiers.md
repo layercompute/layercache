@@ -40,7 +40,7 @@ Existing databases retain their current shared teams as `kind: team`.
 
 Personal GitHub Actions access requires both the provisioned numeric repository
 identity and the owner's signed `actor_id` claim. Other actors and missing actor
-IDs are denied. Required PR Turbo and BuildKit jobs retain the existing read-only
+IDs are denied. Required PR Turbo, Nx and BuildKit jobs retain the existing read-only
 policy; a main push, manual run or scheduled run follows the existing writer
 policy. This delegates access to the configured repository workflow initiated by
 the owner, so that workflow and its code are inside the owner's trust boundary.
@@ -68,13 +68,27 @@ qualification or deploy the self-serve cloud.
 
 ## Native tools and OSS ownership
 
-Turborepo owns task hashing and execution. BuildKit owns its graph and native
-cache export. Xcode's LLVM client owns compilation keys and CAS graph traversal.
+Turborepo and Nx own their task hashing, execution and archive packing. BuildKit
+owns its graph and native cache export. Xcode's LLVM client owns compilation keys
+and CAS graph traversal.
 Layer Cache owns authorization, compatible scopes, bounded retention, durable
 publication and verified Public Cache reads.
 
-Future Bazel and Nx work must use their native protocols and existing OSS
-clients, with real-client acceptance for a cold upload, a fresh checkout restore,
-changed-input misses and private-project isolation. Choose permissively licensed
-engines where a service already exists; do not duplicate their scheduling or
-fingerprinting merely to put Layer Cache's name on it.
+Owner-only Personal projects merged in
+[#28](https://github.com/ziahamza/layercache/pull/28). Native Nx HTTP merged in
+[#31](https://github.com/ziahamza/layercache/pull/31) for Local and direct
+Personal/Team endpoints. It does not yet provide Local-to-private read-through,
+durable Nx publication, confirmation or reporting. Complete Xcode graph retention
+merged in [#30](https://github.com/ziahamza/layercache/pull/30) after its real
+multiple-root native pressure gate passed. These implementations are included in
+beta.4; they do not deploy a hosted service. See the
+[verified release instructions](../scripts/README.md).
+
+Complete that private-cache bridge and measure real Phone whole-job savings
+before expanding adoption. Native Gradle HTTP for Phone Android comes next,
+followed by an isolated, pinned `bazel-remote` sidecar after protocol qualification,
+then sccache. Require real-client cold upload, fresh restore, changed-input
+misses and private-project isolation. Reuse native protocols and permissively
+licensed engines; keep their task hashing and scheduling. See the
+[integration plan](oss-integration-plan.md) for the remaining work and the
+[launch plan](launch-plan.md) for qualification status.

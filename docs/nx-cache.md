@@ -4,7 +4,8 @@ Layer Cache accepts Nx's native `GET/PUT /v1/cache/{hash}` protocol on Local
 Cache and authenticated private project endpoints. Nx owns task hashing,
 execution, archive packing and replay. Layer Cache stores the complete opaque
 archive, including declared outputs and terminal logs, in its existing bounded
-artifact store. This adapter is newer than the published beta.3 release.
+artifact store. This adapter is included in
+[beta.4](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.4).
 
 The acceptance fixture pins released `nx@23.3.0` and its matching compiled
 native package. Its [native HTTP client](https://github.com/nrwl/nx/blob/2b305ee85b8db033e4ab998f31282cbff66ac2a8/packages/nx/src/native/cache/http_remote_cache.rs)

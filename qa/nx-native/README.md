@@ -52,10 +52,11 @@ The signal and direct-child checks also run on macOS.
 The existing Linux and macOS native-client CI jobs run this acceptance check
 against the candidate binary they already compile. Each matrix job uploads
 only `${{ runner.temp }}/nx-native-evidence.json`. This wires the candidate
-gate into CI; it does not record a hosted run result. The release workflow also
-runs the native fixture against its Linux amd64, Linux arm64 and macOS arm64
-candidates before publication. Qualification of a downloaded release on native
-ARM runners remains follow-up work.
+gate into CI. The [beta.4 release workflow](https://github.com/ziahamza/layercache/actions/runs/38552629557)
+passed this fixture against Linux amd64, Linux arm64 and macOS arm64 candidates
+before publication. The [published installer gate](../../.github/workflows/beta-release-install.yml)
+also runs the fixture against downloaded, provenance-verified beta.4 binaries on
+all three native platforms. Only the QA credential helper is compiled there.
 
 Nx Local-to-Team read-through and durable publication are not implemented in
 this slice. The Local producer and the direct Team producer each execute

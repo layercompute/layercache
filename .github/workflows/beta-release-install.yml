@@ -7,6 +7,7 @@ on:
       - README.md
       - scripts/README.md
       - action/setup/README.md
+      - action/turbo/README.md
       - docs/launch-plan.md
   workflow_dispatch:
 
@@ -38,9 +39,8 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.1.0-beta.3
-      SOURCE_SHA: d99e6f685b5db878b924181926399c57be9f16d7
-      QA_SOURCE_SHA: 8990f7dd8e662c3aeebbc4a0ff9bccc03cb1d820
+      RELEASE_TAG: v0.1.0-beta.4
+      SOURCE_SHA: ca3d5889a52815bce9565d3825b081839ac7077b
       RELEASE_REPOSITORY: ziahamza/layercache
     steps:
       # The workflow is reviewed on this PR; the script comes from the exact
@@ -49,7 +49,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ziahamza/layercache
-          ref: d99e6f685b5db878b924181926399c57be9f16d7
+          ref: ca3d5889a52815bce9565d3825b081839ac7077b
           persist-credentials: false
 
       - name: Check published release and exact source commit
@@ -104,51 +104,49 @@ jobs:
           ' "$RUNNER_TEMP/layercache-preview.json" >/dev/null
           test ! -e "$RUNNER_TEMP/layercache-beta-preview.json"
 
-      # Keep the immutable installer source separate from the reviewed QA
-      # harness, whose metadata deadlines now match ordinary runtime latency.
-      - name: Check out the reviewed acceptance harness
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: ziahamza/layercache
-          ref: 8990f7dd8e662c3aeebbc4a0ff9bccc03cb1d820
-          path: qualification-source
-          persist-credentials: false
-
-      - name: Verify the acceptance source
-        run: test "$(git -C qualification-source rev-parse HEAD)" = "$QA_SOURCE_SHA"
-
-      - name: Set up Node.js for installed-binary Turbo acceptance
+      - name: Set up Node.js for installed-binary acceptance
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24.13.0"
 
+      # Only the QA credential helper is compiled. All cache traffic uses the
+      # installed, provenance-verified release binary.
+      - name: Set up Go for the Nx QA credential helper
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.25.13"
+          cache: false
+
       - name: Install the locked real Turbo client
         run: |
           npm install --global pnpm@10.34.5
-          pnpm --dir qualification-source/qa/fixtures/local-ci-reuse install --frozen-lockfile
+          pnpm --dir qa/fixtures/local-ci-reuse install --frozen-lockfile
 
       - name: Prove successful local tasks restore using the published binary
         run: |
           set -euo pipefail
-          legacy_flags=()
-          if [[ "$RELEASE_TAG" == v0.1.0-beta.3 ]]; then
-            legacy_flags+=(--allow-legacy-conflict-pins)
-          fi
-          python3 qualification-source/qa/local-ci-reuse/run.py \
+          python3 qa/local-ci-reuse/run.py \
             --binary "$RUNNER_TEMP/layercache-beta-install/layercache" \
-            --turbo "$GITHUB_WORKSPACE/qualification-source/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
-            "${legacy_flags[@]}" \
-            --output "$RUNNER_TEMP/beta3-local-ci-reuse.json"
+            --turbo "$GITHUB_WORKSPACE/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
+            --output "$RUNNER_TEMP/beta4-local-ci-reuse.json"
           jq -e '
             .schemaVersion == "local-ci-reuse-v1" and .passed == true and
             (.scenarios | length) == 17
-          ' "$RUNNER_TEMP/beta3-local-ci-reuse.json" >/dev/null
+          ' "$RUNNER_TEMP/beta4-local-ci-reuse.json" >/dev/null
+
+      - name: Prove native Nx replay using the published binary
+        env:
+          LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
+          NX_QA_OUTPUT: ${{ runner.temp }}/beta4-nx-native.json
+        run: node qa/nx-native/run.mjs
 
       - name: Preserve installed-binary reuse evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: beta3-local-ci-reuse-${{ matrix.name }}
-          path: ${{ runner.temp }}/beta3-local-ci-reuse.json
+          name: beta4-installed-reuse-${{ matrix.name }}
+          path: |
+            ${{ runner.temp }}/beta4-local-ci-reuse.json
+            ${{ runner.temp }}/beta4-nx-native.json
           if-no-files-found: warn
           retention-days: 30

@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: ziahamza/layercache/action/setup@d99e6f685b5db878b924181926399c57be9f16d7
+  - uses: ziahamza/layercache/action/setup@ca3d5889a52815bce9565d3825b081839ac7077b
     id: layercache
     with:
       repository: ziahamza/layercache
-      version: v0.1.0-beta.3
+      version: v0.1.0-beta.4
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: ziahamza/layercache/action/cache@d99e6f685b5db878b924181926399c57be9f16d7
+  - uses: ziahamza/layercache/action/cache@ca3d5889a52815bce9565d3825b081839ac7077b
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,11 +30,13 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The action and release are pinned to the latest Team Cache CLI beta, beta.3.
-This release adds `run --sync-team` to confirm successful local Turbo results
-are available to matching CI tasks. It also includes the Xcode adapter;
-[complete graph protection under eviction](https://github.com/ziahamza/layercache/issues/25)
-remains a separate qualification. For required CI checks that read Team results
+The action and release are pinned to CLI beta.4. It includes confirmed Turbo
+publication, permanent-conflict pin retirement, owner-only Personal projects,
+native Nx Local/direct private endpoints, and complete Xcode graph retention
+qualified under quota pressure. Nx Local-to-private forwarding remains future
+work; see the [Nx integration](../../docs/nx-cache.md).
+
+For required CI checks that read Team results
 without a local daemon, use the [Turbo action's cache modes](../turbo/README.md#cache-policy).
 Replace `https://cache.example.com` with your separately provisioned Team Cache
 origin; this example does not imply a hosted cloud service is live. Public Builds
