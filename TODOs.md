@@ -75,9 +75,13 @@ hit counts alone.
   directly attributed Team hits. Two failure reruns and explicit fresh auth
   execution pass. Native controls cover test-only, helper, shared-source,
   fixture and environment changes, plus generated-log stability.
-  This is local task evidence. Next: finish #298's required hosted gates,
-  verify hosted attribution and whole-job allocation, then land and measure
-  representative follow-up runs. The active Phone owner keeps workflow,
+  [Hosted Check](docs/evidence/phone-hosted-test-groups-20261014.json) also passes
+  on the PR merge tree with the exact twelve published hashes and twelve
+  gateway-attributed hits. The unit job takes 8m28s, including 3m20.413s in Turbo;
+  setup/tooling/resource/post steps remain substantial. Next: finish #298's
+  required Android/iOS native gates, land, and measure representative follow-up
+  whole jobs and allocation. No monthly or controlled before/after saving is
+  established. The active Phone owner keeps workflow,
   signed-release and retained-artifact changes in #295.
 
 - [ ] **Reduce repeated Phone setup and deterministic tooling checks.**

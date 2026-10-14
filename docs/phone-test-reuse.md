@@ -29,8 +29,8 @@ Both machines were separate checkouts and Local daemons on this Ubuntu 24.04
 x64 host. They matched Node 24.21.0, pnpm 10.7.1, Turbo 2.10.12, Vitest 5.0.4
 and CI's exact compatibility identity. They authenticated normally through
 GitHub CLI. The proof changed no persistent host cache profile, gateway
-deployment or release routing. This is a compatible fresh local consumer, not
-yet a completed hosted CI acceptance or a monthly cost measurement.
+deployment or release routing. This is the compatible fresh local consumer checkpoint. Hosted Check now also
+passes as described below; neither checkpoint is a monthly cost measurement.
 
 Two intentionally failing full mobile aggregates each executed the failure and
 returned exit 1. A counter outside the cached workspace advanced from one to
@@ -48,10 +48,18 @@ generated logs and have regression controls for both. Source closure remains
 conservative; shared application changes can invalidate every mobile group.
 
 Both independent Standards and Spec reviews passed. Full workspace checks passed
-all 28 tasks and 36 focused cache/CI contracts passed. Phone's normal hosted
-gates are running in [Check 38595394031](https://github.com/ziahamza/phone-app/actions/runs/38595394031)
-plus its required native QA workflows. Keep hosted attribution, whole-job timing
-and runner allocation separate from the local native-stage times above.
+all 28 tasks and 36 focused cache/CI contracts passed. [Hosted Check 38595394031](https://github.com/ziahamza/phone-app/actions/runs/38595394031)
+passes on PR merge tree `bd9a066ecfb710d51ee2362d027761288d73588c`, combining the
+reviewed head with main `041f648f`. Its unit job restores the exact twelve
+published hashes. The authenticated gateway report attributes twelve hits across
+27 eligible tasks, with fifteen misses; all ten mobile groups reuse the local
+producer's results. The existing PR lane uses read-only remote access. The
+[hosted receipt](evidence/phone-hosted-test-groups-20261014.json) records the
+actual source and timings: 3m20.413s in Turbo and 8m28s for the complete unit job.
+Setup takes 2m22s, native tooling contracts 1m03s, resource checks 36s and post-job
+work 54s. Those are observed job spans, not billing receipts or a controlled
+before/after comparison. Required Android/iOS native QA is still running before
+landing. Keep local task, hosted job and monthly cost measures separate.
 
 The active Phone CI owner keeps signed-provider trials, setup and required
 retained-artifact transfers in [#295](https://github.com/ziahamza/phone-app/pull/295).
