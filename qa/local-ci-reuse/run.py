@@ -366,6 +366,12 @@ class Experiment:
             rerun["archives"][task_id] = {"local": local, "team": remote}
             if local["sha256"] == remote["sha256"]:
                 raise AssertionError("same-hash log difference did not produce different opaque archives")
+        deadline = time.monotonic() + 10
+        while self.status(changed_logs_config).get("pendingUploads") != 0 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        rerun["pendingUploads"] = self.status(changed_logs_config).get("pendingUploads")
+        if rerun["pendingUploads"] != 0:
+            raise AssertionError("verified immutable archive conflicts retained pending uploads")
         self.block_publication = True
         self.input(producer, source="unrelated")
         queued = self.run("unrelated-publication-pending", producer_config, producer, 2,

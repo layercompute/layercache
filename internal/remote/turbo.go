@@ -21,6 +21,7 @@ var (
 	ErrMiss         = errors.New("remote cache miss")
 	ErrUnauthorized = errors.New("remote cache authorization failed")
 	ErrMetadata     = errors.New("remote cache metadata is invalid")
+	ErrConflict     = errors.New("remote cache artifact conflicts with immutable bytes")
 )
 
 type TurboClient struct {
@@ -202,6 +203,9 @@ func (client *TurboClient) Put(ctx context.Context, hash string, entry artifact.
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
 		return ErrUnauthorized
+	}
+	if response.StatusCode == http.StatusConflict {
+		return ErrConflict
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 		return fmt.Errorf("remote cache publication returned HTTP %d", response.StatusCode)
