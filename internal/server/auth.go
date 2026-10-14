@@ -132,7 +132,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	if input.Integration == "" {
 		input.Integration = "actions"
 	}
-	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit") ||
+	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit" && input.Integration != "nx") ||
 		input.TTLSeconds < 0 || input.TTLSeconds > 3600 ||
 		(input.Integration == "actions" && input.TTLSeconds != 0) ||
 		(input.Integration != "actions" && (input.RecipeDigest != "" || input.Target != "" ||
@@ -161,6 +161,11 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 		}
 		storedID, err := server.projectAuthority.RepositoryID(request.Context(), server.config.ProjectID)
 		if err != nil || storedID != identity.RepositoryID {
+			server.writeCapabilityExchangeFailure(writer, request)
+			return
+		}
+		role, err := server.projectAuthority.GitHubActionsRole(request.Context(), server.config.ProjectID, identity.ActorID)
+		if err != nil || role != "writer" {
 			server.writeCapabilityExchangeFailure(writer, request)
 			return
 		}
@@ -204,7 +209,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	// archives. A PR must not poison main's cache, including pull_request_target
 	// tokens whose ref is main. Missing/unknown event claims fail closed to reads.
 	trustedEvent := identity.EventName == "push" || identity.EventName == "workflow_dispatch" || identity.EventName == "schedule"
-	if (input.Integration == "buildkit" || input.Integration == "turbo") &&
+	if (input.Integration == "buildkit" || input.Integration == "turbo" || input.Integration == "nx") &&
 		(identity.Ref != server.config.ActionsDefaultRef || !trustedEvent) {
 		capabilities = []access.Capability{access.CapabilityRead}
 	}
@@ -220,7 +225,8 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 		WorkspaceID:   "github-actions-check:" + strings.ToLower(identity.Repository) + ":" + identity.CheckRunID,
 		Compatibility: input.Compatibility, Repository: strings.ToLower(identity.Repository),
 		Ref: identity.Ref, DefaultRef: server.config.ActionsDefaultRef, SourceCommit: strings.ToLower(identity.Commit),
-		RecipeDigest: recipe, Target: target, Platform: platform, Toolchain: toolchain, Builder: builder,
+		ActionsActorID: identity.ActorID,
+		RecipeDigest:   recipe, Target: target, Platform: platform, Toolchain: toolchain, Builder: builder,
 		Capabilities: capabilities, ExpiresAt: expiresAt,
 	}, now)
 	if err != nil {

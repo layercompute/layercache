@@ -1,0 +1,27 @@
+{
+  "name": "fixture",
+  "root": "apps/fixture",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["fixture"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "command": "node task.mjs build",
+        "cwd": "apps/fixture"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["fixture"],
+      "dependsOn": ["build"],
+      "outputs": ["{projectRoot}/test-results"],
+      "options": {
+        "command": "node task.mjs test",
+        "cwd": "apps/fixture"
+      }
+    }
+  }
+}

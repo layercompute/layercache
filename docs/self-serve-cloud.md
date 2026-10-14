@@ -28,6 +28,15 @@ The hosted beta lets an approved GitHub user create a team, invite teammates, ad
 
 Team roles apply to every project in that team. Membership binds to GitHub's stable numeric user ID, including invitations; renaming an account or recycling its username does not transfer access. Cache requests check current membership as well as the signed token's capabilities. Downgrading a writer stops further uploads with their existing token. Removing a member also invalidates outstanding invitations for that member. The last administrator cannot be removed or demoted.
 
+Approved beta creators can also choose **Create Personal Cache**. Its projects
+use the same CLI connection and native cache protocols with owner-only access.
+The personal collection rejects invitations and membership changes, and team
+members cannot access its projects even when the repository matches. Personal
+CI additionally requires the owner's signed GitHub actor ID. One personal
+collection counts toward the existing per-user and total collection limits;
+its projects use the same project and storage caps. See the
+[three-tier contract](cache-tiers.md).
+
 GitHub Actions OIDC remains scoped to the repository configured for the project. Previously issued short-lived signed artifact download URLs retain their existing expiry; removing a member does not recall bytes already downloaded.
 
 ## Operator setup

@@ -395,7 +395,7 @@ func (cfg Config) Validate() error {
 	}
 	seenAdapters := make(map[string]struct{}, len(cfg.BypassAdapters))
 	for _, adapter := range cfg.BypassAdapters {
-		if adapter != "turbo" && adapter != "actions" && adapter != "buildkit" {
+		if adapter != "turbo" && adapter != "actions" && adapter != "buildkit" && adapter != "nx" {
 			return fmt.Errorf("unknown bypass adapter %q", adapter)
 		}
 		if _, exists := seenAdapters[adapter]; exists {

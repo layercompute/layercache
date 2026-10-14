@@ -1,0 +1,12 @@
+{
+  "name": "layercache-nx-native-fixture",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "build": "nx run fixture:build --outputStyle=static",
+    "test": "nx run fixture:test --outputStyle=static"
+  },
+  "devDependencies": {
+    "nx": "23.3.0"
+  }
+}

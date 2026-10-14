@@ -367,6 +367,8 @@ func auditRoute(request *http.Request) string {
 	switch {
 	case strings.HasPrefix(path, "/v8/artifacts/"):
 		return "route:turbo.artifact"
+	case strings.HasPrefix(path, "/v1/cache/"):
+		return "route:nx.cache"
 	case strings.HasPrefix(path, "/_apis/artifactcache/"), strings.HasPrefix(path, "/_layercache/compatibility/"):
 		return "route:actions.cache"
 	case strings.HasPrefix(path, "/v1/public-build"):

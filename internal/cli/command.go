@@ -36,7 +36,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	syncTeam := flags.Bool("sync-team", false, "confirm successful Turbo task results are available to CI in Team Cache")
 	syncTimeout := flags.Duration("sync-timeout", 30*time.Second, "Team Cache confirmation timeout, from 1ms to 60s")
 	var transientBypasses stringList
-	flags.Var(&transientBypasses, "bypass", "bypass turbo, actions, buildkit, or all for this command (repeatable)")
+	flags.Var(&transientBypasses, "bypass", "bypass turbo, actions, buildkit, nx, or all for this command (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -128,6 +128,12 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err != nil {
 		return err
 	}
+	nxAuthority := authority
+	nxAuthority.Integration = "nx"
+	nxToken, err := access.MintCapabilityToken(cfg.LocalToken, nxAuthority, now)
+	if err != nil {
+		return err
+	}
 	command := exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
@@ -142,16 +148,18 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		command.Stderr = summaryCollector.observe(stderr)
 	}
 	injected := map[string]string{
-		"LAYER_CACHE_RUN_ID":             runID,
-		"LAYER_CACHE_CONFIG":             *configPath,
-		"LAYER_CACHE_BYPASS":             strings.Join(cfg.BypassAdapters, ","),
-		"TURBO_API":                      localRuntimeURL(cfg.Listen),
-		"TURBO_TOKEN":                    turboToken,
-		"TURBO_TEAM":                     cfg.ProjectID,
-		"ACTIONS_CACHE_URL":              localRuntimeURL(cfg.Listen) + "/",
-		"ACTIONS_RUNTIME_TOKEN":          actionsToken,
-		"ACTIONS_CACHE_SERVICE_V2":       "",
-		measurementCapabilityEnvironment: buildkitToken,
+		"LAYER_CACHE_RUN_ID":                       runID,
+		"LAYER_CACHE_CONFIG":                       *configPath,
+		"LAYER_CACHE_BYPASS":                       strings.Join(cfg.BypassAdapters, ","),
+		"TURBO_API":                                localRuntimeURL(cfg.Listen),
+		"TURBO_TOKEN":                              turboToken,
+		"TURBO_TEAM":                               cfg.ProjectID,
+		"ACTIONS_CACHE_URL":                        localRuntimeURL(cfg.Listen) + "/",
+		"ACTIONS_RUNTIME_TOKEN":                    actionsToken,
+		"ACTIONS_CACHE_SERVICE_V2":                 "",
+		"NX_SELF_HOSTED_REMOTE_CACHE_SERVER":       localRuntimeURL(cfg.Listen),
+		"NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN": nxToken,
+		measurementCapabilityEnvironment:           buildkitToken,
 	}
 	if summaryEnabled {
 		// This is Turborepo's documented environment equivalent of
@@ -173,6 +181,10 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if isAdapterBypassed(cfg, "actions") {
 		injected["ACTIONS_CACHE_URL"] = ""
 		injected["ACTIONS_RUNTIME_TOKEN"] = ""
+	}
+	if isAdapterBypassed(cfg, "nx") {
+		injected["NX_SELF_HOSTED_REMOTE_CACHE_SERVER"] = ""
+		injected["NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN"] = ""
 	}
 	for key, value := range injected {
 		command.Env = replaceEnvironment(command.Env, key, value)
@@ -232,6 +244,7 @@ func runCommandWithScopeBypass(ctx context.Context, commandArgs []string, stdout
 		"TURBO_API", "TURBO_TOKEN", "TURBO_TEAM", "TURBO_RUN_SUMMARY",
 		"ACTIONS_CACHE_URL", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_CACHE_SERVICE_V2",
 		"ACTIONS_RESULTS_URL", "LOCAL_CI_ACTIONS_CACHE_URL", "LOCAL_CI_ACTIONS_RUNTIME_TOKEN",
+		"NX_SELF_HOSTED_REMOTE_CACHE_SERVER", "NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN",
 	} {
 		command.Env = replaceEnvironment(command.Env, key, "")
 	}

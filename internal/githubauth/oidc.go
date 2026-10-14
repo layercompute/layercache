@@ -26,6 +26,7 @@ type ActionsIdentity struct {
 	EventName       string
 	Repository      string
 	RepositoryID    string
+	ActorID         string
 	Ref             string
 	Commit          string
 	WorkflowRef     string
@@ -102,7 +103,8 @@ func (verifier *OIDCVerifier) Verify(ctx context.Context, rawToken, audience str
 	identity := ActionsIdentity{
 		EventName: stringClaim(claims, "event_name"),
 		Subject:   stringClaim(claims, "sub"), Repository: stringClaim(claims, "repository"), RepositoryID: unsignedIntegerClaim(claims, "repository_id"),
-		Ref: stringClaim(claims, "ref"), Commit: stringClaim(claims, "sha"),
+		ActorID: unsignedIntegerClaim(claims, "actor_id"),
+		Ref:     stringClaim(claims, "ref"), Commit: stringClaim(claims, "sha"),
 		WorkflowRef: stringClaim(claims, "workflow_ref"), JobWorkflowRef: stringClaim(claims, "job_workflow_ref"),
 		RepositoryOwner: stringClaim(claims, "repository_owner"),
 		RunID:           unsignedIntegerClaim(claims, "run_id"),

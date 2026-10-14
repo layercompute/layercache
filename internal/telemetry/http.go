@@ -151,6 +151,8 @@ func routeIntegration(route string) string {
 	switch {
 	case strings.Contains(route, "/v8/artifacts"):
 		return "turbo"
+	case strings.Contains(route, "/v1/cache/"):
+		return "nx"
 	case strings.Contains(route, "/_apis/artifactcache/") || strings.Contains(route, "/_layercache/compatibility/"):
 		return "actions"
 	case strings.Contains(route, "/v1/buildkit/"):

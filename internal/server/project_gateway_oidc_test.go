@@ -33,7 +33,7 @@ func TestProjectGatewayOIDCSharedNamespaceScope(t *testing.T) {
 		project.config.GitHubOIDCIssuer = issuer.URL
 	}
 	now := time.Now().UTC()
-	for _, integration := range []string{"turbo", "buildkit"} {
+	for _, integration := range []string{"turbo", "buildkit", "nx"} {
 		for _, event := range []string{"push", "workflow_dispatch", "schedule", "pull_request", "pull_request_target", "workflow_run", ""} {
 			for _, ref := range []string{"refs/heads/main", "refs/heads/feature", "refs/pull/1/merge"} {
 				idToken := signOIDCTestToken(t, key, "gateway", map[string]any{
@@ -66,6 +66,15 @@ func TestProjectGatewayOIDCSharedNamespaceScope(t *testing.T) {
 					}
 					if wantWrite && put.Code != http.StatusOK && put.Code != http.StatusCreated {
 						t.Fatalf("trusted Turbo write failed: %d %s", put.Code, put.Body.String())
+					}
+				}
+				if integration == "nx" {
+					put := gatewayRequest(gateway, "PUT", "/v1/cache/scope-check", "Bearer "+result.Token, "payload", nil)
+					if !wantWrite && put.Code != http.StatusForbidden {
+						t.Fatalf("%s %s obtained Nx write access: HTTP %d", event, ref, put.Code)
+					}
+					if wantWrite && put.Code != http.StatusOK && put.Code != http.StatusConflict {
+						t.Fatalf("trusted Nx write failed: HTTP %d %s", put.Code, put.Body.String())
 					}
 				}
 				body, _ = json.Marshal(map[string]string{"project": projects["beta"].ProjectID, "integration": integration, "compatibility": "linux-amd64-schema1", "idToken": idToken})

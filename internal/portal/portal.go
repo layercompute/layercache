@@ -196,7 +196,7 @@ func (p *Portal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Path
-	if strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" {
+	if strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/v1/cache/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" {
 		p.gateway.ServeHTTP(w, r)
 		return
 	}
@@ -457,12 +457,22 @@ func (p *Portal) createTeam(w http.ResponseWriter, r *http.Request, session Sess
 	}
 	var input struct {
 		Name string `json:"name"`
+		Kind string `json:"kind,omitempty"`
 	}
 	if err := readJSON(w, r, &input); err != nil {
 		fail(w, err)
 		return
 	}
-	team, err := p.store.CreateTeam(r.Context(), session.User.ID, strings.TrimSpace(input.Name))
+	var team Team
+	var err error
+	switch input.Kind {
+	case "", "team":
+		team, err = p.store.CreateTeam(r.Context(), session.User.ID, strings.TrimSpace(input.Name))
+	case "personal":
+		team, err = p.store.CreatePersonalCache(r.Context(), session.User.ID)
+	default:
+		err = ErrInvalid
+	}
 	if err != nil {
 		fail(w, err)
 		return

@@ -96,6 +96,9 @@ type ProjectAuthority interface {
 	// RepositoryID is the original immutable GitHub repository identity captured
 	// when an administrator provisioned the managed project.
 	RepositoryID(context.Context, string) (string, error)
+	// GitHubActionsRole applies the project's workflow delegation policy to the
+	// signed stable actor identity. Personal projects authorize only their owner.
+	GitHubActionsRole(context.Context, string, string) (string, error)
 }
 
 func NewWithProjectAuthority(ctx context.Context, cfg config.Config, authority ProjectAuthority) (*Server, error) {
@@ -359,6 +362,7 @@ func (server *Server) routes() {
 	server.mux.Handle("GET /v8/artifacts/status", server.requireToken(http.HandlerFunc(server.turboStatus)))
 	server.mux.Handle("POST /v8/artifacts/events", server.requireToken(http.HandlerFunc(server.turboEvents)))
 	server.mux.Handle("/v8/artifacts/{hash}", server.requireToken(http.HandlerFunc(server.turboArtifact)))
+	server.mux.Handle("/v1/cache/{hash}", server.requireNxToken(http.HandlerFunc(server.nxArtifact)))
 	server.publicRoutes()
 	server.publicBuildRoutes()
 	if server.actionsHandler != nil {
@@ -642,7 +646,7 @@ func (server *Server) getTurbo(writer http.ResponseWriter, request *http.Request
 	}
 	if server.cloudStore != nil {
 		cloudBody := file
-		staged, cleanup, verifyErr := server.stageVerifiedTurboRead(request.Context(), entry, cloudBody)
+		staged, cleanup, verifyErr := server.stageVerifiedArtifactRead(request.Context(), entry, cloudBody)
 		closeErr := cloudBody.Close()
 		if verifyErr == nil {
 			verifyErr = closeErr
