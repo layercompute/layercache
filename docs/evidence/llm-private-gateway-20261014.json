@@ -1,6 +1,6 @@
 {
-  "source": "340ac52844499730f3fecec42003655af306d61a",
-  "qualification": "direct private gateway checkpoint before the Local-daemon publication acknowledgement fix",
+  "source": "c2fe2f9d2c990bb9918bb6a69ec7b813f9bfc4be",
+  "qualification": "direct shared private gateway checkpoint at the publication acknowledgement fix",
   "gateway": "https://layer-cache.ziahamza.com",
   "project": "github.com/ziahamza/phone-app",
   "compatibility": "phone-ci-v1-ubuntu24.04-linux-x64-node24.21.0-pnpm10.7.1",
@@ -17,8 +17,9 @@
   "replayCurrentTokens": 0,
   "hitSources": ["team", "team"],
   "sourceMeaning": "authenticated remote HTTP transport; not a visibility or future retention guarantee",
+  "firstWriterDomain": "chosen endpoint; Local-to-Team winner reconciliation remains unqualified",
   "configModified": false,
   "gatewayDeployed": false,
   "phonePlannerAdopted": false,
-  "completedAt": "2026-10-14T14:01:09.385Z"
+  "completedAt": "2026-10-14T14:17:59.668Z"
 }

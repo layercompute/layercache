@@ -86,12 +86,12 @@ hit counts alone.
   separately qualified support.
 
   Evidence on 2026-10-14: first-slice candidate
-  `340ac52844499730f3fecec42003655af306d61a` provides
+  `c2fe2f9d2c990bb9918bb6a69ec7b813f9bfc4be` provides
   [`@layercache/native/llm`](native/LLM.md) through pinned AI SDK 7.0.107.
   Actual `generateText`/`ToolLoopAgent` fixtures prove zero-call replay, live tool
   execution and a separately fresh judge. An authenticated disposable Go
   artifact service proves a concurrent committed winner and an empty consumer.
-  Local validation passes 70 tests with the installed service and a packed,
+  Local validation passes 72 tests with the installed service and a packed,
   separately typechecked SDK consumer. Independent Standards and Spec reviews
   completed without remaining findings at that runtime source. Strict pinned
   Ajv 8.17.1 and secure-json-parse 4.1.0 validate visible tool names/JSON and
@@ -102,10 +102,12 @@ hit counts alone.
   A [direct private gateway checkpoint](docs/evidence/llm-private-gateway-20261014.json)
   at that source also proves plain/structured recording, empty-consumer replay
   and changed-input/slot strict misses with two fixture calls and no paid
-  inference, configuration change or deployment. The Local-daemon immutable
-  publication fix adds degraded/pending/full acknowledgement regressions and
-  preserves possibly accepted or queued server bytes; its new exact-source
-  review and live rerun are pending.
+  inference, configuration change or deployment. Immutable admission rejects
+  degraded/pending/full acknowledgements and preserves possibly accepted or
+  queued server bytes. First-writer qualification covers the chosen endpoint;
+  a Local daemon may retain its unconfirmed/conflicting copy without establishing
+  the canonical Team winner. Frozen samples across machines require the direct
+  shared private endpoint until Local-to-Team reconciliation is qualified.
   Streaming replay, provider-hidden observations, durable frozen corpora, paid
   provider/live Phone adoption and hosted candidate acceptance remain pending.
   Next: finish hosted candidate qualification, then coordinate the smallest real

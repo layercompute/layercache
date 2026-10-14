@@ -81,7 +81,12 @@ grant owner-only access to a Team project. This adapter has no Public lookup or
 publication path. The legacy transport result `source: 'local' | 'team'` means
 local disk or the authenticated remote artifact endpoint, not a visibility tier.
 A remote endpoint can itself be a Local daemon: a hit there does not establish
-that another machine can already read the entry from Team Cache.
+that another machine can already read the entry from Team Cache or that it is
+the canonical Team winner. Local stores before forwarding to Team, so failed
+publication can leave an unconfirmed or conflicting Local copy. First-writer
+qualification here covers the chosen endpoint, including a direct shared
+private endpoint. For frozen samples across machines, use that direct endpoint
+until Local-to-Team winner reconciliation is separately qualified.
 
 By default the middleware accepts paired `TURBO_API`/`TURBO_TOKEN` or
 `LAYER_CACHE_URL`/`LAYER_CACHE_TOKEN` from the existing setup/login flow. Explicit
