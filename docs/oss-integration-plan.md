@@ -20,10 +20,11 @@ Beta.4 includes both integrations and the owner-only Personal model; see the
 [release and installer qualification](../scripts/README.md). These features do
 not activate the hosted self-serve service.
 
-Complete the Nx private-cache bridge and measure real Phone whole-job savings
-first. Qualify native Gradle HTTP for Phone Android next, then an isolated,
-pinned `bazel-remote` sidecar and sccache. Keep native clients responsible for
-task hashing, execution and archive packing.
+[TODOs.md](../TODOs.md) owns the current order. Reliable Phone handoffs,
+independently reusable test groups and exact LLM result replay now precede
+broader protocol adoption. Qualify native Gradle HTTP for Phone Android, then
+an isolated pinned `bazel-remote` sidecar and sccache when a real workload needs
+them. Keep native clients responsible for task hashing, execution and packing.
 
 The protocol research below began at repository baseline
 `1d7ebdffafb81fa00e81721113264122bbb0aa65` on 2026-10-14. Its pinned-source
