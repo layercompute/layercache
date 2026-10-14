@@ -17,6 +17,35 @@ Create the socket parent directory privately and use a unique socket for each in
 
 A miss or corrupt object triggers compilation. A cache directory or metadata startup failure runs the compiler once with caching disabled and reports `uncachedFallback`. Insecure socket directories, invalid configuration and an already-owned data directory are rejected. Once compilation starts, its result is preserved even if a cache backend error or statistics write also fails; a cache error alone cannot establish the cause of a compiler failure. Statistics and close warnings do not replace the compiler result. `uncachedRetry` remains false for compatibility with existing receipts. `cacheErrors` and real CAS/action request and hit counts report cache behavior. An action with a missing or corrupt indirect CAS output is returned as a miss; size checks include serialized object and response envelopes before accepting an object. The adapter opens no TCP listener and requires no account or external service deployment. It currently uses a local store; CI snapshot transport supplies reuse between runners.
 
+Before returning a cached action, this revision verifies its complete transitive
+CAS graph and atomically leases the exact objects for a two-minute fetch window.
+It recognizes LLVM's `CASID` root, Clang's output-name-to-ID map and the native
+Xcode plugin's inline `value` node. Native nodes include inline data and external
+references; encoded external nodes are followed transitively. The native parser
+accepts the bounded message shapes recorded from the Xcode 26.6 fixture and
+returns a miss for unsupported fields, malformed descriptors and unknown action
+schemas. The alternate data-chunk branch accepts only its recorded single-byte
+sentinel; new native formats need qualification before they can become hits.
+Eviction during verification produces an action miss. During the window, Local
+Cache deletion, LRU and impact collection preserve all leased objects, including
+descendants shared with another action. The committed byte quota remains in force;
+a new object which cannot fit alongside leased objects is rejected. Its compiler
+result remains subject to the existing cache-error policy above.
+
+Ordinary `Load` and `Get` calls do not extend the window. A new successful action
+query renews the same immutable graph's window. Abandoned consumers become
+evictable after expiry, and an exclusively owned adapter restart clears interrupted
+read leases. Opening another store does not clear live leases or durable upload
+pins. Verification is bounded to 100,000 objects, the committed byte quota and a
+ten-second lookup budget. Across the store, at most 4,096 graph owners and 262,144
+owner/object memberships are retained. A graph which cannot be admitted returns
+an action miss. These changes are newer than the published beta.3 artifact.
+
+`graphChecks`, `graphObjectsChecked` and `graphLookupNanos` measure complete graph
+verification and lease admission. Divide the nanosecond total by `graphChecks` to
+inspect average lookup cost. `graphLeaseMisses` records admission failures caused
+by graph or lease bounds. CAS RPC hit counts remain separate.
+
 Build the Darwin arm64 binary on Linux with `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/layercache`. The phone-app integration pins the reviewed source commit, cross-compiles on Linux and transfers only that binary to the Mac job: [phone-app #218](https://github.com/ziahamza/phone-app/pull/218).
 
 ## Qualification
@@ -24,6 +53,44 @@ Build the Darwin arm64 binary on Linux with `GOOS=darwin GOARCH=arm64 CGO_ENABLE
 [Hosted replay](https://github.com/ziahamza/layercache/actions/runs/38152661755/job/114510218849) built a mixed Swift/Objective-C command-line tool twice using fresh DerivedData. The native local CAS was deleted between invocations; only the closed Layer Cache store survived. The consumer recorded 69 of 71 action lookups as hits and replayed 70 CAS objects. This proves LLVM protocol compatibility on Xcode 26.6; it is not an app release speed benchmark.
 
 The dedicated workflow cross-compiles on Linux and repeats this replay with real Xcode. Its Linux runner defaults to GitHub Ubuntu until the repository has Ubicloud installed and `LAYERCACHE_UBICLOUD_ENABLED=true`; reruns use Ubuntu for recovery. Go protocol tests additionally exercise immutable action collisions, project/toolchain misses, file/inline identity, a fresh store consumer and compiler failure/uncached retry behavior.
+
+The graph-retention regression uses real gRPC clients and concurrent CAS writes
+under a 1,024-byte quota. It proves the promised root and leaf remain readable,
+oversubscribed writes are rejected, and committed usage stays bounded. Store
+tests cover shared descendants, expiry without read renewal, atomic admission,
+interrupted queries, namespace caps, collector races and exclusive restart cleanup.
+These protocol proofs do not qualify real Xcode behavior under storage pressure.
+That remains the native acceptance gate in
+[#25](https://github.com/ziahamza/layercache/issues/25).
+
+The mandatory pressure phase uses a QA-only proxy in front of the candidate's
+Unix socket. It holds a real compiler action hit, writes unrelated CAS objects
+until quota eviction occurs, then forwards the response. Before and after those
+writes, bounded read-only SQLite and blob inspection verifies every promised
+object's metadata, bytes, hash and complete reachable graph. It sends no helper
+CAS read RPCs, so the inspection does not inflate compiler hit counts.
+The Mac fixture selects a native action with at least two distinct external
+roots and requires both to survive; earlier single-root hits pass through
+normally. A producer with only single-root actions cannot qualify this gate.
+
+The compiler must actually read at least one promised object after pressure,
+produce the correct executable, and report no failed promised reads, retry or
+uncached fallback. Native inline roots can restore their outputs using `Load`.
+Every consumed promised object must be read within the fixed two-minute window.
+Optional outputs may remain unfetched; they must still pass the complete
+post-pressure availability check. JSON reports `availablePromisedObjects`
+separately from `fetchedPromisedObjects` and the unfetched IDs. Repeated root
+reads cannot hide an evicted descendant because the second inspection verifies
+that descendant directly. Actual Get adjacency is retained even when a child
+response precedes its parent. JSON also records committed usage, evicted bytes,
+pressure duration and query-to-first/last-promised-read time.
+
+The native-format protocol regression fails against the revision which only
+recognized `CASID`. A separate root-only retention fixture proves an evicted,
+unconsumed native descendant fails the post-pressure inspection. Hosted Apple
+results must pass before treating the
+native pressure gate as qualified. Full application restore timing, including
+detached action queries, still requires the application's own evidence.
 
 The vendored protocol and license are documented in [the protocol README](../internal/xcodecache/proto/README.md).
 

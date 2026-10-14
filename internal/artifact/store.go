@@ -80,6 +80,9 @@ type Store struct {
 	uploadBytes      int64
 	probeSpace       func(string) (filesystemSpace, error)
 	commitTx         func(*sql.Tx) error
+	readLeaseOwners  int
+	readLeaseEntries int
+	readLeaseNow     func() time.Time
 }
 
 // Open initializes a Local Cache. minFreeBytes may raise, but never lower,
@@ -154,6 +157,21 @@ func Open(ctx context.Context, root string, maxBytes, minFreeBytes int64) (*Stor
 		`CREATE INDEX IF NOT EXISTS cache_entry_pins_entry ON cache_entry_pins(
 			integration, project, compatibility, native_key, version, ref_scope
 		)`,
+		`CREATE TABLE IF NOT EXISTS artifact_read_leases (
+			namespace TEXT NOT NULL,
+			owner TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			PRIMARY KEY (namespace, owner)
+		)`,
+		`CREATE INDEX IF NOT EXISTS artifact_read_leases_expiry ON artifact_read_leases(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS artifact_read_lease_entries (
+			namespace TEXT NOT NULL,
+			owner TEXT NOT NULL,
+			digest TEXT NOT NULL REFERENCES artifacts(digest) ON DELETE CASCADE,
+			PRIMARY KEY (namespace, owner, digest),
+			FOREIGN KEY (namespace, owner) REFERENCES artifact_read_leases(namespace, owner) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS artifact_read_lease_entries_digest ON artifact_read_lease_entries(digest)`,
 	} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			db.Close()
@@ -162,8 +180,10 @@ func Open(ctx context.Context, root string, maxBytes, minFreeBytes int64) (*Stor
 	}
 	store := &Store{
 		db: db, root: root, maxBytes: maxBytes, maxMetadataBytes: metadataBudget(maxBytes), minFreeBytes: minFreeBytes,
-		probeSpace: defaultProbeSpace,
-		commitTx:   func(tx *sql.Tx) error { return tx.Commit() },
+		probeSpace:      defaultProbeSpace,
+		commitTx:        func(tx *sql.Tx) error { return tx.Commit() },
+		readLeaseOwners: maximumReadLeaseOwners, readLeaseEntries: maximumReadLeaseEntries,
+		readLeaseNow: time.Now,
 	}
 	if err := store.cleanStaging(); err != nil {
 		db.Close()
@@ -489,7 +509,12 @@ func (store *Store) Delete(ctx context.Context, key Key) error {
 			WHERE pin.integration = entry.integration AND pin.project = entry.project
 				AND pin.compatibility = entry.compatibility AND pin.native_key = entry.native_key
 				AND pin.version = entry.version AND pin.ref_scope = entry.ref_scope
-		)`, keyArgs(key)...)
+		)
+		AND NOT EXISTS (
+			SELECT 1 FROM artifact_read_lease_entries AS held
+			JOIN artifact_read_leases AS lease USING(namespace, owner)
+			WHERE held.digest = entry.digest AND lease.expires_at > ?
+		)`, append(keyArgs(key), store.readLeaseNow().UnixNano())...)
 	if err != nil {
 		return fmt.Errorf("delete cache entry: %w", err)
 	}
@@ -546,6 +571,16 @@ func (store *Store) evictTo(ctx context.Context, targetBytes int64) error {
 }
 
 func (store *Store) evictOldest(ctx context.Context, protected *Key) (bool, error) {
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	// Take SQLite's writer lock before selecting a victim. A second Store can
+	// otherwise admit a read lease after our selection but before deletion.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM artifact_read_leases WHERE expires_at <= ?`, store.readLeaseNow().UnixNano()); err != nil {
+		return false, err
+	}
 	var key Key
 	var digest string
 	query := `SELECT entry.integration, entry.project, entry.compatibility, entry.native_key, entry.version, entry.ref_scope, entry.digest
@@ -558,24 +593,25 @@ func (store *Store) evictOldest(ctx context.Context, protected *Key) (bool, erro
 				AND pin.native_key = entry.native_key
 				AND pin.version = entry.version
 				AND pin.ref_scope = entry.ref_scope
+		)
+		AND NOT EXISTS (
+			SELECT 1 FROM artifact_read_lease_entries AS held
+			JOIN artifact_read_leases AS lease USING(namespace, owner)
+			WHERE held.digest = entry.digest AND lease.expires_at > ?
 		)`
-	var args []any
+	args := []any{store.readLeaseNow().UnixNano()}
 	if protected != nil {
 		query += ` AND NOT (entry.integration = ? AND entry.project = ? AND entry.compatibility = ? AND entry.native_key = ? AND entry.version = ? AND entry.ref_scope = ?)`
-		args = keyArgs(*protected)
+		args = append(args, keyArgs(*protected)...)
 	}
 	query += ` ORDER BY entry.last_accessed_at ASC, entry.created_at ASC LIMIT 1`
-	err := store.db.QueryRowContext(ctx, query, args...).
+	err = tx.QueryRowContext(ctx, query, args...).
 		Scan(&key.Integration, &key.Project, &key.Compatibility, &key.Native, &key.Version, &key.Ref, &digest)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("select Local Cache eviction victim: %w", err)
-	}
-	tx, err := store.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM cache_entries
 			WHERE integration = ? AND project = ? AND compatibility = ? AND native_key = ? AND version = ? AND ref_scope = ?`, keyArgs(key)...); err != nil {

@@ -36,7 +36,12 @@ func (store *Store) evictImpact(ctx context.Context) (bool, error) {
 		FROM cache_entries AS entry
 		LEFT JOIN artifact_access AS access ON access.digest = entry.digest
 		WHERE NOT EXISTS (SELECT 1 FROM cache_entry_pins AS pin WHERE pin.digest = entry.digest)
-		ORDER BY entry.digest`)
+		AND NOT EXISTS (
+			SELECT 1 FROM artifact_read_lease_entries AS held
+			JOIN artifact_read_leases AS lease USING(namespace, owner)
+			WHERE held.digest = entry.digest AND lease.expires_at > ?
+		)
+		ORDER BY entry.digest`, store.readLeaseNow().UnixNano())
 	if err != nil {
 		return false, fmt.Errorf("select Local Cache impact candidates: %w", err)
 	}

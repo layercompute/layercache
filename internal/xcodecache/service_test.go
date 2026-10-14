@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -95,16 +96,17 @@ func TestProjectToolchainMissAndImmutableActionCollision(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	producer := openService(t, root, "project-a", "toolchain-a")
-	request := &kv.PutValueRequest{Key: []byte("action"), Value: &kv.Value{Entries: map[string][]byte{"result": []byte("first")}}}
+	original := nativeTestNode([]byte("first"))
+	request := &kv.PutValueRequest{Key: []byte("action"), Value: &kv.Value{Entries: map[string][]byte{"value": original}}}
 	if response, err := producer.PutValue(ctx, request); err != nil || response.GetError() != nil {
 		t.Fatalf("first save: %v %v", response, err)
 	}
-	request.Value.Entries["result"] = []byte("replacement")
+	request.Value.Entries["value"] = nativeTestNode([]byte("replacement"))
 	if response, err := producer.PutValue(ctx, request); err != nil || response.GetError() == nil {
 		t.Fatalf("collision must be rejected: %v %v", response, err)
 	}
 	got, err := producer.GetValue(ctx, &kv.GetValueRequest{Key: request.Key})
-	if err != nil || string(got.GetValue().Entries["result"]) != "first" {
+	if err != nil || !bytes.Equal(got.GetValue().Entries["value"], original) {
 		t.Fatalf("original preserved: %v %v", got, err)
 	}
 	for _, identity := range [][2]string{{"project-b", "toolchain-a"}, {"project-a", "toolchain-b"}} {
@@ -160,6 +162,14 @@ func TestActionMissesWhenAnIndirectCASOutputIsEvicted(t *testing.T) {
 	warm, err := k.GetValue(ctx, &kv.GetValueRequest{Key: key})
 	if err != nil || warm.GetOutcome() != kv.GetValueResponse_SUCCESS {
 		t.Fatalf("complete graph: %v %v", warm, err)
+	}
+	if err = s.store.Delete(ctx, s.key("cas", leaf.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
+		t.Fatalf("successful action did not protect its descendant: %v", err)
+	}
+	// Simulate a consumer which has stopped. A fresh action lookup must miss
+	// once an unprotected descendant is collected.
+	if err = s.store.ResetReadLeases(ctx, readLeaseNamespace); err != nil {
+		t.Fatal(err)
 	}
 	if err = s.store.Delete(ctx, s.key("cas", leaf.GetCasId().Id)); err != nil {
 		t.Fatal(err)
