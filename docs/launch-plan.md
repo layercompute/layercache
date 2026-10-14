@@ -7,6 +7,13 @@ expanding the dashboard, machine management, or hosted runners. The existing
 operator-managed Team Cache is available again. The self-serve cloud
 implementation is present, but its public service has not been deployed.
 
+The product has three visibility tiers: Personal Cache, Team Cache and Public
+Cache. Local Cache is each machine's bounded storage under those tiers. Private
+projects reuse full native build context; Public Cache accepts only the trusted
+build and collector publication path. See the [tier contract](cache-tiers.md).
+Native OSS clients and permissively licensed cache engines should supply build
+hashing and execution as we add integrations.
+
 ## Current state and ownership
 
 | Area | State | Next acceptance target |

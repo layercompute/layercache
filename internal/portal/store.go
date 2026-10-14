@@ -33,6 +33,7 @@ type Team struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Role string `json:"role"`
+	Kind string `json:"kind"`
 }
 type Project struct {
 	ID           string `json:"id"`
@@ -98,7 +99,7 @@ func OpenStore(ctx context.Context, postgresURL, filename string) (*Store, error
 	}
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS lc_portal_users (id TEXT PRIMARY KEY, login TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS lc_portal_teams (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_by TEXT NOT NULL, revision BIGINT NOT NULL DEFAULT 0)`,
+		`CREATE TABLE IF NOT EXISTS lc_portal_teams (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_by TEXT NOT NULL, revision BIGINT NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT 'team' CHECK(kind IN ('team','personal')))`,
 		`CREATE TABLE IF NOT EXISTS lc_portal_members (team_id TEXT NOT NULL REFERENCES lc_portal_teams(id), user_id TEXT NOT NULL REFERENCES lc_portal_users(id), role TEXT NOT NULL CHECK(role IN ('admin','writer','reader')), PRIMARY KEY(team_id,user_id))`,
 		`CREATE TABLE IF NOT EXISTS lc_portal_projects (id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES lc_portal_teams(id), name TEXT NOT NULL, repository TEXT NOT NULL, repository_id TEXT NOT NULL DEFAULT '', default_ref TEXT NOT NULL, secret TEXT NOT NULL, UNIQUE(team_id,repository))`,
 		`CREATE TABLE IF NOT EXISTS lc_portal_invites (id TEXT PRIMARY KEY, team_id TEXT NOT NULL REFERENCES lc_portal_teams(id), user_id TEXT NOT NULL, role TEXT NOT NULL, expires_at BIGINT NOT NULL, UNIQUE(team_id,user_id))`,
@@ -111,21 +112,28 @@ func OpenStore(ctx context.Context, postgresURL, filename string) (*Store, error
 			return fail()
 		}
 	}
-	// Older portal databases lack the immutable repository identity. Preserve
-	// their records without inferring an ID from a name that may have been reused.
-	rows, err := db.QueryContext(ctx, `SELECT repository_id FROM lc_portal_projects LIMIT 0`)
-	if err != nil {
-		if _, err = db.ExecContext(ctx, `ALTER TABLE lc_portal_projects ADD COLUMN repository_id TEXT NOT NULL DEFAULT ''`); err != nil {
-			// A second process may have completed the same migration after our
-			// probe. The column, not the ALTER result, determines readiness.
-			probe, probeErr := db.QueryContext(ctx, `SELECT repository_id FROM lc_portal_projects LIMIT 0`)
-			if probeErr != nil {
+	// Preserve existing team scopes and legacy repository records. A blank
+	// repository identity must never be inferred from a possibly recycled name.
+	for _, migration := range []struct{ probe, alter string }{
+		{`SELECT repository_id FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN repository_id TEXT NOT NULL DEFAULT ''`},
+		{`SELECT kind FROM lc_portal_teams LIMIT 0`, `ALTER TABLE lc_portal_teams ADD COLUMN kind TEXT NOT NULL DEFAULT 'team' CHECK(kind IN ('team','personal'))`},
+	} {
+		rows, err := db.QueryContext(ctx, migration.probe)
+		if err == nil {
+			_ = rows.Close()
+			continue
+		}
+		if _, err := db.ExecContext(ctx, migration.alter); err != nil {
+			// Concurrent startup may have completed the migration after the probe.
+			rows, err := db.QueryContext(ctx, migration.probe)
+			if err != nil {
 				return fail()
 			}
-			_ = probe.Close()
+			_ = rows.Close()
 		}
-	} else {
-		_ = rows.Close()
+	}
+	if _, err := db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS lc_portal_personal_owner ON lc_portal_teams(created_by) WHERE kind='personal'`); err != nil {
+		return fail()
 	}
 	return store, nil
 }
@@ -154,7 +162,7 @@ func (s *Store) UpsertUser(ctx context.Context, user User) error {
 	return err
 }
 func (s *Store) Teams(ctx context.Context, user string) ([]Team, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT t.id,t.name,m.role FROM lc_portal_teams t JOIN lc_portal_members m ON m.team_id=t.id WHERE m.user_id=$1 ORDER BY t.name,t.id`, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT t.id,t.name,m.role,t.kind FROM lc_portal_teams t JOIN lc_portal_members m ON m.team_id=t.id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY t.name,t.id`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +170,7 @@ func (s *Store) Teams(ctx context.Context, user string) ([]Team, error) {
 	result := []Team{}
 	for rows.Next() {
 		var t Team
-		if err := rows.Scan(&t.ID, &t.Name, &t.Role); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Role, &t.Kind); err != nil {
 			return nil, err
 		}
 		result = append(result, t)
@@ -170,6 +178,14 @@ func (s *Store) Teams(ctx context.Context, user string) ([]Team, error) {
 	return result, rows.Err()
 }
 func (s *Store) CreateTeam(ctx context.Context, user, name string) (Team, error) {
+	return s.createTeam(ctx, user, name, "team")
+}
+
+func (s *Store) CreatePersonalCache(ctx context.Context, user string) (Team, error) {
+	return s.createTeam(ctx, user, "Personal Cache", "personal")
+}
+
+func (s *Store) createTeam(ctx context.Context, user, name, kind string) (Team, error) {
 	if !validName(name) {
 		return Team{}, ErrInvalid
 	}
@@ -178,6 +194,15 @@ func (s *Store) CreateTeam(ctx context.Context, user, name string) (Team, error)
 		return Team{}, err
 	}
 	defer tx.Rollback()
+	if kind == "personal" {
+		var existing int
+		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM lc_portal_teams WHERE created_by=$1 AND kind='personal'`, user).Scan(&existing); err != nil {
+			return Team{}, err
+		}
+		if existing != 0 {
+			return Team{}, ErrConflict
+		}
+	}
 	var total, owned int
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM lc_portal_teams`).Scan(&total); err != nil {
 		return Team{}, err
@@ -188,9 +213,15 @@ func (s *Store) CreateTeam(ctx context.Context, user, name string) (Team, error)
 	if total >= 128 || owned >= 5 {
 		return Team{}, ErrLimit
 	}
-	t := Team{ID: randomID("team-"), Name: name, Role: "admin"}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO lc_portal_teams(id,name,created_by) VALUES($1,$2,$3)`, t.ID, t.Name, user); err != nil {
+	t := Team{ID: randomID("team-"), Name: name, Role: "admin", Kind: kind}
+	result, err := tx.ExecContext(ctx, `INSERT INTO lc_portal_teams(id,name,created_by,kind) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, t.ID, t.Name, user, kind)
+	if err != nil {
 		return Team{}, err
+	}
+	if count, err := result.RowsAffected(); err != nil {
+		return Team{}, err
+	} else if count != 1 {
+		return Team{}, ErrConflict
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO lc_portal_members(team_id,user_id,role) VALUES($1,$2,'admin')`, t.ID, user); err != nil {
 		return Team{}, err
@@ -212,7 +243,7 @@ func teamRole(ctx context.Context, tx *sql.Tx, team, user string) (string, error
 		return "", ErrDenied
 	}
 	var role string
-	err = tx.QueryRowContext(ctx, `SELECT role FROM lc_portal_members WHERE team_id=$1 AND user_id=$2`, team, user).Scan(&role)
+	err = tx.QueryRowContext(ctx, `SELECT m.role FROM lc_portal_members m JOIN lc_portal_teams t ON t.id=m.team_id WHERE m.team_id=$1 AND m.user_id=$2 AND (t.kind='team' OR t.created_by=$2)`, team, user).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrDenied
 	}
@@ -222,8 +253,19 @@ func audit(ctx context.Context, tx *sql.Tx, team, actor, action, subject string)
 	_, err := tx.ExecContext(ctx, `INSERT INTO lc_portal_audit(id,team_id,actor,action,subject,created_at) VALUES($1,$2,$3,$4,$5,$6)`, randomID("event-"), team, actor, action, subject, time.Now().Unix())
 	return err
 }
+
+func requireSharedTeam(ctx context.Context, tx *sql.Tx, team string) error {
+	var kind string
+	if err := tx.QueryRowContext(ctx, `SELECT kind FROM lc_portal_teams WHERE id=$1`, team).Scan(&kind); err != nil {
+		return err
+	}
+	if kind != "team" {
+		return ErrDenied
+	}
+	return nil
+}
 func (s *Store) Projects(ctx context.Context, user string) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.team_id,p.name,p.repository,p.repository_id,p.default_ref,p.secret,m.role FROM lc_portal_projects p JOIN lc_portal_members m ON m.team_id=p.team_id WHERE m.user_id=$1 ORDER BY p.name,p.id`, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.team_id,p.name,p.repository,p.repository_id,p.default_ref,p.secret,m.role FROM lc_portal_projects p JOIN lc_portal_members m ON m.team_id=p.team_id JOIN lc_portal_teams t ON t.id=p.team_id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY p.name,p.id`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -313,21 +355,37 @@ func (s *Store) MemberRole(ctx context.Context, project, subject string) (string
 		return "", ErrDenied
 	}
 	var role string
-	err := s.db.QueryRowContext(ctx, `SELECT m.role FROM lc_portal_members m JOIN lc_portal_projects p ON p.team_id=m.team_id WHERE p.id=$1 AND m.user_id=$2`, project, strings.TrimPrefix(subject, "github-id:")).Scan(&role)
+	err := s.db.QueryRowContext(ctx, `SELECT m.role FROM lc_portal_members m JOIN lc_portal_projects p ON p.team_id=m.team_id JOIN lc_portal_teams t ON t.id=p.team_id WHERE p.id=$1 AND m.user_id=$2 AND (t.kind='team' OR t.created_by=$2)`, project, strings.TrimPrefix(subject, "github-id:")).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrDenied
 	}
 	return role, err
 }
+
+// GitHubActionsRole grants repository workflows the existing Team Cache policy.
+// A personal project additionally requires the owner's signed numeric actor ID.
+func (s *Store) GitHubActionsRole(ctx context.Context, project, actorID string) (string, error) {
+	var kind, owner string
+	if err := s.db.QueryRowContext(ctx, `SELECT t.kind,t.created_by FROM lc_portal_teams t JOIN lc_portal_projects p ON p.team_id=t.id WHERE p.id=$1`, project).Scan(&kind, &owner); err != nil {
+		return "", ErrDenied
+	}
+	if kind == "personal" && (!validRepositoryID(actorID) || actorID != owner) {
+		return "", ErrDenied
+	}
+	if kind != "team" && kind != "personal" {
+		return "", ErrDenied
+	}
+	return "writer", nil
+}
 func (s *Store) Members(ctx context.Context, user, team string) ([]Member, error) {
 	var allowed int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM lc_portal_members WHERE team_id=$1 AND user_id=$2`, team, user).Scan(&allowed); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM lc_portal_members m JOIN lc_portal_teams t ON t.id=m.team_id WHERE m.team_id=$1 AND m.user_id=$2 AND (t.kind='team' OR t.created_by=$2)`, team, user).Scan(&allowed); err != nil {
 		return nil, err
 	}
 	if allowed != 1 {
 		return nil, ErrDenied
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT u.id,u.login,m.role FROM lc_portal_members m JOIN lc_portal_users u ON u.id=m.user_id WHERE m.team_id=$1 ORDER BY u.login`, team)
+	rows, err := s.db.QueryContext(ctx, `SELECT u.id,u.login,m.role FROM lc_portal_members m JOIN lc_portal_users u ON u.id=m.user_id JOIN lc_portal_teams t ON t.id=m.team_id WHERE m.team_id=$1 AND (t.kind='team' OR t.created_by=m.user_id) ORDER BY u.login`, team)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +415,9 @@ func (s *Store) ChangeMember(ctx context.Context, user, team, target, role strin
 	}
 	if actorRole != "admin" {
 		return ErrDenied
+	}
+	if err := requireSharedTeam(ctx, tx, team); err != nil {
+		return err
 	}
 	var previous string
 	if err = tx.QueryRowContext(ctx, `SELECT role FROM lc_portal_members WHERE team_id=$1 AND user_id=$2`, team, target).Scan(&previous); err != nil {
@@ -404,6 +465,9 @@ func (s *Store) Invite(ctx context.Context, user, team, target, role string) (In
 	if actorRole != "admin" {
 		return Invitation{}, ErrDenied
 	}
+	if err := requireSharedTeam(ctx, tx, team); err != nil {
+		return Invitation{}, err
+	}
 	var existing int
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM lc_portal_members WHERE team_id=$1 AND user_id=$2`, team, target).Scan(&existing); err != nil {
 		return Invitation{}, err
@@ -431,7 +495,7 @@ func (s *Store) Invite(ctx context.Context, user, team, target, role string) (In
 	return inv, tx.Commit()
 }
 func (s *Store) Invitations(ctx context.Context, user string) ([]Invitation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT i.id,i.team_id,t.name,i.role,i.expires_at FROM lc_portal_invites i JOIN lc_portal_teams t ON t.id=i.team_id WHERE i.user_id=$1 AND i.expires_at>$2 ORDER BY i.id`, user, time.Now().Unix())
+	rows, err := s.db.QueryContext(ctx, `SELECT i.id,i.team_id,t.name,i.role,i.expires_at FROM lc_portal_invites i JOIN lc_portal_teams t ON t.id=i.team_id WHERE i.user_id=$1 AND i.expires_at>$2 AND t.kind='team' ORDER BY i.id`, user, time.Now().Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -457,6 +521,9 @@ func (s *Store) Accept(ctx context.Context, user, id string) error {
 		return ErrDenied
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE lc_portal_teams SET revision=revision+1 WHERE id=$1`, team); err != nil {
+		return err
+	}
+	if err := requireSharedTeam(ctx, tx, team); err != nil {
 		return err
 	}
 	// Recheck after taking the team lock: invite replacement/revocation wins.
