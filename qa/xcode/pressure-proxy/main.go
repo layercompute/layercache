@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
@@ -11,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -23,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/layercache/layercache/internal/xcodecache"
 	cas "github.com/layercache/layercache/internal/xcodecache/proto/casv1"
 	kv "github.com/layercache/layercache/internal/xcodecache/proto/kvv1"
 	"google.golang.org/grpc"
@@ -38,25 +42,30 @@ const maximumObservedObjects = 100000
 const maximumObservedReferences = 262144
 
 type observations struct {
-	QuotaBytes               int64    `json:"quotaBytes"`
-	InitialUsageBytes        int64    `json:"initialUsageBytes"`
-	MaxObservedUsageBytes    int64    `json:"maxObservedUsageBytes"`
-	UsageAfterPressure       int64    `json:"usageAfterPressure"`
-	PressurePayloadBytes     int64    `json:"pressurePayloadBytes"`
-	PressureArtifactBytes    int64    `json:"pressureArtifactBytes"`
-	PressureWrites           int      `json:"pressureWrites"`
-	EvictedBytes             int64    `json:"evictedBytes"`
-	PressureDurationNanos    int64    `json:"pressureDurationNanos"`
-	QueryToRootFetchNanos    int64    `json:"queryToFirstRootFetchNanos"`
-	PromisedRoot             string   `json:"promisedRoot"`
-	PromisedObjects          int      `json:"promisedObjects"`
-	CompilerGraphReads       int      `json:"compilerGraphReads"`
-	CompilerRootReads        int      `json:"compilerRootReadsAfterPressure"`
-	CompilerRootGets         int      `json:"compilerRootGetsAfterPressure"`
-	FetchedPromisedObjects   int      `json:"fetchedPromisedObjects"`
-	UnfetchedPromisedObjects []string `json:"unfetchedPromisedObjects"`
-	MissingPromisedObjects   []string `json:"missingPromisedObjects"`
-	PressureError            string   `json:"pressureError,omitempty"`
+	QuotaBytes                 int64    `json:"quotaBytes"`
+	InitialUsageBytes          int64    `json:"initialUsageBytes"`
+	MaxObservedUsageBytes      int64    `json:"maxObservedUsageBytes"`
+	UsageAfterPressure         int64    `json:"usageAfterPressure"`
+	PressurePayloadBytes       int64    `json:"pressurePayloadBytes"`
+	PressureArtifactBytes      int64    `json:"pressureArtifactBytes"`
+	PressureWrites             int      `json:"pressureWrites"`
+	EvictedBytes               int64    `json:"evictedBytes"`
+	PressureDurationNanos      int64    `json:"pressureDurationNanos"`
+	QueryToRootFetchNanos      int64    `json:"queryToFirstRootFetchNanos"`
+	QueryToFirstGraphReadNanos int64    `json:"queryToFirstPromisedReadNanos"`
+	QueryToLastGraphReadNanos  int64    `json:"queryToLastPromisedReadNanos"`
+	PromisedRoot               string   `json:"promisedRoot"`
+	InlineActionRoot           bool     `json:"inlineActionRoot"`
+	PromisedObjects            int      `json:"promisedObjects"`
+	GraphObjectsInspected      int      `json:"graphObjectsInspected"`
+	AvailablePromisedObjects   int      `json:"availablePromisedObjects"`
+	CompilerGraphReads         int      `json:"compilerGraphReads"`
+	CompilerRootReads          int      `json:"compilerRootReadsAfterPressure"`
+	CompilerRootGets           int      `json:"compilerRootGetsAfterPressure"`
+	FetchedPromisedObjects     int      `json:"fetchedPromisedObjects"`
+	UnfetchedPromisedObjects   []string `json:"unfetchedPromisedObjects"`
+	MissingPromisedObjects     []string `json:"missingPromisedObjects"`
+	PressureError              string   `json:"pressureError,omitempty"`
 }
 
 type pressureProxy struct {
@@ -65,6 +74,7 @@ type pressureProxy struct {
 	objects        cas.CASDBServiceClient
 	actions        kv.KeyValueDBClient
 	db             *sql.DB
+	storeRoot      string
 	mu             sync.Mutex
 	once           sync.Once
 	graph          map[string]bool
@@ -90,17 +100,32 @@ func (p *pressureProxy) usage(ctx context.Context) (int64, error) {
 	return used, err
 }
 
-func (p *pressureProxy) applyPressure(ctx context.Context, root []byte, queried time.Time) {
+func (p *pressureProxy) applyPressure(ctx context.Context, roots []xcodecache.GraphReference, inline bool, queried time.Time) {
 	started := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	p.mu.Lock()
-	p.root = string(root)
+	p.root = string(roots[0].ID)
 	p.queried = queried
-	p.graph[p.root] = true
-	p.stats.PromisedRoot = hex.EncodeToString(root)
+	for _, root := range roots {
+		p.graph[string(root.ID)] = true
+	}
+	p.stats.PromisedRoot = hex.EncodeToString(roots[0].ID)
+	p.stats.InlineActionRoot = inline
 	p.mu.Unlock()
-	initial, err := p.usage(ctx)
+	graph, err := p.inspectGraph(ctx, roots)
+	if err == nil {
+		p.mu.Lock()
+		// The bounded read-only inspection establishes every promised edge,
+		// including those omitted by Load responses. None are synthetic hits.
+		p.graph = graph
+		p.stats.GraphObjectsInspected = len(graph)
+		p.mu.Unlock()
+	}
+	var initial int64
+	if err == nil {
+		initial, err = p.usage(ctx)
+	}
 	if err == nil {
 		p.mu.Lock()
 		p.stats.InitialUsageBytes = initial
@@ -110,9 +135,11 @@ func (p *pressureProxy) applyPressure(ctx context.Context, root []byte, queried 
 		if payloadSize < 16 || initial > p.stats.QuotaBytes {
 			err = errors.New("invalid pressure quota or initial store usage")
 		} else {
-			for write := 0; int64(write)*payloadSize <= p.stats.QuotaBytes; write++ {
+			var nonce [8]byte
+			_, err = rand.Read(nonce[:])
+			for write := 0; err == nil && int64(write)*payloadSize <= p.stats.QuotaBytes; write++ {
 				data := make([]byte, payloadSize)
-				copy(data, "LayerCache QA pressure")
+				copy(data, nonce[:])
 				binary.LittleEndian.PutUint64(data[len(data)-8:], uint64(write))
 				blob := &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: data}}
 				var response *cas.CASSaveResponse
@@ -143,6 +170,25 @@ func (p *pressureProxy) applyPressure(ctx context.Context, root []byte, queried 
 			}
 		}
 	}
+	if err == nil {
+		var available map[string]bool
+		available, err = p.inspectGraph(ctx, roots)
+		if err == nil {
+			if len(available) != len(graph) {
+				err = errors.New("promised graph changed during pressure")
+			}
+			for id := range graph {
+				if !available[id] {
+					err = errors.New("promised graph lost an object during pressure")
+				}
+			}
+			if err == nil {
+				p.mu.Lock()
+				p.stats.AvailablePromisedObjects = len(available)
+				p.mu.Unlock()
+			}
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.done = true
@@ -152,6 +198,79 @@ func (p *pressureProxy) applyPressure(ctx context.Context, root []byte, queried 
 	if err != nil {
 		p.stats.PressureError = err.Error()
 	}
+}
+
+func (p *pressureProxy) inspectGraph(ctx context.Context, roots []xcodecache.GraphReference) (map[string]bool, error) {
+	graph := make(map[string]bool)
+	queue := append([]xcodecache.GraphReference(nil), roots...)
+	referencesChecked := len(roots)
+	var bytesChecked int64
+	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		ref := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		prior, known := graph[string(ref.ID)]
+		if known && (prior || !ref.NativeNode) {
+			continue
+		}
+		if len(ref.ID) != sha256.Size || (!known && len(graph) >= maximumObservedObjects) {
+			return nil, errors.New("invalid or oversized promised graph")
+		}
+		graph[string(ref.ID)] = ref.NativeNode
+		digest := hex.EncodeToString(ref.ID)
+		var size int64
+		if err := p.db.QueryRowContext(ctx, "SELECT size FROM artifacts WHERE digest = ?", digest).Scan(&size); err != nil {
+			return nil, fmt.Errorf("inspect promised CAS metadata: %w", err)
+		}
+		if size < 0 || size > messageLimit || (!known && size > p.stats.QuotaBytes-bytesChecked) {
+			return nil, errors.New("promised graph exceeds the inspection byte budget")
+		}
+		data, err := readInspectionBlob(filepath.Join(p.storeRoot, "blobs", "sha256", digest[:2], digest[2:]), size)
+		if err != nil {
+			return nil, err
+		}
+		hash := sha256.Sum256(data)
+		if int64(len(data)) != size || hash != [32]byte(ref.ID) {
+			return nil, errors.New("promised graph bytes do not match metadata and CAS identity")
+		}
+		var object cas.CASObject
+		if err := proto.Unmarshal(data, &object); err != nil {
+			return nil, err
+		}
+		children, err := xcodecache.ObjectReferences(ref, &object)
+		if err != nil {
+			return nil, err
+		}
+		if !known {
+			bytesChecked += size
+		}
+		if len(children) > maximumObservedReferences-referencesChecked {
+			return nil, errors.New("promised graph exceeds the inspection reference budget")
+		}
+		referencesChecked += len(children)
+		queue = append(queue, children...)
+	}
+	// Every edge has now been inspected. Load-only compiler reads can use this
+	// complete set without requiring a Get for an inline action root.
+	for id := range graph {
+		graph[id] = true
+	}
+	return graph, nil
+}
+
+func readInspectionBlob(path string, size int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() != size {
+		return nil, errors.New("promised CAS file does not match its bounded metadata")
+	}
+	return io.ReadAll(io.LimitReader(file, size+1))
 }
 
 func (p *pressureProxy) recordRead(started time.Time, id []byte, success bool, references []*cas.CASDataID, get bool) {
@@ -166,6 +285,13 @@ func (p *pressureProxy) recordRead(started time.Time, id []byte, success bool, r
 		return
 	}
 	p.reads[identity]++
+	if p.graph[identity] {
+		elapsed := time.Since(p.queried).Nanoseconds()
+		if p.stats.QueryToFirstGraphReadNanos == 0 {
+			p.stats.QueryToFirstGraphReadNanos = elapsed
+		}
+		p.stats.QueryToLastGraphReadNanos = elapsed
+	}
 	// A descendant can be fetched concurrently before its parent's response
 	// reveals that edge. Remember successful post-pressure fetches by identity,
 	// rather than use a repeatable RPC count as evidence of graph coverage.
@@ -208,14 +334,16 @@ func (p *pressureProxy) recordRead(started time.Time, id []byte, success bool, r
 func (p *pressureProxy) Get(ctx context.Context, request *cas.CASGetRequest) (*cas.CASGetResponse, error) {
 	started := time.Now()
 	response, err := p.objects.Get(ctx, request)
-	p.recordRead(started, request.GetCasId().GetId(), err == nil && response.GetOutcome() == cas.CASGetResponse_SUCCESS, response.GetData().GetReferences(), true)
+	success := err == nil && response.GetOutcome() == cas.CASGetResponse_SUCCESS
+	p.recordRead(started, request.GetCasId().GetId(), success, response.GetData().GetReferences(), true)
 	return response, err
 }
 
 func (p *pressureProxy) Load(ctx context.Context, request *cas.CASLoadRequest) (*cas.CASLoadResponse, error) {
 	started := time.Now()
 	response, err := p.objects.Load(ctx, request)
-	p.recordRead(started, request.GetCasId().GetId(), err == nil && response.GetOutcome() == cas.CASLoadResponse_SUCCESS, nil, false)
+	success := err == nil && response.GetOutcome() == cas.CASLoadResponse_SUCCESS
+	p.recordRead(started, request.GetCasId().GetId(), success, nil, false)
 	return response, err
 }
 
@@ -231,9 +359,14 @@ func (p *pressureProxy) GetValue(ctx context.Context, request *kv.GetValueReques
 	queried := time.Now()
 	response, err := p.actions.GetValue(ctx, request)
 	if err == nil && response.GetOutcome() == kv.GetValueResponse_SUCCESS {
-		root := response.GetValue().GetEntries()["CASID"]
-		if len(root) == 32 {
-			p.once.Do(func() { p.applyPressure(ctx, root, queried) })
+		roots, graphError := xcodecache.ActionReferences(response.GetValue())
+		if graphError != nil {
+			return nil, status.Error(codes.Internal, "successful action contains an unsupported graph")
+		}
+		if len(roots) > 0 {
+			_, relay := response.GetValue().GetEntries()["CASID"]
+			inline := !relay
+			p.once.Do(func() { p.applyPressure(ctx, roots, inline, queried) })
 			p.mu.Lock()
 			pressureError := p.stats.PressureError
 			p.mu.Unlock()
@@ -296,14 +429,14 @@ func (s observations) validate() error {
 	if s.PressureError != "" {
 		return errors.New(s.PressureError)
 	}
-	if s.PromisedRoot == "" || s.CompilerRootReads == 0 || s.CompilerGraphReads == 0 {
-		return errors.New("real compiler did not fetch a promised root after pressure")
+	if s.PromisedRoot == "" || s.CompilerGraphReads == 0 {
+		return errors.New("real compiler did not read a promised CAS object after pressure")
 	}
-	if s.CompilerRootGets == 0 {
-		return errors.New("compiler must Get the promised root to discover its references")
+	if s.AvailablePromisedObjects != s.PromisedObjects || s.PromisedObjects == 0 || s.GraphObjectsInspected != s.PromisedObjects {
+		return errors.New("complete promised graph was not verified available after pressure")
 	}
-	if len(s.UnfetchedPromisedObjects) != 0 || s.FetchedPromisedObjects != s.PromisedObjects || s.PromisedObjects == 0 {
-		return errors.New("compiler did not fetch every discovered promised CAS object")
+	if s.QueryToFirstGraphReadNanos < s.PressureDurationNanos || s.QueryToLastGraphReadNanos >= int64(2*time.Minute) {
+		return errors.New("compiler consumed a promised object outside the fixed fetch window")
 	}
 	if len(s.MissingPromisedObjects) != 0 {
 		return fmt.Errorf("compiler lost %d promised CAS objects", len(s.MissingPromisedObjects))
@@ -357,6 +490,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer db.Close()
 	proxy := newProxy(cas.NewCASDBServiceClient(connection), kv.NewKeyValueDBClient(connection), db, quota)
+	proxy.storeRoot = store
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		return err

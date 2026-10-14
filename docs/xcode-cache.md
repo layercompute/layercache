@@ -19,6 +19,13 @@ A miss or corrupt object triggers compilation. A cache directory or metadata sta
 
 Before returning a cached action, this revision verifies its complete transitive
 CAS graph and atomically leases the exact objects for a two-minute fetch window.
+It recognizes LLVM's `CASID` root, Clang's output-name-to-ID map and the native
+Xcode plugin's inline `value` node. Native nodes include inline data and external
+references; encoded external nodes are followed transitively. The native parser
+accepts the bounded message shapes recorded from the Xcode 26.6 fixture and
+returns a miss for unsupported fields, malformed descriptors and unknown action
+schemas. The alternate data-chunk branch accepts only its recorded single-byte
+sentinel; new native formats need qualification before they can become hits.
 Eviction during verification produces an action miss. During the window, Local
 Cache deletion, LRU and impact collection preserve all leased objects, including
 descendants shared with another action. The committed byte quota remains in force;
@@ -58,16 +65,27 @@ That remains the native acceptance gate in
 
 The mandatory pressure phase uses a QA-only proxy in front of the candidate's
 Unix socket. It holds a real compiler action hit, writes unrelated CAS objects
-until quota eviction occurs, then forwards the response. The compiler must fetch
-the promised root with `Get`, fetch every discovered descendant successfully and produce the correct
-executable. The proxy issues no helper object reads, so it does not inflate compiler
-hit counts. Repeated reads of one object cannot substitute for an unfetched
-descendant. A Load-only root fails this fixture because its references remain
-unknown. The proxy retains Get adjacency before parent discovery, then checks the
-complete reachable closure so an out-of-order response cannot hide a grandchild.
-Its JSON records committed usage, evicted bytes, pressure duration and
-query-to-root-fetch time. The same controlled protocol oracle fails against the
-pre-lease implementation. Hosted Apple results must pass before treating the
+until quota eviction occurs, then forwards the response. Before and after those
+writes, bounded read-only SQLite and blob inspection verifies every promised
+object's metadata, bytes, hash and complete reachable graph. It sends no helper
+CAS read RPCs, so the inspection does not inflate compiler hit counts.
+
+The compiler must actually read at least one promised object after pressure,
+produce the correct executable, and report no failed promised reads, retry or
+uncached fallback. Native inline roots can restore their outputs using `Load`.
+Every consumed promised object must be read within the fixed two-minute window.
+Optional outputs may remain unfetched; they must still pass the complete
+post-pressure availability check. JSON reports `availablePromisedObjects`
+separately from `fetchedPromisedObjects` and the unfetched IDs. Repeated root
+reads cannot hide an evicted descendant because the second inspection verifies
+that descendant directly. Actual Get adjacency is retained even when a child
+response precedes its parent. JSON also records committed usage, evicted bytes,
+pressure duration and query-to-first/last-promised-read time.
+
+The native-format protocol regression fails against the revision which only
+recognized `CASID`. A separate root-only retention fixture proves an evicted,
+unconsumed native descendant fails the post-pressure inspection. Hosted Apple
+results must pass before treating the
 native pressure gate as qualified. Full application restore timing, including
 detached action queries, still requires the application's own evidence.
 

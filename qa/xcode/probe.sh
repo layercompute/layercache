@@ -59,6 +59,7 @@ root=Path(sys.argv[1])
 warm=json.loads((root/'warm-stats.json').read_text())
 assert warm['actionHits'] > 0, f'no warm compilation action hits: {warm}'
 assert warm['casHits'] > 0, f'no warm compiler objects replayed: {warm}'
+assert warm['graphChecks'] > 0 and warm['graphObjectsChecked'] > 0, f'no warm graph retention exercised: {warm}'
 assert '** BUILD SUCCEEDED **' in (root/'warm.log').read_text()
 assert 'Layer Cache compiler probe 42' in (root/'warm-output.log').read_text()
 print('Fresh DerivedData replayed compiler actions and CAS objects through Layer Cache.')
@@ -104,15 +105,15 @@ stats=json.loads((root/'pressure-stats.json').read_text())
 assert pressure['pressurePayloadBytes'] > pressure['quotaBytes'], pressure
 assert pressure['evictedBytes'] > 0, pressure
 assert pressure['maxObservedUsageBytes'] <= pressure['quotaBytes'], pressure
-assert pressure['compilerRootReadsAfterPressure'] > 0, pressure
-assert pressure['compilerRootGetsAfterPressure'] > 0, pressure
+assert pressure['graphObjectsInspected'] == pressure['promisedObjects'] > 0, pressure
+assert pressure['availablePromisedObjects'] == pressure['promisedObjects'], pressure
 assert pressure['pressureDurationNanos'] > 0, pressure
-assert pressure['pressureDurationNanos'] <= pressure['queryToFirstRootFetchNanos'] < 120_000_000_000, pressure
+assert pressure['pressureDurationNanos'] <= pressure['queryToFirstPromisedReadNanos'] <= pressure['queryToLastPromisedReadNanos'] < 120_000_000_000, pressure
 assert pressure['compilerGraphReads'] > 0, pressure
-assert pressure['fetchedPromisedObjects'] == pressure['promisedObjects'] > 0, pressure
-assert not pressure['unfetchedPromisedObjects'], pressure
+assert pressure['fetchedPromisedObjects'] > 0, pressure
 assert not pressure['missingPromisedObjects'], pressure
 assert not pressure.get('pressureError'), pressure
+assert stats['graphChecks'] > 0 and stats['graphObjectsChecked'] > 0, stats
 assert stats['actionHits'] > 0 and stats['casHits'] > 0, stats
 assert not stats['uncachedFallback'] and not stats['uncachedRetry'], stats
 assert '** BUILD SUCCEEDED **' in (root/'pressure.log').read_text()

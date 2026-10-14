@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func connect(t *testing.T, service interface {
@@ -38,6 +40,169 @@ func connect(t *testing.T, service interface {
 	}
 	t.Cleanup(func() { connection.Close(); server.Stop(); listener.Close() })
 	return cas.NewCASDBServiceClient(connection), kv.NewKeyValueDBClient(connection)
+}
+
+func TestNativePressureAllowsUnconsumedFirstRootWhenGraphRemainsAvailable(t *testing.T) {
+	fixture := newNativePressureFixture(t)
+	objects, actions := connect(t, fixture.proxy)
+	ctx := context.Background()
+	if hit, err := actions.GetValue(ctx, &kv.GetValueRequest{Key: []byte("native-action")}); err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS {
+		t.Fatalf("native action promise: %v %v", hit, err)
+	}
+	// The native node is an unused first output. Consuming its promised leaf
+	// still proves real replay; both objects were verified after eviction.
+	if output, err := objects.Load(ctx, &cas.CASLoadRequest{CasId: fixture.leaf}); err != nil || output.GetOutcome() != cas.CASLoadResponse_SUCCESS {
+		t.Fatalf("consumed native output: %v %v", output, err)
+	}
+	stats := fixture.proxy.snapshot()
+	if err := stats.validate(); err != nil || stats.CompilerRootReads != 0 || stats.CompilerGraphReads != 1 || stats.AvailablePromisedObjects != 2 || stats.FetchedPromisedObjects != 1 || len(stats.UnfetchedPromisedObjects) != 1 {
+		t.Fatalf("unused optional output was confused with lost output: %v %+v", err, stats)
+	}
+}
+
+type unleasedActions struct {
+	kv.KeyValueDBClient
+	value *kv.Value
+}
+
+func (s unleasedActions) GetValue(context.Context, *kv.GetValueRequest, ...grpc.CallOption) (*kv.GetValueResponse, error) {
+	return &kv.GetValueResponse{Outcome: kv.GetValueResponse_SUCCESS, Contents: &kv.GetValueResponse_Value{Value: s.value}}, nil
+}
+
+func TestNativePressureRejectsEvictedUnconsumedDescendantBeforeForwardingHit(t *testing.T) {
+	fixture := newNativePressureFixture(t)
+	ctx := context.Background()
+	key := func(id []byte) artifact.Key {
+		return artifact.Key{Integration: "xcode", Project: "qa-project", Compatibility: "qa-toolchain", Native: "cas-" + hex.EncodeToString(id), Version: "1"}
+	}
+	root, err := fixture.store.Head(ctx, key(fixture.node.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce a root-only retention bug. The first inspection sees a healthy
+	// complete graph, then real quota writes evict its unleased leaf.
+	if err := fixture.store.RetainForRead(ctx, "qa-root-only", "consumer", []artifact.Entry{root}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	fixture.proxy.actions = unleasedActions{value: &kv.Value{Entries: map[string][]byte{"value": fixture.value}}}
+	_, actions := connect(t, fixture.proxy)
+	if hit, err := actions.GetValue(ctx, &kv.GetValueRequest{Key: []byte("native-action")}); err == nil {
+		t.Fatalf("unconsumed evicted descendant survived QA validation: %v", hit)
+	}
+	stats := fixture.proxy.snapshot()
+	if stats.GraphObjectsInspected != 2 || stats.AvailablePromisedObjects != 0 || stats.PressureWrites == 0 || stats.EvictedBytes <= 0 || stats.PressureError == "" {
+		t.Fatalf("test did not exercise eviction between graph inspections: %+v", stats)
+	}
+	if _, err := fixture.store.Head(ctx, key(fixture.node.Id)); err != nil {
+		t.Fatalf("promised root was not retained in root-only fixture: %v", err)
+	}
+	if _, err := fixture.store.Head(ctx, key(fixture.leaf.Id)); !errors.Is(err, artifact.ErrNotFound) {
+		t.Fatalf("fixture did not evict the unconsumed descendant: %v", err)
+	}
+}
+
+func qaNativeNode(data []byte, id []byte, node bool) []byte {
+	field := func(number protowire.Number, value []byte) []byte {
+		return protowire.AppendBytes(protowire.AppendTag(nil, number, protowire.BytesType), value)
+	}
+	encoded := field(1, field(1, data))
+	descriptor := append(field(1, make([]byte, 65)), field(2, id)...)
+	if node {
+		descriptor = protowire.AppendVarint(protowire.AppendTag(descriptor, 3, protowire.VarintType), 1)
+	}
+	return append(encoded, field(2, field(2, descriptor))...)
+}
+
+type nativePressureFixture struct {
+	store                     *artifact.Store
+	service                   *xcodecache.Service
+	objects                   cas.CASDBServiceClient
+	actions                   kv.KeyValueDBClient
+	proxy                     *pressureProxy
+	leaf, node                *cas.CASDataID
+	leafData, nodeData, value []byte
+}
+
+func newNativePressureFixture(t *testing.T) nativePressureFixture {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+	const quota = 4096
+	store, err := artifact.Open(ctx, root, quota, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	service, err := xcodecache.New(store, "qa-project", "qa-toolchain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects, actions := connect(t, service)
+	leafData := bytes.Repeat([]byte("native-output"), 20)
+	leaf, err := objects.Save(ctx, &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: leafData}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeData := qaNativeNode([]byte("native manifest"), leaf.GetCasId().Id, false)
+	node, err := objects.Save(ctx, &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: nodeData}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := qaNativeNode([]byte("inline native result"), node.GetCasId().Id, true)
+	if response, err := actions.PutValue(ctx, &kv.PutValueRequest{Key: []byte("native-action"), Value: &kv.Value{Entries: map[string][]byte{"value": value}}}); err != nil || response.GetError() != nil {
+		t.Fatalf("native action store: %v %v", response, err)
+	}
+	databaseURL := &url.URL{Scheme: "file", Path: filepath.Join(root, "metadata.db"), RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite", databaseURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	proxy := newProxy(objects, actions, db, quota)
+	proxy.storeRoot = root
+	return nativePressureFixture{store, service, objects, actions, proxy, leaf.GetCasId(), node.GetCasId(), leafData, nodeData, value}
+}
+
+func TestNativeCompilerLoadRestoresCompleteGraphAfterPressure(t *testing.T) {
+	ctx := context.Background()
+	fixture := newNativePressureFixture(t)
+	proxy, service, leaf, node := fixture.proxy, fixture.service, fixture.leaf, fixture.node
+	leafData, nodeData := fixture.leafData, fixture.nodeData
+	compilerObjects, compilerActions := connect(t, proxy)
+	hit, err := compilerActions.GetValue(ctx, &kv.GetValueRequest{Key: []byte("native-action")})
+	if err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS {
+		t.Fatalf("native action promise: %v %v; %+v", hit, err, proxy.snapshot())
+	}
+	refs, err := xcodecache.ActionReferences(hit.GetValue())
+	if err != nil || len(refs) != 1 {
+		t.Fatalf("native inline references: %+v %v", refs, err)
+	}
+	manifest, err := compilerObjects.Load(ctx, &cas.CASLoadRequest{CasId: &cas.CASDataID{Id: refs[0].ID}})
+	if err != nil || manifest.GetOutcome() != cas.CASLoadResponse_SUCCESS || !bytes.Equal(manifest.GetData().GetBlob().GetData(), nodeData) {
+		t.Fatalf("native manifest lost after promise: %v %v; %+v", manifest, err, proxy.snapshot())
+	}
+	// Read-only inspection proves the unfetched descendant is still available.
+	// Actual compiler reads remain a separate count, including repeated Loads.
+	if _, err := compilerObjects.Load(ctx, &cas.CASLoadRequest{CasId: node}); err != nil {
+		t.Fatal(err)
+	}
+	if err := proxy.snapshot().validate(); err != nil {
+		t.Fatalf("healthy optional output need not be consumed: %v %+v", err, proxy.snapshot())
+	}
+	output, err := compilerObjects.Load(ctx, &cas.CASLoadRequest{CasId: leaf})
+	if err != nil || output.GetOutcome() != cas.CASLoadResponse_SUCCESS || !bytes.Equal(output.GetData().GetBlob().GetData(), leafData) {
+		t.Fatalf("native output lost after promise: %v %v", output, err)
+	}
+	stats := proxy.snapshot()
+	if err := stats.validate(); err != nil {
+		t.Fatalf("native pressure qualification: %v %+v", err, stats)
+	}
+	if !stats.InlineActionRoot || stats.CompilerRootGets != 0 || stats.GraphObjectsInspected != 2 || stats.PromisedObjects != 2 || stats.FetchedPromisedObjects != 2 || stats.CompilerGraphReads != 3 {
+		t.Fatalf("native graph proof or actual compiler counts: %+v", stats)
+	}
+	if actual := service.Stats(); actual.CASReads != 3 || actual.CASHits != 3 || actual.GraphChecks != 1 || actual.GraphObjectsChecked != 2 {
+		t.Fatalf("inspection inflated RPC hit counters: %+v", actual)
+	}
 }
 
 // This same test fails against the pre-lease implementation: GetValue promises
@@ -75,6 +240,7 @@ func TestCompilerFetchSurvivesPressureAfterSuccessfulAction(t *testing.T) {
 	}
 	defer db.Close()
 	proxy := newProxy(objects, actions, db, quota)
+	proxy.storeRoot = root
 	compilerObjects, compilerActions := connect(t, proxy)
 	hit, err := compilerActions.GetValue(ctx, &kv.GetValueRequest{Key: []byte("compiler-action")})
 	if err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS {
@@ -101,14 +267,14 @@ func TestCompilerFetchSurvivesPressureAfterSuccessfulAction(t *testing.T) {
 }
 
 func TestPressureValidationRequiresEvictionAndPromisedFetch(t *testing.T) {
-	valid := observations{QuotaBytes: 1024, PressurePayloadBytes: 2048, EvictedBytes: 512, MaxObservedUsageBytes: 1000, PromisedRoot: "root", CompilerRootReads: 1, CompilerRootGets: 1, CompilerGraphReads: 2, PromisedObjects: 2, FetchedPromisedObjects: 2}
+	valid := observations{QuotaBytes: 1024, PressurePayloadBytes: 2048, EvictedBytes: 512, MaxObservedUsageBytes: 1000, PromisedRoot: "root", CompilerRootReads: 1, CompilerRootGets: 1, CompilerGraphReads: 2, PromisedObjects: 2, GraphObjectsInspected: 2, AvailablePromisedObjects: 2, FetchedPromisedObjects: 2, QueryToFirstGraphReadNanos: 1, QueryToLastGraphReadNanos: 2}
 	for name, mutate := range map[string]func(*observations){
 		"no pressure":        func(s *observations) { s.PressurePayloadBytes = 1024 },
 		"no eviction":        func(s *observations) { s.EvictedBytes = 0 },
 		"quota exceeded":     func(s *observations) { s.MaxObservedUsageBytes = 1025 },
-		"no real fetch":      func(s *observations) { s.CompilerRootReads = 0 },
-		"load-only root":     func(s *observations) { s.CompilerRootGets = 0 },
-		"unfetched leaf":     func(s *observations) { s.UnfetchedPromisedObjects = []string{"leaf"}; s.FetchedPromisedObjects = 1 },
+		"no real fetch":      func(s *observations) { s.CompilerGraphReads = 0 },
+		"uninspected graph":  func(s *observations) { s.GraphObjectsInspected = 0 },
+		"unavailable leaf":   func(s *observations) { s.AvailablePromisedObjects = 1 },
 		"missing descendant": func(s *observations) { s.MissingPromisedObjects = []string{"leaf"} },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -134,11 +300,11 @@ func TestPressureValidationRejectsRootOnlyRepeatedReads(t *testing.T) {
 		proxy.recordRead(time.Now(), root, true, []*cas.CASDataID{{Id: leaf}}, true)
 	}
 	if err := proxy.snapshot().validate(); err == nil {
-		t.Fatal("root-only reads passed without fetching the discovered leaf")
+		t.Fatal("root-only reads passed without verifying the discovered leaf remained available")
 	}
 }
 
-func TestPressureValidationRejectsLoadOnlyRoot(t *testing.T) {
+func TestPressureValidationRejectsLoadWithoutGraphInspection(t *testing.T) {
 	proxy := newProxy(nil, nil, nil, 1024)
 	root := []byte("root")
 	proxy.root, proxy.graph[string(root)], proxy.done = string(root), true, true
@@ -149,7 +315,7 @@ func TestPressureValidationRejectsLoadOnlyRoot(t *testing.T) {
 	proxy.stats.MaxObservedUsageBytes = 1000
 	proxy.recordRead(time.Now(), root, true, nil, false)
 	if err := proxy.snapshot().validate(); err == nil {
-		t.Fatal("Load-only root passed without discovering its references")
+		t.Fatal("Load-only root passed without complete graph inspection")
 	}
 }
 
@@ -171,7 +337,7 @@ func TestPressureValidationKeepsFailureBeforeReferenceDiscovery(t *testing.T) {
 	}
 }
 
-func TestPressureValidationRejectsUnfetchedGrandchildDiscoveredOutOfOrder(t *testing.T) {
+func TestPressureValidationReportsUnfetchedGrandchildDiscoveredOutOfOrder(t *testing.T) {
 	proxy := newProxy(nil, nil, nil, 1024)
 	root, child, grandchild := []byte("root"), []byte("child"), []byte("grandchild")
 	proxy.root, proxy.graph[string(root)], proxy.done = string(root), true, true
@@ -180,10 +346,12 @@ func TestPressureValidationRejectsUnfetchedGrandchildDiscoveredOutOfOrder(t *tes
 	proxy.stats.PressurePayloadBytes = 2048
 	proxy.stats.EvictedBytes = 512
 	proxy.stats.MaxObservedUsageBytes = 1000
+	proxy.stats.GraphObjectsInspected, proxy.stats.AvailablePromisedObjects = 3, 3
 	proxy.recordRead(time.Now(), child, true, []*cas.CASDataID{{Id: grandchild}}, true)
 	proxy.recordRead(time.Now(), root, true, []*cas.CASDataID{{Id: child}}, true)
-	if err := proxy.snapshot().validate(); err == nil {
-		t.Fatal("child-before-parent reads passed without fetching the discovered grandchild")
+	partial := proxy.snapshot()
+	if err := partial.validate(); err != nil || partial.PromisedObjects != 3 || partial.FetchedPromisedObjects != 2 || len(partial.UnfetchedPromisedObjects) != 1 {
+		t.Fatalf("out-of-order consumption hid the available unfetched grandchild: %v %+v", err, partial)
 	}
 	proxy.recordRead(time.Now(), grandchild, true, nil, false)
 	stats := proxy.snapshot()

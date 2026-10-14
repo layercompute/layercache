@@ -220,50 +220,75 @@ func (s *Service) lookupObjectEntry(ctx context.Context, id *cas.CASDataID) (*ca
 // entries. Eviction during the walk becomes a miss at final admission. After
 // admission, every descendant stays available for a fixed two-minute fetch
 // interval. Ordinary CAS reads do not extend an abandoned action's lease.
-func (s *Service) retainGraph(ctx context.Context, root []byte) error {
+func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []GraphReference) error {
 	started := time.Now()
 	s.graphChecks.Add(1)
 	defer func() { s.graphLookupNanos.Add(uint64(time.Since(started))) }()
-	if len(root) != sha256.Size {
-		return artifact.ErrNotFound
-	}
 	ctx, cancel := context.WithTimeout(ctx, graphLookupTimeout)
 	defer cancel()
-	queue := [][]byte{root}
-	seen := map[string]bool{string(root): true}
+	var queue []GraphReference
+	discovered := make(map[string]bool)
+	enqueue := func(refs []GraphReference) error {
+		for _, ref := range refs {
+			if len(ref.ID) != sha256.Size {
+				return artifact.ErrCorrupt
+			}
+			prior, known := discovered[string(ref.ID)]
+			if known && (prior || !ref.NativeNode) {
+				continue
+			}
+			if !known && len(discovered) >= maximumGraphObjects {
+				return artifact.ErrQuota
+			}
+			discovered[string(ref.ID)] = ref.NativeNode
+			queue = append(queue, ref)
+		}
+		return nil
+	}
+	if err := enqueue(roots); err != nil {
+		return err
+	}
+	seen := make(map[string]bool)
 	var entries []artifact.Entry
 	var size int64
 	for len(queue) > 0 {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		id := queue[len(queue)-1]
+		ref := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
-		object, entry, err := s.lookupObjectEntry(ctx, &cas.CASDataID{Id: id})
+		previousNative, known := seen[string(ref.ID)]
+		if known && (previousNative || !ref.NativeNode) {
+			continue
+		}
+		if !known && len(seen) >= maximumGraphObjects {
+			return artifact.ErrQuota
+		}
+		seen[string(ref.ID)] = ref.NativeNode
+		object, entry, err := s.lookupObjectEntry(ctx, &cas.CASDataID{Id: ref.ID})
 		if err != nil {
 			return err
 		}
-		s.graphObjectsChecked.Add(1)
-		if entry.Size > s.store.MaxBytes()-size {
-			return artifact.ErrQuota
+		if !known {
+			s.graphObjectsChecked.Add(1)
+			if entry.Size > s.store.MaxBytes()-size {
+				return artifact.ErrQuota
+			}
+			size += entry.Size
+			entries = append(entries, entry)
 		}
-		size += entry.Size
-		entries = append(entries, entry)
-		for _, ref := range object.References {
-			id := ref.GetId()
-			if len(id) != sha256.Size {
-				return artifact.ErrNotFound
-			}
-			if !seen[string(id)] {
-				if len(seen) >= maximumGraphObjects {
-					return artifact.ErrQuota
-				}
-				seen[string(id)] = true
-				queue = append(queue, id)
-			}
+		children, err := ObjectReferences(ref, object)
+		if err != nil {
+			return err
+		}
+		if err := enqueue(children); err != nil {
+			return err
 		}
 	}
-	owner := sha256.Sum256(append([]byte(s.project+"\x00"+s.compatibility+"\x00"), root...))
+	if len(entries) == 0 { // A fully inline native value needs no stored objects.
+		return nil
+	}
+	owner := sha256.Sum256(append([]byte(s.project+"\x00"+s.compatibility+"\x00"), identity...))
 	return s.store.RetainForRead(ctx, readLeaseNamespace, hex.EncodeToString(owner[:]), entries, artifact.MaximumReadLeaseDuration)
 }
 
@@ -323,8 +348,14 @@ func (s *Service) GetValue(ctx context.Context, request *kv.GetValueRequest) (*k
 	if err = proto.Unmarshal(data, value); err != nil {
 		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
 	}
-	if root, ok := value.Entries["CASID"]; ok {
-		if err := s.retainGraph(ctx, root); err != nil {
+	refs, err := ActionReferences(value)
+	if err != nil {
+		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
+	}
+	_, native := value.Entries["value"]
+	if len(refs) != 0 || native {
+		identity := sha256.Sum256(data)
+		if err := s.retainGraph(ctx, identity[:], refs); err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
