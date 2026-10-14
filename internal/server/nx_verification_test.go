@@ -126,8 +126,13 @@ func TestProjectGatewayNxCapacityRejectionDeclinesPublication(t *testing.T) {
 
 func TestProjectGatewayCapacityResponsePreservesAdministrativeRoutes(t *testing.T) {
 	gateway, projects := gatewayFixture(t, nil)
-	gateway.pool = StoragePoolConfig{Path: t.TempDir(), MinFreeBytes: math.MaxInt64}
 	auth := "Bearer " + gatewayToken(t, projects["alpha"], "github:alice", "nx", access.CapabilityWrite)
+	// GET pins belongs to administration. Its identifier cannot be an Nx
+	// round-trip key, even though PUT would otherwise match the generic route.
+	if response := gatewayRequest(gateway, http.MethodPut, "/v1/cache/pins", auth, "bytes", nil); response.Code != http.StatusBadRequest {
+		t.Fatalf("reserved identifier accepted as an Nx artifact: HTTP %d", response.Code)
+	}
+	gateway.pool = StoragePoolConfig{Path: t.TempDir(), MinFreeBytes: math.MaxInt64}
 	for _, path := range []string{"/v1/cache/quota", "/v1/cache/pins", "/v1/cache/pins/owner", "/v1/cache/nested/key", "/v8/artifacts/task"} {
 		response := gatewayRequest(gateway, http.MethodPut, path, auth, "bytes", nil)
 		if response.Code != http.StatusInsufficientStorage {

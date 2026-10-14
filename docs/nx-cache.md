@@ -49,6 +49,9 @@ the native access token. Current membership still applies when it is used.
 
 GET returns exact `application/octet-stream` bytes or 404. PUT returns 200 for
 the first writer and 409 for every existing key, including an identical archive.
+The root API reserves `quota` and `pins` for administration, so those names
+cannot be native artifact keys. The pinned Nx fixture uses generated numeric
+task hashes.
 Read-only and capacity-limited writes return 403, which the native client
 declines without replacing a successful task result. Invalid credentials return
 plain-text 401. Private responses use `Cache-Control: private, no-store`.
