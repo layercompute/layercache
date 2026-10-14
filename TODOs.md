@@ -14,8 +14,10 @@ hit counts alone.
 
 - [ ] **Qualify required file handoffs independently of evictable caches.**
   Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
-  [Phone #273](https://github.com/ziahamza/phone-app/pull/273) contains the narrow
-  retained web/APK/receipt transport. Prove an exact producer-to-consumer
+  [Phone #295](https://github.com/ziahamza/phone-app/pull/295) owns current signed
+  build and retained web/APK/receipt qualification;
+  [Phone #273](https://github.com/ziahamza/phone-app/pull/273) remains the
+  historical held-stack reference. Prove an exact producer-to-consumer
   transfer and consumer-only rerun with source/run/attempt/job/digest checks.
   Required publication fails visibly. The separate fourteen-day release-package
   policy does not establish this handoff. Preserve the held stack's unrelated
@@ -32,6 +34,20 @@ hit counts alone.
   and interrupted commit with bounded evidence. Add meaningful regression
   coverage for any proven bug and document acknowledgement/read-back guarantees.
   Qualify a separate gateway rollout if a service fix is needed.
+
+  Evidence on 2026-10-14: candidate
+  `c5a354badfab5d74bdcc2458141f277d382c61ec` adds the
+  [acknowledgement/miss contract](docs/actions-cache-contract.md) and a real
+  PostgreSQL 16/production S3 SDK loop with a disposable HTTP S3 fixture.
+  Deployed `16868d9` and current source both restore a varied 124,108,800-byte
+  payload with complete size/SHA-256 verification after commit acknowledgement.
+  Controlled quota, expiry, deletion, integrity, scope, failed-copy and lost
+  response cases distinguish expected behavior; pin, healthy-fallback and
+  concurrent-maintenance/read-lease controls pass. The bounded miss header
+  reports only this lookup's observations, not a durable removal history.
+  The historical cause remains unproven; no backend bug was reproduced.
+  Next: obtain exact request identity and authoritative removal/commit evidence
+  for the reported incident. Gateway rollout remains separate and pending.
 
 - [ ] **Make expensive Phone test groups independently reusable.**
   Owner: Phone workflow owner for task definitions; LayerCache for publication
