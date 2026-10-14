@@ -200,7 +200,7 @@ func (gateway *ProjectGateway) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	if (r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodPatch) && !strings.HasPrefix(r.URL.Path, "/v1/auth/") {
 		requested := max(r.ContentLength, 1<<20)
 		if requested > (1<<62) || !gateway.pool.admits(requested*2) {
-			if r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/cache/") {
+			if r.Method == http.MethodPut && nxArtifactPath(r.URL.Path) {
 				http.Error(w, "cache capacity unavailable", http.StatusForbidden)
 				return
 			}

@@ -41,9 +41,19 @@ func (server *Server) requireNxToken(next http.Handler) http.Handler {
 	})
 }
 
+func validNxHash(hash string) bool {
+	return hash != "" && len(hash) <= 1024 && !strings.ContainsAny(hash, "/\\\x00\r\n\t ")
+}
+
+func nxArtifactPath(path string) bool {
+	hash, matches := strings.CutPrefix(path, "/v1/cache/")
+	// More-specific administration routes share the prefix in the HTTP mux.
+	return matches && validNxHash(hash) && hash != "quota" && hash != "pins"
+}
+
 func (server *Server) nxArtifact(writer http.ResponseWriter, request *http.Request) {
 	hash := request.PathValue("hash")
-	if hash == "" || len(hash) > 1024 || strings.ContainsAny(hash, "/\\\x00\r\n\t ") {
+	if !validNxHash(hash) {
 		http.Error(writer, "invalid cache hash", http.StatusBadRequest)
 		return
 	}

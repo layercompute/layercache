@@ -124,6 +124,18 @@ func TestProjectGatewayNxCapacityRejectionDeclinesPublication(t *testing.T) {
 	}
 }
 
+func TestProjectGatewayCapacityResponsePreservesAdministrativeRoutes(t *testing.T) {
+	gateway, projects := gatewayFixture(t, nil)
+	gateway.pool = StoragePoolConfig{Path: t.TempDir(), MinFreeBytes: math.MaxInt64}
+	auth := "Bearer " + gatewayToken(t, projects["alpha"], "github:alice", "nx", access.CapabilityWrite)
+	for _, path := range []string{"/v1/cache/quota", "/v1/cache/pins", "/v1/cache/pins/owner", "/v1/cache/nested/key", "/v8/artifacts/task"} {
+		response := gatewayRequest(gateway, http.MethodPut, path, auth, "bytes", nil)
+		if response.Code != http.StatusInsufficientStorage {
+			t.Fatalf("%s classified as a native Nx archive: HTTP %d", path, response.Code)
+		}
+	}
+}
+
 type nxDrainingBody struct {
 	reader     io.Reader
 	afterFirst func()
