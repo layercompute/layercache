@@ -104,6 +104,11 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 		return uncached(ctx, options, command, stdout, stderr, err)
 	}
 	defer store.Close()
+	// Only this runtime, holding the exclusive directory lock, can release
+	// interrupted compiler restores from the previous adapter process.
+	if err = store.ResetReadLeases(ctx, readLeaseNamespace); err != nil {
+		return uncached(ctx, options, command, stdout, stderr, err)
+	}
 	service, err := New(store, options.Project, options.Compatibility)
 	if err != nil {
 		return err

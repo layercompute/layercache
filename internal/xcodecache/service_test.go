@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -160,6 +161,14 @@ func TestActionMissesWhenAnIndirectCASOutputIsEvicted(t *testing.T) {
 	warm, err := k.GetValue(ctx, &kv.GetValueRequest{Key: key})
 	if err != nil || warm.GetOutcome() != kv.GetValueResponse_SUCCESS {
 		t.Fatalf("complete graph: %v %v", warm, err)
+	}
+	if err = s.store.Delete(ctx, s.key("cas", leaf.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
+		t.Fatalf("successful action did not protect its descendant: %v", err)
+	}
+	// Simulate a consumer which has stopped. A fresh action lookup must miss
+	// once an unprotected descendant is collected.
+	if err = s.store.ResetReadLeases(ctx, readLeaseNamespace); err != nil {
+		t.Fatal(err)
 	}
 	if err = s.store.Delete(ctx, s.key("cas", leaf.GetCasId().Id)); err != nil {
 		t.Fatal(err)

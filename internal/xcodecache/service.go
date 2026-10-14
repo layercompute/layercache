@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/compatibility"
@@ -27,15 +28,23 @@ import (
 
 const MaxMessageBytes = 128 << 20
 
+const readLeaseNamespace = "xcode-restore"
+const graphLookupTimeout = 10 * time.Second
+const maximumGraphObjects = 100000
+
 // Stats reports protocol reuse, not estimated compilation time saved.
 type Stats struct {
-	CASReads     uint64 `json:"casReads"`
-	CASHits      uint64 `json:"casHits"`
-	CASWrites    uint64 `json:"casWrites"`
-	ActionReads  uint64 `json:"actionReads"`
-	ActionHits   uint64 `json:"actionHits"`
-	ActionWrites uint64 `json:"actionWrites"`
-	CacheErrors  uint64 `json:"cacheErrors"`
+	CASReads            uint64 `json:"casReads"`
+	CASHits             uint64 `json:"casHits"`
+	CASWrites           uint64 `json:"casWrites"`
+	ActionReads         uint64 `json:"actionReads"`
+	ActionHits          uint64 `json:"actionHits"`
+	ActionWrites        uint64 `json:"actionWrites"`
+	CacheErrors         uint64 `json:"cacheErrors"`
+	GraphChecks         uint64 `json:"graphChecks"`
+	GraphObjectsChecked uint64 `json:"graphObjectsChecked"`
+	GraphLookupNanos    uint64 `json:"graphLookupNanos"`
+	GraphLeaseMisses    uint64 `json:"graphLeaseMisses"`
 }
 
 type Service struct {
@@ -44,6 +53,7 @@ type Service struct {
 	store                                                                            *artifact.Store
 	project, compatibility                                                           string
 	casReads, casHits, casWrites, actionReads, actionHits, actionWrites, cacheErrors atomic.Uint64
+	graphChecks, graphObjectsChecked, graphLookupNanos, graphLeaseMisses             atomic.Uint64
 }
 
 func validateIdentity(project, abi string) error {
@@ -64,7 +74,13 @@ func New(store *artifact.Store, project, abi string) (*Service, error) {
 }
 
 func (s *Service) Stats() Stats {
-	return Stats{CASReads: s.casReads.Load(), CASHits: s.casHits.Load(), CASWrites: s.casWrites.Load(), ActionReads: s.actionReads.Load(), ActionHits: s.actionHits.Load(), ActionWrites: s.actionWrites.Load(), CacheErrors: s.cacheErrors.Load()}
+	return Stats{
+		CASReads: s.casReads.Load(), CASHits: s.casHits.Load(), CASWrites: s.casWrites.Load(),
+		ActionReads: s.actionReads.Load(), ActionHits: s.actionHits.Load(), ActionWrites: s.actionWrites.Load(),
+		CacheErrors: s.cacheErrors.Load(), GraphChecks: s.graphChecks.Load(),
+		GraphObjectsChecked: s.graphObjectsChecked.Load(), GraphLookupNanos: s.graphLookupNanos.Load(),
+		GraphLeaseMisses: s.graphLeaseMisses.Load(),
+	}
 }
 
 func (s *Service) key(kind string, id []byte) artifact.Key {
@@ -80,18 +96,24 @@ func (s *Service) put(ctx context.Context, kind string, id, data []byte) error {
 }
 
 func (s *Service) get(ctx context.Context, kind string, id []byte) ([]byte, error) {
+	_, data, err := s.getEntry(ctx, kind, id)
+	return data, err
+}
+
+func (s *Service) getEntry(ctx context.Context, kind string, id []byte) (artifact.Entry, []byte, error) {
 	entry, reader, err := s.store.Get(ctx, s.key(kind, id))
 	if err != nil {
 		if !errors.Is(err, artifact.ErrNotFound) && !errors.Is(err, artifact.ErrCorrupt) {
 			s.cacheErrors.Add(1)
 		}
-		return nil, err
+		return artifact.Entry{}, nil, err
 	}
 	defer reader.Close()
 	if entry.Size > MaxMessageBytes {
-		return nil, artifact.ErrCorrupt
+		return artifact.Entry{}, nil, artifact.ErrCorrupt
 	}
-	return io.ReadAll(io.LimitReader(reader, MaxMessageBytes+1))
+	data, err := io.ReadAll(io.LimitReader(reader, MaxMessageBytes+1))
+	return entry, data, err
 }
 
 func inline(blob *cas.CASBytes) ([]byte, error) {
@@ -171,54 +193,78 @@ func (s *Service) readObject(ctx context.Context, id *cas.CASDataID) (*cas.CASOb
 }
 
 func (s *Service) lookupObject(ctx context.Context, id *cas.CASDataID) (*cas.CASObject, error) {
+	object, _, err := s.lookupObjectEntry(ctx, id)
+	return object, err
+}
+
+func (s *Service) lookupObjectEntry(ctx context.Context, id *cas.CASDataID) (*cas.CASObject, artifact.Entry, error) {
 	if len(id.GetId()) != sha256.Size {
-		return nil, status.Error(codes.InvalidArgument, "invalid CAS ID")
+		return nil, artifact.Entry{}, status.Error(codes.InvalidArgument, "invalid CAS ID")
 	}
-	data, err := s.get(ctx, "cas", id.Id)
+	entry, data, err := s.getEntry(ctx, "cas", id.Id)
 	if err != nil {
-		return nil, err
+		return nil, artifact.Entry{}, err
 	}
 	digest := sha256.Sum256(data)
 	if !bytes.Equal(digest[:], id.Id) {
-		return nil, artifact.ErrCorrupt
+		return nil, artifact.Entry{}, artifact.ErrCorrupt
 	}
 	object := new(cas.CASObject)
 	if err = proto.Unmarshal(data, object); err != nil {
-		return nil, artifact.ErrCorrupt
+		return nil, artifact.Entry{}, artifact.ErrCorrupt
 	}
-	return object, nil
+	return object, entry, nil
 }
 
-// LLVM action values name their root CASID. Quota eviction can remove a
-// descendant while retaining the index; that must be an action miss.
-func (s *Service) graphAvailable(ctx context.Context, root []byte) (bool, error) {
+// Verify the complete immutable graph, then atomically retain the exact
+// entries. Eviction during the walk becomes a miss at final admission. After
+// admission, every descendant stays available for a fixed two-minute fetch
+// interval. Ordinary CAS reads do not extend an abandoned action's lease.
+func (s *Service) retainGraph(ctx context.Context, root []byte) error {
+	started := time.Now()
+	s.graphChecks.Add(1)
+	defer func() { s.graphLookupNanos.Add(uint64(time.Since(started))) }()
+	if len(root) != sha256.Size {
+		return artifact.ErrNotFound
+	}
+	ctx, cancel := context.WithTimeout(ctx, graphLookupTimeout)
+	defer cancel()
 	queue := [][]byte{root}
-	seen := make(map[string]bool)
+	seen := map[string]bool{string(root): true}
+	var entries []artifact.Entry
+	var size int64
 	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		id := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
-		if len(id) != sha256.Size {
-			return false, nil
-		}
-		if seen[string(id)] {
-			continue
-		}
-		seen[string(id)] = true
-		if len(seen) > 100000 {
-			return false, nil
-		}
-		object, err := s.lookupObject(ctx, &cas.CASDataID{Id: id})
-		if errors.Is(err, artifact.ErrNotFound) || errors.Is(err, artifact.ErrCorrupt) {
-			return false, nil
-		}
+		object, entry, err := s.lookupObjectEntry(ctx, &cas.CASDataID{Id: id})
 		if err != nil {
-			return false, err
+			return err
 		}
+		s.graphObjectsChecked.Add(1)
+		if entry.Size > s.store.MaxBytes()-size {
+			return artifact.ErrQuota
+		}
+		size += entry.Size
+		entries = append(entries, entry)
 		for _, ref := range object.References {
-			queue = append(queue, ref.GetId())
+			id := ref.GetId()
+			if len(id) != sha256.Size {
+				return artifact.ErrNotFound
+			}
+			if !seen[string(id)] {
+				if len(seen) >= maximumGraphObjects {
+					return artifact.ErrQuota
+				}
+				seen[string(id)] = true
+				queue = append(queue, id)
+			}
 		}
 	}
-	return true, nil
+	owner := sha256.Sum256(append([]byte(s.project+"\x00"+s.compatibility+"\x00"), root...))
+	return s.store.RetainForRead(ctx, readLeaseNamespace, hex.EncodeToString(owner[:]), entries, artifact.MaximumReadLeaseDuration)
 }
 
 func (s *Service) Put(ctx context.Context, request *cas.CASPutRequest) (*cas.CASPutResponse, error) {
@@ -278,12 +324,22 @@ func (s *Service) GetValue(ctx context.Context, request *kv.GetValueRequest) (*k
 		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
 	}
 	if root, ok := value.Entries["CASID"]; ok {
-		available, err := s.graphAvailable(ctx, root)
-		if err != nil {
+		if err := s.retainGraph(ctx, root); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if errors.Is(err, artifact.ErrNotFound) || errors.Is(err, artifact.ErrCorrupt) || errors.Is(err, artifact.ErrConflict) || errors.Is(err, artifact.ErrQuota) || errors.Is(err, context.DeadlineExceeded) {
+				if errors.Is(err, artifact.ErrQuota) {
+					s.graphLeaseMisses.Add(1)
+				}
+				return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
+			}
 			return nil, err
 		}
-		if !available {
-			return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
+		if ctx.Err() != nil {
+			// A canceled action query cannot promise a successful restore. Its
+			// admitted lease still expires without further client activity.
+			return nil, ctx.Err()
 		}
 	}
 	s.actionHits.Add(1)

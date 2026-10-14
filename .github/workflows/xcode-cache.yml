@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'internal/xcodecache/**'
+      - 'internal/artifact/**'
       - 'internal/cli/xcode.go'
       - 'internal/cli/run.go'
       - 'qa/xcode/**'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - 'internal/xcodecache/**'
+      - 'internal/artifact/**'
       - 'internal/cli/xcode.go'
       - 'internal/cli/run.go'
       - 'qa/xcode/**'
@@ -36,29 +38,33 @@ jobs:
         with:
           go-version: '1.25.13'
       - run: go test -race ./internal/xcodecache/...
+      - run: go test -race ./qa/xcode/pressure-proxy
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/layercache" ./cmd/layercache
+      - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/xcode-pressure-proxy" ./qa/xcode/pressure-proxy
       - uses: actions/upload-artifact@v7
         with:
           name: xcode-cache-adapter
-          path: ${{ runner.temp }}/layercache
+          path: |
+            ${{ runner.temp }}/layercache
+            ${{ runner.temp }}/xcode-pressure-proxy
           if-no-files-found: error
           retention-days: 1
   qualify:
-    name: Real Xcode cold and warm replay
+    name: Real Xcode cold, warm and pressure replay
     needs: build
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/download-artifact@v8
         with:
           name: xcode-cache-adapter
           path: ${{ runner.temp }}/xcode-adapter
-      - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache"
+      - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-adapter/xcode-pressure-proxy"
       - name: Install the pinned project generator
         run: gem install --user-install xcodeproj --version 1.27.0 --no-document
-      - name: Build with a fresh producer and consumer
-        run: bash qa/xcode/probe.sh "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-cache-evidence"
+      - name: Build with fresh consumers and forced quota eviction
+        run: bash qa/xcode/probe.sh "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-cache-evidence" "$RUNNER_TEMP/xcode-adapter/xcode-pressure-proxy"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
