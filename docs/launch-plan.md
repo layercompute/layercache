@@ -1,11 +1,11 @@
 # LayerCache launch plan, 2026-10-14
 
-Reusing successful local tasks in required CI checks is the immediate priority.
-Measure whole-job savings in Phone and complete Nx read-through and durable
-publication between Local Cache and private endpoints before expanding Nx use. Keep the task commands
-present, restore compatible deterministic results, and execute on a miss.
-Protect useful compiler outputs and bounded storage before expanding the
-dashboard, machine management, or hosted runners. The existing operator-managed
+[TODOs.md](../TODOs.md) owns current priorities and outstanding acceptance.
+Reuse successful local tasks in required CI checks, preserve reliable required
+handoffs, and measure Phone whole-job savings. Keep task commands present,
+restore compatible deterministic results, and execute on a miss. Protect
+useful outputs and bounded storage before expanding machine management or
+hosted runners. The existing operator-managed
 Team Cache is available again. The self-serve cloud implementation is present,
 but its public service has not been deployed.
 
@@ -115,59 +115,19 @@ compiled Nx client against downloaded binaries. Beta.4 requires conflict pins
 to retire; it has no historical-beta exception. These are release/fixture proofs,
 not measurements of Phone's complete job or a deployed self-serve cloud.
 
-## Priorities and landing gates
+## Outstanding work and priorities
 
-1. **Measure Phone jobs and complete private task reuse.** Measure the merged
-   Phone lanes without attributing native snapshot hits to the remote service.
-   Finish read-through and durable Nx publication between Local Cache and
-   Personal/Team endpoints before expanding Nx adoption. Add exact-hash confirmation and
-   reporting before claiming that a local Nx result is available to CI.
-   Keep explicit compatible execution
-   profiles and complete deterministic inputs. For existing Turbo lanes,
-   confirm publication with `run --sync-team`; use `cache-mode: read-only` in
-   required PR task lanes and `cache-mode: fresh` for deliberate fresh checks.
-   Preserve failed task exit codes and execute on misses. The active Phone CI chat owns
-   application input fixes, rollout and post-merge measurements. Network/live suites and mutable
-   Git-base checks retain fresh execution policies. Measure whole-job savings
-   separately from task cache hits.
-2. **Preserve compiler and storage correctness.** Keep the merged permanent
-   conflict, pin-retirement and graph-pressure regressions green. The native
-   multiple-root gate in [#30](https://github.com/ziahamza/layercache/pull/30)
-   passed; qualify Phone's larger workload before adopting a new adapter pin. Retain bounded LRU until native traces justify a different
-   admission policy. Keep useful shared snapshot baselines within provider
-   budgets. Local snapshots alone are not a remotely
-   hosted compiler service. Expand shared native use after these checks pass.
-3. **Add native OSS integrations in order.** Next qualify Gradle HTTP caching
-   for audited Phone Android tasks. Follow with an isolated, pinned
-   `bazel-remote` sidecar after native protocol qualification, then sccache.
-   Reuse native task hashes, clients and existing engines. Require fresh-consumer
-   output checks and private-scope isolation before application adoption. See
-   the [integration plan](oss-integration-plan.md).
-4. **Keep verified distribution pinned.** Use beta.4's exact source and
-   qualified downloaded binaries on all three native architectures. Keep
-   OAuth fixtures confined to QA. Beta.2's historical publication and installer
-   evidence remains valid; current examples use beta.4's exact source. Do not
-   bypass branch or release protections.
-5. **Activate one limited cloud beta after its live inputs exist.** Configure
-   the real OAuth app with device flow and callback
-   `https://cloud.services.ziahamza.com/auth/callback`, protected secret files,
-   approved numeric creator IDs, a separate storage pool, and restart/backup
-   recovery. Keep config #27 draft until its reviewed release and real inputs
-   are ready. From two real identities, verify invitation acceptance, a cold
-   upload, a fresh-machine Team Cache restore, role downgrade/removal, and
-   recovery after restart through the public HTTPS origin.
-6. **Make successful onboarding repeatable.** Provide copyable CI setup pinned
-   to a verified release. Show measured source, bytes, hit status, transfer
-   overhead, and timing in the dashboard. Keep misses non-blocking. Resolve
-   repository renames against the stored immutable numeric GitHub repository
-   identity. Qualify Parle's native Safari reuse separately when Phone's cache
-   path is working.
-7. **Expand after useful reuse is measured.** Add revocable machine identities,
-   enrollment, last-seen state, and usage reporting. Then consider runner
-   admission, leases, cancellation, isolation, cleanup, and usage accounting.
-   Public Builds retain their separate publisher trust model and native KVM
-   qualification. Windows, Actions cache v2, and a wider adapter SDK remain
-   later work.
+[TODOs.md](../TODOs.md) owns the active backlog and acceptance targets. Its
+current order puts reliable Phone handoffs and reusable test groups first,
+then exact LLM result replay and shared native outputs. Protocol expansion and
+cloud/runners follow measured personal value. Follow
+[the roadmap review](roadmap-review.md) when new evidence changes that order.
+
+This document retains qualification and deployment status. A published CLI,
+installed client, accepted application workflow and deployed service are
+separate outcomes. The limited cloud still needs real OAuth, an approved
+numeric cohort, isolated storage and live two-user acceptance. Public Builds
+retain their separate trusted-publisher and native KVM qualification.
 
 The beta stays limited to an explicit cohort and operator budget. Admission is
 bounded in code, and managed projects bind to signed numeric repository IDs.

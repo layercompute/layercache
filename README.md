@@ -1,5 +1,9 @@
 # Layer Cache
 
+Outstanding work and priorities live in [TODOs.md](TODOs.md). The
+[roadmap review](docs/roadmap-review.md) keeps new requests tied to measured
+local/CI/inference savings and explicit acceptance targets.
+
 Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache and speaks native cache protocols. Cache visibility has three tiers: Personal Cache, Team Cache and verified Public Cache.
 
 This repository contains working implementations for Turborepo, GitHub Actions
