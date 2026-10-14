@@ -69,6 +69,23 @@ hit counts alone.
   seed or temperature setting. Streaming and external mutable inputs require
   separately qualified support.
 
+  Evidence on 2026-10-14: first-slice candidate
+  `06e976bc158b2d843c857870ea7a59bca49b0435` provides
+  [`@layercache/native/llm`](native/LLM.md) through pinned AI SDK 7.0.107.
+  Actual `generateText`/`ToolLoopAgent` fixtures prove zero-call replay, live tool
+  execution and a separately fresh judge. An authenticated disposable Go
+  artifact service proves a concurrent committed winner and an empty consumer.
+  Local validation passes 68 tests with the installed service and a packed,
+  separately typechecked SDK consumer. Strict pinned Ajv 8.17.1 validates visible
+  tool names/JSON and normalized structured schemas; later custom validators,
+  tool execution and app assertions remain outside this middleware's success
+  contract. First-writer consistency lasts only while retained; strict replay
+  fails on eviction/expiry, while read-through may record again after eviction.
+  Streaming replay, provider-hidden observations, durable frozen corpora, paid
+  provider/live Phone adoption and hosted candidate acceptance remain pending.
+  Next: finish independent review and hosted qualification, then coordinate the
+  smallest real planner integration with an explicit raw judge.
+
 - [ ] **Qualify Phone E2E action replay with fresh runtime assertions.**
   Owner: Phone E2E owner with LayerCache integration. Use upstream e2e and
   agent-device rather than another device driver. Record successful actions,
@@ -93,7 +110,9 @@ hit counts alone.
   benchmarks bypass reads and writes. Changed evaluator/judge/data/tool context
   invalidates the applicable result. Qualify promptfoo or other existing eval
   clients through their native provider/cache interfaces. Keep current billing
-  distinct from historical token usage and estimated avoided calls.
+  distinct from historical token usage and estimated avoided calls. Current
+  response storage is evictable; qualify retained corpus storage/manifest policy
+  before promising durable frozen replay.
 
 - [ ] **Qualify shared Debug development clients for Phone.**
   Owner: Phone native owner with LayerCache client support. The existing Expo
