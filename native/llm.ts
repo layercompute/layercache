@@ -10,6 +10,7 @@ type LanguageModelV4Usage = LanguageModelV4GenerateResult['usage'];
 import { NativeCache, NativeCacheConflictError, environmentOptions } from './client.ts';
 import type { Identity, Options, Result } from './client.ts';
 import { canonicalLLMValue, decodeLLMValue, UnsupportedLLMValue } from './llm-codec.ts';
+import { validateLLMGeneration } from './llm-schema.ts';
 
 export type LLMReuseMode = 'record' | 'replay' | 'read-through' | 'fresh';
 export interface LLMReuseProfile {
@@ -182,7 +183,7 @@ export function createLLMReuseMiddleware(options: LLMReuseOptions): LanguageMode
         if (Object.keys(params).some(key => !requestFields.has(key))) throw new UnsupportedLLMValue('unknown-request-option');
         validateRequestData(params);
         const { abortSignal: _signal, ...request } = params;
-        identity = { project: options.project, compatibility: options.compatibility, key: sha(canonicalLLMValue({ version: 1, operation: 'generate', provider: model.provider, modelId: model.modelId, declared, compatibility: options.compatibility, request, ttlMs: options.ttlMs }, maxInputBytes)) };
+        identity = { project: options.project, compatibility: options.compatibility, key: sha(canonicalLLMValue({ version: 2, validation: 'ajv-8.17.1-draft7-v1', operation: 'generate', provider: model.provider, modelId: model.modelId, declared, compatibility: options.compatibility, request, ttlMs: options.ttlMs }, maxInputBytes)) };
       } catch (error) {
         const reason = error instanceof UnsupportedLLMValue ? error.message : 'unsupported-request';
         if (options.mode === 'replay' || options.mode === 'record') {
@@ -194,6 +195,7 @@ export function createLLMReuseMiddleware(options: LLMReuseOptions): LanguageMode
         emit(event); return metadata(result, event);
       }
       const replay = (found: NonNullable<Awaited<ReturnType<typeof read>>>, currentUsage?: LanguageModelV4Usage) => {
+        validateLLMGeneration(found.result, params);
         const event: LLMReuseEvent = { mode: options.mode, outcome: 'hit', key: identity.key, source: found.source,
           recordedAt: found.envelope.recordedAt, expiresAt: found.envelope.expiresAt, currentProviderCalls: currentUsage ? 1 : 0,
           currentUsage: currentUsage ?? zeroUsage(), historicalUsage: found.result.usage };
@@ -214,7 +216,10 @@ export function createLLMReuseMiddleware(options: LLMReuseOptions): LanguageMode
       let directory: string | undefined;
       try {
         if (!Number.isSafeInteger(expiresAt)) throw new UnsupportedLLMValue('invalid-expiry');
-        const encoded = canonicalLLMValue(storedResult(supportedResult(result)), maxEntryBytes);
+        const supported = supportedResult(result);
+        // Bound the output before running syntax/schema admission.
+        const encoded = canonicalLLMValue(storedResult(supported), maxEntryBytes);
+        validateLLMGeneration(supported, params);
         const envelope: Envelope = { version: 1, key: identity.key, recordedAt, expiresAt, result: encoded };
         const bytes = JSON.stringify(envelope);
         if (Buffer.byteLength(bytes) > maxEntryBytes) throw new UnsupportedLLMValue('size-limit');

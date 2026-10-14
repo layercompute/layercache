@@ -23,7 +23,15 @@ for (const name of ['tar', '@isaacs/fs-minipass', 'chownr', 'minipass', 'minizli
   if (!license) throw new Error(`Missing bundled dependency license: ${name}`);
   notices.push(`${name}\n${await readFile(join(directory, license), 'utf8')}`);
 }
-for (const directory of ['native/dist', 'action/native/dist']) await writeFile(join(directory, 'THIRD_PARTY_LICENSES.txt'), notices.join('\n\n'));
+await writeFile('action/native/dist/THIRD_PARTY_LICENSES.txt', notices.join('\n\n'));
+const llmDependency = createRequire(require.resolve('ajv/package.json'));
+for (const name of ['ajv', 'fast-deep-equal', 'fast-uri', 'json-schema-traverse', 'require-from-string']) {
+  const directory = dirname(llmDependency.resolve(`${name}/package.json`));
+  const license = (await readdir(directory)).find(name => /^license/i.test(name));
+  if (!license) throw new Error(`Missing bundled dependency license: ${name}`);
+  notices.push(`${name}\n${await readFile(join(directory, license), 'utf8')}`);
+}
+await writeFile('native/dist/THIRD_PARTY_LICENSES.txt', notices.join('\n\n'));
 
 execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'native/tsconfig.types.json'], { stdio: 'inherit' });
 for (const file of await readdir('native/dist/types')) {

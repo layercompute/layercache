@@ -143,9 +143,25 @@ bodies, response bodies and response headers are omitted from recordings;
 semantic provider metadata remains supported, with known credential fields
 rejected. Keep authentication in provider construction and transport credentials.
 
-Only completed `stop` and `tool-calls` generations are admitted. Errors,
-truncation, preliminary/error tool output, malformed results, oversize output
-and aborted calls are not recorded. Record mode reports unsupported admission
+Only completed `stop` and `tool-calls` provider generations are admitted.
+Declared client function names and JSON tool arguments are checked; empty
+arguments follow AI SDK's empty-object convention. Terminal structured JSON
+output is parsed and checked against its normalized schema. Schema admission
+uses pinned MIT [Ajv 8.17.1](https://github.com/ajv-validator/ajv/tree/9050ba1359fb87cd7c143f3c79513ea7624ea443)
+with strict Draft 7 validation. Unknown schema keywords, formats, dialects or
+unresolved external references decline admission. No custom schema engine is
+implemented. Ajv and its bundled dependencies are confined to the LLM bundle
+and listed in the packaged third-party notices.
+
+Provider failures, truncation, preliminary/error provider tool output, malformed
+or schema-invalid normalized results, oversize output and aborted provider
+generations are not recorded. The middleware runs before the SDK's original
+custom/Zod validators, refinements, repair callbacks, tool execution and app
+assertions. Those later operations can still reject a recorded provider result;
+recording does not prove they succeeded. Their behavior/revision belongs in the
+declared harness context, and callers requiring current custom validation or
+live acceptance use `fresh` and an unwrapped judge. This first slice cannot
+inspect or cache the success of those higher-level operations. Record mode reports unsupported admission
 as an error; read-through returns a truthful bypass/unrecorded result. Replay
 and record reject streaming before calling the provider. Read-through and fresh
 streams delegate unchanged and never record. Streaming replay is future work.

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateText, jsonSchema, stepCountIs, ToolLoopAgent, tool, wrapLanguageModel } from 'ai';
+import { generateText, jsonSchema, Output, stepCountIs, ToolLoopAgent, tool, wrapLanguageModel } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import type { LanguageModelV4CallOptions, LanguageModelV4GenerateResult } from '@ai-sdk/provider';
 import { createLLMReuseMiddleware, LLMReplayMissError } from './llm.ts';
@@ -284,4 +284,58 @@ test('expiry does not renew a retained sample, but actual eviction permits a new
   assert.ok(Number(renewed.providerMetadata?.layercache?.recordedAt) > Number(first.providerMetadata?.layercache?.recordedAt));
   const replay = await wrapped({ ...evictable, mode: 'replay' }).doGenerate(params);
   assert.equal(replay.content[0]?.type === 'text' && replay.content[0].text, 'sample-3'); assert.equal(calls, 3);
+});
+
+test('actual SDK invalid tool JSON, unknown names and schema violations never become hits', async t => {
+  const { options } = await fixture(t);
+  for (const { toolName, input } of [{ toolName: 'observe', input: 'not-json' }, { toolName: 'undeclared', input: '{}' }, { toolName: 'observe', input: '{"ok":"wrong-type"}' }]) {
+    let calls = 0;
+    const events: LLMReuseEvent[] = [];
+    const model = wrapped({ ...options, corpus: { ...options.corpus, generation: input }, onEvent: event => { events.push(event); } }, async () => {
+      calls++; return { ...result(), content: [{ type: 'tool-call', toolCallId: 'test-call', toolName: toolName!, input: input! }], finishReason: { unified: 'tool-calls', raw: 'tool_calls' } };
+    });
+    const tools = { observe: tool({ inputSchema: jsonSchema<{ok:boolean}>({ type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false }, {
+      validate: value => typeof value === 'object' && value !== null && 'ok' in value && typeof value.ok === 'boolean' ? { success: true, value: { ok: value.ok } } : { success: false, error: new Error('expected boolean ok') },
+    }), execute: async () => 'current' }) };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const generated = await generateText({ model, prompt: 'observe', tools, maxRetries: 0 });
+      assert.equal(generated.toolCalls[0]?.invalid, true);
+    }
+    assert.equal(calls, 2); assert.ok(events.every(event => event.outcome === 'unrecorded'));
+  }
+});
+
+test('actual SDK malformed and schema-invalid structured output never becomes a recorded response', async t => {
+  const { options } = await fixture(t);
+  for (const text of ['not-json', '{"ok":"wrong-type"}']) {
+    let calls = 0; const events: LLMReuseEvent[] = [];
+    const model = wrapped({ ...options, corpus: { ...options.corpus, generation: text }, onEvent: event => { events.push(event); } }, async () => { calls++; return result(text); });
+    const schema = jsonSchema<{ok:boolean}>({ type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false }, {
+      validate: value => typeof value === 'object' && value !== null && 'ok' in value && typeof value.ok === 'boolean' ? { success: true, value: { ok: value.ok } } : { success: false, error: new Error('expected boolean ok') },
+    });
+    for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(generateText({ model, prompt: 'object', maxRetries: 0, output: Output.object({ schema }) }), error => error instanceof Error && error.name === 'AI_NoObjectGeneratedError');
+    assert.equal(calls, 2); assert.ok(events.every(event => event.outcome === 'unrecorded'));
+  }
+});
+
+test('qualified normalized structured schemas replay, unsupported schemas decline, and hidden custom validators stay fresh by policy', async t => {
+  const { options } = await fixture(t); let calls = 0;
+  const schema = { type: 'object' as const, properties: { ok: { type: 'boolean' as const } }, required: ['ok'], additionalProperties: false };
+  const model = wrapped(options, async () => { calls++; return result('{"ok":true}'); });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const generated = await generateText({ model, prompt: 'qualified', maxRetries: 0, output: Output.object({ schema: jsonSchema<{ok:boolean}>(schema) }) });
+    assert.deepEqual(generated.output, { ok: true });
+  }
+  assert.equal(calls, 1);
+  const events: LLMReuseEvent[] = [];
+  const unsupported = wrapped({ ...options, onEvent: event => { events.push(event); } }, async () => { calls++; return result('{"ok":true}'); });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await generateText({ model: unsupported, prompt: 'unsupported', maxRetries: 0, output: Output.object({ schema: jsonSchema({ ...schema, $schema: 'https://example.invalid/custom-schema' }) }) });
+  }
+  assert.equal(calls, 3); assert.ok(events.every(event => event.outcome === 'unrecorded' && event.reason === 'unsupported-generated-json-schema'));
+  // An arbitrary refinement is absent from normalized JSON Schema. A caller
+  // requiring current custom validation selects fresh instead of recording it.
+  const hidden = wrapped({ ...options, mode: 'fresh' }, async () => { calls++; return result('{"ok":true}'); });
+  for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(generateText({ model: hidden, prompt: 'custom', maxRetries: 0, output: Output.object({ schema: jsonSchema(schema, { validate: () => ({ success: false, error: new Error('live custom condition') }) }) }) }), error => error instanceof Error && error.name === 'AI_NoObjectGeneratedError');
+  assert.equal(calls, 5);
 });
