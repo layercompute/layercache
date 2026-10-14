@@ -20,23 +20,24 @@ const (
 )
 
 type Claims struct {
-	Subject       string       `json:"sub"`
-	RunID         string       `json:"runId,omitempty"`
-	WorkspaceID   string       `json:"workspaceId,omitempty"`
-	Project       string       `json:"project"`
-	Integration   string       `json:"integration,omitempty"`
-	Compatibility string       `json:"compatibility,omitempty"`
-	Repository    string       `json:"repository,omitempty"`
-	Ref           string       `json:"ref,omitempty"`
-	DefaultRef    string       `json:"defaultRef,omitempty"`
-	SourceCommit  string       `json:"sourceCommit,omitempty"`
-	RecipeDigest  string       `json:"recipeDigest,omitempty"`
-	Target        string       `json:"target,omitempty"`
-	Platform      string       `json:"platform,omitempty"`
-	Toolchain     string       `json:"toolchain,omitempty"`
-	Builder       string       `json:"builder,omitempty"`
-	Capabilities  []Capability `json:"capabilities"`
-	ExpiresAt     time.Time    `json:"expiresAt"`
+	Subject        string       `json:"sub"`
+	RunID          string       `json:"runId,omitempty"`
+	WorkspaceID    string       `json:"workspaceId,omitempty"`
+	Project        string       `json:"project"`
+	Integration    string       `json:"integration,omitempty"`
+	Compatibility  string       `json:"compatibility,omitempty"`
+	Repository     string       `json:"repository,omitempty"`
+	Ref            string       `json:"ref,omitempty"`
+	DefaultRef     string       `json:"defaultRef,omitempty"`
+	SourceCommit   string       `json:"sourceCommit,omitempty"`
+	ActionsActorID string       `json:"actionsActorId,omitempty"`
+	RecipeDigest   string       `json:"recipeDigest,omitempty"`
+	Target         string       `json:"target,omitempty"`
+	Platform       string       `json:"platform,omitempty"`
+	Toolchain      string       `json:"toolchain,omitempty"`
+	Builder        string       `json:"builder,omitempty"`
+	Capabilities   []Capability `json:"capabilities"`
+	ExpiresAt      time.Time    `json:"expiresAt"`
 }
 
 func (claims Claims) Allows(required Capability) bool {
