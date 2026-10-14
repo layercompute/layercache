@@ -23,6 +23,14 @@ export interface Options {
   timeoutMs?: number;
   maxAgeMs?: number;
 }
+export class NativeCachePublicationError extends Error {
+  constructor() { super('Immutable recording publication was not confirmed'); this.name = 'NativeCachePublicationError'; }
+}
+
+export class NativeCacheConflictError extends Error {
+  constructor() { super('Artifact key already has different content; use a new recording generation'); this.name = 'NativeCacheConflictError'; }
+}
+
 export interface Result {
   hit: boolean;
   source: 'local' | 'team' | 'miss';
@@ -74,7 +82,8 @@ export class NativeCache {
     if (options.maxAgeMs !== undefined && (!Number.isSafeInteger(options.maxAgeMs) || options.maxAgeMs <= 0)) throw new Error('maxAgeMs must be positive integer milliseconds');
     this.options = { ...options, endpoint: options.endpoint ? origin(options.endpoint) : undefined };
   }
-  private async locked<T>(run: () => Promise<T>): Promise<T> {
+  private async locked<T>(run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted();
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     const lock = join(this.root, '.lock');
     // Never break another process's lease based on wall-clock age. A crashed
@@ -85,7 +94,7 @@ export class NativeCache {
       catch (error) {
         if (!(error instanceof Error) || !('code' in error) || error.code !== 'EEXIST') throw error;
         if (Date.now() >= deadline) throw new Error('Native cache is busy; inspect its .lock directory');
-        await delay(100);
+        await delay(100, undefined, { signal });
       }
     }
     try { return await run(); } finally { await rm(lock, { recursive: true, force: true }); }
@@ -131,15 +140,15 @@ export class NativeCache {
       return null;
     }
   }
-  async restore(identity: Identity, destination?: string): Promise<Result> {
-    return this.restoreInternal(identity, destination);
+  async restore(identity: Identity, destination?: string, signal?: AbortSignal): Promise<Result> {
+    return this.restoreInternal(identity, destination, false, undefined, signal);
   }
   // The provider returns paths still in use by Expo after this method returns.
   // Unlike caller-owned destinations, these bytes remain in the cache budget.
   async restoreManaged(identity: Identity, validate?: (destination: string) => Promise<void>): Promise<Result> {
     return this.restoreInternal(identity, undefined, true, validate);
   }
-  private async restoreInternal(identity: Identity, destination?: string, managed = false, validate?: (destination: string) => Promise<void>): Promise<Result> {
+  private async restoreInternal(identity: Identity, destination?: string, managed = false, validate?: (destination: string) => Promise<void>, signal?: AbortSignal): Promise<Result> {
     const started = performance.now();
     const key = artifactKey(identity);
     return this.locked(async () => {
@@ -151,7 +160,7 @@ export class NativeCache {
       if (!digest) {
         const url = this.url(identity);
         if (!url) return { hit: false, source: 'miss', bytes: 0, elapsedMs: performance.now() - started };
-        const response = await fetch(url, { headers: this.headers(identity), redirect: 'error', signal: AbortSignal.timeout(this.options.timeoutMs ?? 120_000) });
+        const response = await fetch(url, { headers: this.headers(identity), redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 120_000)]) : AbortSignal.timeout(this.options.timeoutMs ?? 120_000) });
         if (response.status === 404) { await response.body?.cancel(); return { hit: false, source: 'miss', bytes: 0, elapsedMs: performance.now() - started }; }
         if (!response.ok) { await response.body?.cancel(); throw new Error(`Team Cache returned HTTP ${response.status}`); }
         const expected = response.headers.get('x-layercache-digest') ?? '';
@@ -163,10 +172,11 @@ export class NativeCache {
         const temporary = `${path}.${randomUUID()}.partial`;
         let received = 0;
         try {
-          await pipeline(Readable.fromWeb(response.body), new Transform({ transform(chunk, _encoding, callback) {
+          await pipeline(Readable.from(response.body), new Transform({ transform(chunk, _encoding, callback) {
             received += chunk.length;
             callback(received > size ? new Error('Artifact exceeds declared size') : null, chunk);
-          } }), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
+          } }), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }), { signal });
+          signal?.throwIfAborted();
           digest = await digestFile(temporary);
           if (received !== size || `sha256:${digest}` !== expected) throw new Error('Artifact integrity check failed');
           await rename(temporary, path);
@@ -194,15 +204,26 @@ export class NativeCache {
           });
         }
       } else if (destination) await extract(path, destination, this.maxBytes);
+      signal?.throwIfAborted();
       return { hit: true, source, path: destination ? resolve(destination) : path, digest, bytes: (await stat(path)).size, elapsedMs: performance.now() - started };
-    });
+    }, signal);
   }
   async save(identity: Identity, input: string): Promise<Result> {
+    return this.saveInternal(identity, input);
+  }
+  // Publish a recording only after the remote immutable store accepts it.
+  // A rejected contender must never replace the local canonical winner.
+  async saveImmutable(identity: Identity, input: string, signal?: AbortSignal): Promise<Result> {
+    return this.saveInternal(identity, input, true, signal);
+  }
+  private async saveInternal(identity: Identity, input: string, immutable = false, signal?: AbortSignal): Promise<Result> {
     const started = performance.now();
     const key = artifactKey(identity);
     return this.locked(async () => {
       const path = join(this.root, `${key}.tgz`);
       const temporary = `${path}.${randomUUID()}.partial`;
+      signal?.throwIfAborted();
+      const existing = immutable ? await this.verified(path) : null;
       try {
         const inputPath = resolve(input);
         const info = await stat(inputPath);
@@ -210,35 +231,53 @@ export class NativeCache {
         // Gzip's worst-case overhead is below this conservative tar-size bound.
         // Reserve before staging instead of temporarily exceeding the disk cap.
         const reserve = await archiveBound(inputPath);
-        await this.evict(reserve);
+        await this.evict(reserve, existing ? path : undefined);
         const archive = tar.c({ cwd: dirname(inputPath), portable: true, gzip: true, noMtime: true, strict: true }, [basename(inputPath)]);
         let size = 0;
         const limit = reserve;
         await pipeline(archive, new Transform({ transform(chunk, _encoding, callback) {
           size += chunk.length;
           callback(size > limit ? new Error('Artifact exceeds local cache budget') : null, chunk);
-        } }), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
+        } }), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }), { signal });
         // Validate link/path/expanded-size rules before publishing anything.
         await inspect(temporary, this.maxBytes);
         const digest = await digestFile(temporary);
+        if (existing && existing !== digest) throw new NativeCacheConflictError();
+        signal?.throwIfAborted();
         const pinned = await new Extractions(join(this.root, 'extractions')).usage();
         if (pinned.keys.has(key) && await digestFile(path) !== digest) {
           throw new Error('Cannot replace native artifact backing live Expo consumers; use a complete build key');
         }
-        await rename(temporary, path);
-        await writeFile(`${path}.sha256`, digest, { mode: 0o600 });
+        if (!immutable) {
+          await rename(temporary, path);
+          await writeFile(`${path}.sha256`, digest, { mode: 0o600 });
+        }
         const url = this.url(identity);
         if (url) {
-          const blob = await import('node:fs').then(fs => fs.openAsBlob(path));
+          const blob = await import('node:fs').then(fs => fs.openAsBlob(immutable ? temporary : path));
           const response = await fetch(url, { method: 'PUT', headers: { ...this.headers(identity), 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) }, body: blob,
-            redirect: 'error', signal: AbortSignal.timeout(this.options.timeoutMs ?? 120_000) });
+            redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 120_000)]) : AbortSignal.timeout(this.options.timeoutMs ?? 120_000) });
           await response.body?.cancel();
-          if (!response.ok && response.status !== 409) throw new Error(`Team Cache upload returned HTTP ${response.status}; Local Cache retained`);
-          if (response.status === 409) throw new Error('Native artifact key already has different content; use a complete build key');
+          if (!response.ok && response.status !== 409) throw new Error(`Team Cache upload returned HTTP ${response.status}; ${immutable ? "recording not committed" : "Local Cache retained"}`);
+          if (response.status === 409) {
+            if (immutable) throw new NativeCacheConflictError();
+            throw new Error('Native artifact key already has different content; use a complete build key');
+          }
+          if (immutable && (response.headers.has('x-layercache-degraded') || response.headers.has('x-layercache-upload-queue') ||
+              response.headers.has('x-layercache-team-upload') && response.headers.get('x-layercache-team-upload') !== 'complete')) {
+            // Local acceptance may leave a durable queue or an uncertain remote
+            // commit. Keep server bytes intact, but do not install a winner here.
+            throw new NativeCachePublicationError();
+          }
+        }
+        if (immutable) {
+          signal?.throwIfAborted();
+          await rename(temporary, path);
+          await writeFile(`${path}.sha256`, digest, { mode: 0o600 });
         }
         return { hit: false, source: url ? 'team' : 'local', path, digest, bytes: size, elapsedMs: performance.now() - started };
       } finally { await rm(temporary, { force: true }); }
-    });
+    }, signal);
   }
 }
 

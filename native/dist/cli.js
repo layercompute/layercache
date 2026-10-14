@@ -3055,6 +3055,18 @@ var Extractions = class {
 };
 
 // native/client.ts
+var NativeCachePublicationError = class extends Error {
+  constructor() {
+    super("Immutable recording publication was not confirmed");
+    this.name = "NativeCachePublicationError";
+  }
+};
+var NativeCacheConflictError = class extends Error {
+  constructor() {
+    super("Artifact key already has different content; use a new recording generation");
+    this.name = "NativeCacheConflictError";
+  }
+};
 function environmentOptions(options = {}, env = process.env) {
   if (env.LAYER_CACHE_TOKEN) return { ...options, endpoint: env.LAYER_CACHE_URL ?? options.endpoint, token: env.LAYER_CACHE_TOKEN };
   if (env.TURBO_TOKEN && env.TURBO_API) return { ...options, endpoint: env.TURBO_API, token: env.TURBO_TOKEN };
@@ -3090,7 +3102,8 @@ var NativeCache = class {
     if (options.maxAgeMs !== void 0 && (!Number.isSafeInteger(options.maxAgeMs) || options.maxAgeMs <= 0)) throw new Error("maxAgeMs must be positive integer milliseconds");
     this.options = { ...options, endpoint: options.endpoint ? origin(options.endpoint) : void 0 };
   }
-  async locked(run) {
+  async locked(run, signal) {
+    signal?.throwIfAborted();
     await mkdir2(this.root, { recursive: true, mode: 448 });
     const lock = join2(this.root, ".lock");
     const deadline = Date.now() + (this.options.timeoutMs ?? 12e4);
@@ -3101,7 +3114,7 @@ var NativeCache = class {
       } catch (error) {
         if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
         if (Date.now() >= deadline) throw new Error("Native cache is busy; inspect its .lock directory");
-        await delay(100);
+        await delay(100, void 0, { signal });
       }
     }
     try {
@@ -3151,15 +3164,15 @@ var NativeCache = class {
       return null;
     }
   }
-  async restore(identity, destination) {
-    return this.restoreInternal(identity, destination);
+  async restore(identity, destination, signal) {
+    return this.restoreInternal(identity, destination, false, void 0, signal);
   }
   // The provider returns paths still in use by Expo after this method returns.
   // Unlike caller-owned destinations, these bytes remain in the cache budget.
   async restoreManaged(identity, validate) {
     return this.restoreInternal(identity, void 0, true, validate);
   }
-  async restoreInternal(identity, destination, managed = false, validate) {
+  async restoreInternal(identity, destination, managed = false, validate, signal) {
     const started = performance.now();
     const key = artifactKey(identity);
     return this.locked(async () => {
@@ -3170,7 +3183,7 @@ var NativeCache = class {
       if (!digest) {
         const url = this.url(identity);
         if (!url) return { hit: false, source: "miss", bytes: 0, elapsedMs: performance.now() - started };
-        const response = await fetch(url, { headers: this.headers(identity), redirect: "error", signal: AbortSignal.timeout(this.options.timeoutMs ?? 12e4) });
+        const response = await fetch(url, { headers: this.headers(identity), redirect: "error", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 12e4)]) : AbortSignal.timeout(this.options.timeoutMs ?? 12e4) });
         if (response.status === 404) {
           await response.body?.cancel();
           return { hit: false, source: "miss", bytes: 0, elapsedMs: performance.now() - started };
@@ -3189,10 +3202,11 @@ var NativeCache = class {
         const temporary = `${path}.${randomUUID2()}.partial`;
         let received = 0;
         try {
-          await pipeline(Readable.fromWeb(response.body), new Transform({ transform(chunk, _encoding, callback) {
+          await pipeline(Readable.from(response.body), new Transform({ transform(chunk, _encoding, callback) {
             received += chunk.length;
             callback(received > size ? new Error("Artifact exceeds declared size") : null, chunk);
-          } }), createWriteStream(temporary, { flags: "wx", mode: 384 }));
+          } }), createWriteStream(temporary, { flags: "wx", mode: 384 }), { signal });
+          signal?.throwIfAborted();
           digest = await digestFile(temporary);
           if (received !== size || `sha256:${digest}` !== expected) throw new Error("Artifact integrity check failed");
           await rename(temporary, path);
@@ -3219,55 +3233,81 @@ var NativeCache = class {
           });
         }
       } else if (destination) await extract(path, destination, this.maxBytes);
+      signal?.throwIfAborted();
       return { hit: true, source, path: destination ? resolve(destination) : path, digest, bytes: (await stat(path)).size, elapsedMs: performance.now() - started };
-    });
+    }, signal);
   }
   async save(identity, input) {
+    return this.saveInternal(identity, input);
+  }
+  // Publish a recording only after the remote immutable store accepts it.
+  // A rejected contender must never replace the local canonical winner.
+  async saveImmutable(identity, input, signal) {
+    return this.saveInternal(identity, input, true, signal);
+  }
+  async saveInternal(identity, input, immutable = false, signal) {
     const started = performance.now();
     const key = artifactKey(identity);
     return this.locked(async () => {
       const path = join2(this.root, `${key}.tgz`);
       const temporary = `${path}.${randomUUID2()}.partial`;
+      signal?.throwIfAborted();
+      const existing = immutable ? await this.verified(path) : null;
       try {
         const inputPath = resolve(input);
         const info = await stat(inputPath);
         if (!info.isDirectory() && !info.isFile()) throw new Error("Build must be a directory or regular file");
         const reserve = await archiveBound(inputPath);
-        await this.evict(reserve);
+        await this.evict(reserve, existing ? path : void 0);
         const archive = Qn({ cwd: dirname(inputPath), portable: true, gzip: true, noMtime: true, strict: true }, [basename(inputPath)]);
         let size = 0;
         const limit = reserve;
         await pipeline(archive, new Transform({ transform(chunk, _encoding, callback) {
           size += chunk.length;
           callback(size > limit ? new Error("Artifact exceeds local cache budget") : null, chunk);
-        } }), createWriteStream(temporary, { flags: "wx", mode: 384 }));
+        } }), createWriteStream(temporary, { flags: "wx", mode: 384 }), { signal });
         await inspect(temporary, this.maxBytes);
         const digest = await digestFile(temporary);
+        if (existing && existing !== digest) throw new NativeCacheConflictError();
+        signal?.throwIfAborted();
         const pinned = await new Extractions(join2(this.root, "extractions")).usage();
         if (pinned.keys.has(key) && await digestFile(path) !== digest) {
           throw new Error("Cannot replace native artifact backing live Expo consumers; use a complete build key");
         }
-        await rename(temporary, path);
-        await writeFile2(`${path}.sha256`, digest, { mode: 384 });
+        if (!immutable) {
+          await rename(temporary, path);
+          await writeFile2(`${path}.sha256`, digest, { mode: 384 });
+        }
         const url = this.url(identity);
         if (url) {
-          const blob = await import("node:fs").then((fs2) => fs2.openAsBlob(path));
+          const blob = await import("node:fs").then((fs2) => fs2.openAsBlob(immutable ? temporary : path));
           const response = await fetch(url, {
             method: "PUT",
             headers: { ...this.headers(identity), "Content-Type": "application/octet-stream", "Content-Length": String(size) },
             body: blob,
             redirect: "error",
-            signal: AbortSignal.timeout(this.options.timeoutMs ?? 12e4)
+            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 12e4)]) : AbortSignal.timeout(this.options.timeoutMs ?? 12e4)
           });
           await response.body?.cancel();
-          if (!response.ok && response.status !== 409) throw new Error(`Team Cache upload returned HTTP ${response.status}; Local Cache retained`);
-          if (response.status === 409) throw new Error("Native artifact key already has different content; use a complete build key");
+          if (!response.ok && response.status !== 409) throw new Error(`Team Cache upload returned HTTP ${response.status}; ${immutable ? "recording not committed" : "Local Cache retained"}`);
+          if (response.status === 409) {
+            if (immutable) throw new NativeCacheConflictError();
+            throw new Error("Native artifact key already has different content; use a complete build key");
+          }
+          if (immutable && (response.headers.has("x-layercache-degraded") || response.headers.has("x-layercache-upload-queue") || response.headers.has("x-layercache-team-upload") && response.headers.get("x-layercache-team-upload") !== "complete")) {
+            throw new NativeCachePublicationError();
+          }
+        }
+        if (immutable) {
+          signal?.throwIfAborted();
+          await rename(temporary, path);
+          await writeFile2(`${path}.sha256`, digest, { mode: 384 });
         }
         return { hit: false, source: url ? "team" : "local", path, digest, bytes: size, elapsedMs: performance.now() - started };
       } finally {
         await rm2(temporary, { force: true });
       }
-    });
+    }, signal);
   }
 };
 async function inspect(archive, maxBytes) {

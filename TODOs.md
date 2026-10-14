@@ -85,6 +85,34 @@ hit counts alone.
   seed or temperature setting. Streaming and external mutable inputs require
   separately qualified support.
 
+  Evidence on 2026-10-14: first-slice candidate
+  `c2fe2f9d2c990bb9918bb6a69ec7b813f9bfc4be` provides
+  [`@layercache/native/llm`](native/LLM.md) through pinned AI SDK 7.0.107.
+  Actual `generateText`/`ToolLoopAgent` fixtures prove zero-call replay, live tool
+  execution and a separately fresh judge. An authenticated disposable Go
+  artifact service proves a concurrent committed winner and an empty consumer.
+  Local validation passes 72 tests with the installed service and a packed,
+  separately typechecked SDK consumer. Independent Standards and Spec reviews
+  completed without remaining findings at that runtime source. Strict pinned
+  Ajv 8.17.1 and secure-json-parse 4.1.0 validate visible tool names/JSON and
+  synchronous normalized structured schemas; later custom validators,
+  tool execution and app assertions remain outside this middleware's success
+  contract. First-writer consistency lasts only while retained; strict replay
+  fails on eviction/expiry, while read-through may record again after eviction.
+  A [direct private gateway checkpoint](docs/evidence/llm-private-gateway-20261014.json)
+  at that source also proves plain/structured recording, empty-consumer replay
+  and changed-input/slot strict misses with two fixture calls and no paid
+  inference, configuration change or deployment. Immutable admission rejects
+  degraded/pending/full acknowledgements and preserves possibly accepted or
+  queued server bytes. First-writer qualification covers the chosen endpoint;
+  a Local daemon may retain its unconfirmed/conflicting copy without establishing
+  the canonical Team winner. Frozen samples across machines require the direct
+  shared private endpoint until Local-to-Team reconciliation is qualified.
+  Streaming replay, provider-hidden observations, durable frozen corpora, paid
+  provider/live Phone adoption and hosted candidate acceptance remain pending.
+  Next: finish hosted candidate qualification, then coordinate the smallest real
+  planner integration with an explicit raw judge.
+
 - [ ] **Qualify Phone E2E action replay with fresh runtime assertions.**
   Owner: Phone E2E owner with LayerCache integration. Use upstream e2e and
   agent-device rather than another device driver. Record successful actions,
@@ -109,7 +137,9 @@ hit counts alone.
   benchmarks bypass reads and writes. Changed evaluator/judge/data/tool context
   invalidates the applicable result. Qualify promptfoo or other existing eval
   clients through their native provider/cache interfaces. Keep current billing
-  distinct from historical token usage and estimated avoided calls.
+  distinct from historical token usage and estimated avoided calls. Current
+  response storage is evictable; qualify retained corpus storage/manifest policy
+  before promising durable frozen replay.
 
 - [ ] **Qualify shared Debug development clients for Phone.**
   Owner: Phone native owner with LayerCache client support. The existing Expo
