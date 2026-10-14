@@ -397,6 +397,122 @@
       "bytes": 107457
     }
   },
+  "nativeEvidenceComparison": {
+    "status": "passed",
+    "fileCount": 10,
+    "files": {
+      "personal-native.json": {
+        "producer": {
+          "sha256": "63c2dd1dbaf06d9adc476319584761c87291dd8076fd4e6e36814974c4fdebb5",
+          "bytes": 27642970
+        },
+        "consumer": {
+          "sha256": "63c2dd1dbaf06d9adc476319584761c87291dd8076fd4e6e36814974c4fdebb5",
+          "bytes": 27642970
+        },
+        "matches": true
+      },
+      "shared-native-contacts-route-refresh.json": {
+        "producer": {
+          "sha256": "a91b5e25df9ea0edbde9136c61f91c86b35ea38a64dde0bd288dda233b293573",
+          "bytes": 89308
+        },
+        "consumer": {
+          "sha256": "a91b5e25df9ea0edbde9136c61f91c86b35ea38a64dde0bd288dda233b293573",
+          "bytes": 89308
+        },
+        "matches": true
+      },
+      "shared-native-current-ack.json": {
+        "producer": {
+          "sha256": "bf0298dcb54d83d2e1a42b98bb2a36c97825a59b4ec9d9e5fb3cffd531f3c579",
+          "bytes": 97782
+        },
+        "consumer": {
+          "sha256": "bf0298dcb54d83d2e1a42b98bb2a36c97825a59b4ec9d9e5fb3cffd531f3c579",
+          "bytes": 97782
+        },
+        "matches": true
+      },
+      "shared-native-issued-aba-ack.json": {
+        "producer": {
+          "sha256": "d9b5b1768da01436153d290e04e516cf0e1a803be322fc6d86e108ea9f6eeae1",
+          "bytes": 152051
+        },
+        "consumer": {
+          "sha256": "d9b5b1768da01436153d290e04e516cf0e1a803be322fc6d86e108ea9f6eeae1",
+          "bytes": 152051
+        },
+        "matches": true
+      },
+      "shared-native-issued-aba-error.json": {
+        "producer": {
+          "sha256": "4fab455dcf033d5f147941f8430136661216f46e82f1b22fbd9dfd19b7553efe",
+          "bytes": 152039
+        },
+        "consumer": {
+          "sha256": "4fab455dcf033d5f147941f8430136661216f46e82f1b22fbd9dfd19b7553efe",
+          "bytes": 152039
+        },
+        "matches": true
+      },
+      "shared-native-issued-auth-ack.json": {
+        "producer": {
+          "sha256": "3a4cf5bad908033208b5b08eb8e9bb5635faae272b058cc7bb4133403c32ea14",
+          "bytes": 138502
+        },
+        "consumer": {
+          "sha256": "3a4cf5bad908033208b5b08eb8e9bb5635faae272b058cc7bb4133403c32ea14",
+          "bytes": 138502
+        },
+        "matches": true
+      },
+      "shared-native-issued-auth-error.json": {
+        "producer": {
+          "sha256": "74e68be1089261765003fce9d14ddecc5b1935db2d9d9a8422456405b368cca2",
+          "bytes": 138490
+        },
+        "consumer": {
+          "sha256": "74e68be1089261765003fce9d14ddecc5b1935db2d9d9a8422456405b368cca2",
+          "bytes": 138490
+        },
+        "matches": true
+      },
+      "shared-native-late-failure-first.json": {
+        "producer": {
+          "sha256": "ab6614ecebf36d74bf5d81d3ea09cec6e57c4f05515d792428be91c89553f9ad",
+          "bytes": 137559
+        },
+        "consumer": {
+          "sha256": "ab6614ecebf36d74bf5d81d3ea09cec6e57c4f05515d792428be91c89553f9ad",
+          "bytes": 137559
+        },
+        "matches": true
+      },
+      "shared-native-late-success-first.json": {
+        "producer": {
+          "sha256": "34d49919e0c66d6cfa6091bbdeb9b7e576465a1e53c2f94ac31b918ad567cd0f",
+          "bytes": 137559
+        },
+        "consumer": {
+          "sha256": "34d49919e0c66d6cfa6091bbdeb9b7e576465a1e53c2f94ac31b918ad567cd0f",
+          "bytes": 137559
+        },
+        "matches": true
+      },
+      "shared-native-newest-failure.json": {
+        "producer": {
+          "sha256": "f1de2136611d4b022ae5723892af53074e92e3e3108183b94408928b5d093da4",
+          "bytes": 107457
+        },
+        "consumer": {
+          "sha256": "f1de2136611d4b022ae5723892af53074e92e3e3108183b94408928b5d093da4",
+          "bytes": 107457
+        },
+        "matches": true
+      }
+    }
+  },
   "controls": {
     "status": "passed",
     "cases": [
