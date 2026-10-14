@@ -1,5 +1,9 @@
 # Native builds in local and team cache
 
+The separate [AI SDK response adapter](LLM.md) records and replays completed
+model responses through private artifact storage. It has its own exact-input
+identity and freshness policy; native build commands remain independent.
+
 Layer Cache reuses native build artifacts without owning a runner. Each project
 keeps its GitHub Actions, other CI, or local build commands. Run the cache lookup
 on Linux before allocating a Mac. A cache miss schedules the project's normal

@@ -6,7 +6,11 @@
   "main": "native/dist/expo.cjs",
   "exports": {
     ".": "./native/dist/expo.cjs",
-    "./client": "./native/dist/client.js"
+    "./client": "./native/dist/client.js",
+    "./llm": {
+      "types": "./native/dist/types/llm.d.ts",
+      "import": "./native/dist/llm.js"
+    }
   },
   "bin": {
     "layercache-native": "native/dist/cli.js"
@@ -14,6 +18,7 @@
   "files": [
     "native/dist",
     "native/README.md",
+    "native/LLM.md",
     "LICENSE"
   ],
   "engines": {
@@ -33,9 +38,20 @@
     "tar": "7.5.22"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "4.0.17",
     "@playwright/test": "1.63.0",
+    "@types/json-schema": "7.0.15",
     "@types/node": "24.13.3",
+    "ai": "7.0.107",
     "esbuild": "0.28.2",
     "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "ai": "^7.0.107"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
   }
 }
