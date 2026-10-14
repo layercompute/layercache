@@ -1,0 +1,127 @@
+{
+  "schemaVersion": "phone-hosted-test-reuse-v1",
+  "headSource": "1f97be8b753194fd58b13f25550c78721e92e96e",
+  "checkedMergeSource": "bd9a066ecfb710d51ee2362d027761288d73588c",
+  "run": 38595394031,
+  "job": 115960868212,
+  "url": "https://github.com/ziahamza/phone-app/actions/runs/38595394031/job/115960868212",
+  "unitConclusion": "success",
+  "unitAllocationMs": 508000,
+  "nativeWorkspaceMs": 200413,
+  "nativeTasks": 27,
+  "nativeCachedTasks": 12,
+  "attributedGatewayHits": 12,
+  "eligibleTasks": 27,
+  "misses": 15,
+  "remotePolicy": "read-only",
+  "matchingPublishedTasks": [
+    {
+      "taskId": "@phone-app/core#typecheck",
+      "hash": "f11e8aad790566f2",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:unit",
+      "hash": "c08621ffc1c4f56f",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:auth",
+      "hash": "db417d7c47b58348",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+      "hash": "cebed25706650f54",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:fixtures",
+      "hash": "96f12d95f3c8a598",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:http",
+      "hash": "73ec371d97124269",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:native",
+      "hash": "d89d39fb8f26e394",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:numbers",
+      "hash": "586316e6a09a8b0f",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:personal",
+      "hash": "07025343a51cd2d7",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:settings",
+      "hash": "c5c47f592b801d76",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:shared",
+      "hash": "8b63305b5b2ee37d",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#typecheck",
+      "hash": "a19e3a79469e3786",
+      "nativeStatus": "HIT"
+    }
+  ],
+  "steps": [
+    {
+      "name": "Set up job",
+      "durationMs": 1000
+    },
+    {
+      "name": "Set up runner",
+      "durationMs": 0
+    },
+    {
+      "name": "Run actions/checkout@v7",
+      "durationMs": 5000
+    },
+    {
+      "name": "Run ./.github/actions/setup",
+      "durationMs": 142000
+    },
+    {
+      "name": "Check native release tooling without signing credentials",
+      "durationMs": 63000
+    },
+    {
+      "name": "Check native resource gates and audio verification",
+      "durationMs": 36000
+    },
+    {
+      "name": "Check workspace tasks with bounded CPU concurrency",
+      "durationMs": 201000
+    },
+    {
+      "name": "Post Run ./.github/actions/setup",
+      "durationMs": 54000
+    },
+    {
+      "name": "Post Run actions/checkout@v7",
+      "durationMs": 0
+    },
+    {
+      "name": "Complete runner",
+      "durationMs": 0
+    },
+    {
+      "name": "Complete job",
+      "durationMs": 0
+    }
+  ],
+  "logSha256": "60e1753dd7b5059dadc41a6531e95bcee00d3d671a6579b0f9ab1de68c2c02ad",
+  "scope": "One observed hosted job on the reviewed head and its PR merge tree; no monthly-cost or controlled-before/after claim."
+}
