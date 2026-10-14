@@ -282,6 +282,18 @@ func (server *Server) processUpload(lease uploadqueue.Lease) {
 		}
 	}
 	if err := team.Put(server.uploadContext, key.Native, entry, file); err != nil {
+		if errors.Is(err, remote.ErrConflict) {
+			// Different opaque logs can produce different archive bytes at the
+			// same deterministic Turbo task identity. Verify that the configured
+			// Team has a complete result in this exact namespace before releasing
+			// retention; a conflict response alone does not establish availability.
+			if _, headErr := team.Head(server.uploadContext, key.Native); headErr == nil {
+				server.completeAlreadyPresentUpload(lease)
+			} else {
+				server.retryUpload(lease, uploadFailureCode(headErr))
+			}
+			return
+		}
 		server.retryUpload(lease, uploadFailureCode(err))
 		return
 	}
@@ -295,9 +307,23 @@ func (server *Server) claimUpload() (uploadqueue.Lease, error) {
 }
 
 func (server *Server) completeUpload(lease uploadqueue.Lease) {
+	server.finishUpload(lease, false)
+}
+
+func (server *Server) completeAlreadyPresentUpload(lease uploadqueue.Lease) {
+	server.finishUpload(lease, true)
+}
+
+func (server *Server) finishUpload(lease uploadqueue.Lease, alreadyPresent bool) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(server.uploadContext), 2*time.Second)
 	defer cancel()
-	job, err := server.uploads.Complete(ctx, lease)
+	var job uploadqueue.Job
+	var err error
+	if alreadyPresent {
+		job, err = server.uploads.CompleteAlreadyPresent(ctx, lease)
+	} else {
+		job, err = server.uploads.Complete(ctx, lease)
+	}
 	if err == nil {
 		server.releaseTurboUploadPin(job.ID)
 	}
@@ -318,6 +344,8 @@ func uploadFailureCode(err error) string {
 		return "network_timeout"
 	case errors.Is(err, remote.ErrUnauthorized):
 		return "unauthorized"
+	case errors.Is(err, remote.ErrMetadata):
+		return "metadata_invalid"
 	default:
 		return "remote_unavailable"
 	}

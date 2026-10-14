@@ -30,6 +30,7 @@ class Experiment:
         self.processes = []
         self.proxy = None
         self.block_publication = False
+        self.metadata_delay = 0
         self.environment = {
             key: value for key, value in os.environ.items()
             if not key.startswith(("TURBO_", "LAYER_CACHE_", "ACTIONS_", "GITHUB_"))
@@ -100,7 +101,7 @@ class Experiment:
             self.args.binary, "setup", "--config", str(config_path),
             "--data-dir", str(self.root / (name + "-cache")),
             "--listen", self.address(), "--max-size", "268435456", "--role", role,
-            "--remote-metadata-timeout", "300ms", "--remote-transfer-idle-timeout", "300ms",
+            "--remote-metadata-timeout", "2s", "--remote-transfer-idle-timeout", "300ms",
             "--non-interactive", "--json",
         ]
         if team:
@@ -161,6 +162,8 @@ class Experiment:
                 pass
 
             def forward(self):
+                if self.command in ("GET", "HEAD") and self.path.startswith("/v8/artifacts/"):
+                    time.sleep(experiment.metadata_delay)
                 if self.command == "PUT" and experiment.block_publication:
                     self.send_error(503, "fixture publication is unavailable")
                     return
@@ -209,7 +212,7 @@ class Experiment:
         started = time.monotonic()
         command = [self.args.binary, "run", "--config", config["_path"]]
         if sync:
-            command.extend(["--sync-team", "--sync-timeout", "1s"])
+            command.extend(["--sync-team", "--sync-timeout", "10s" if ready else "1s"])
         command.extend(["--", self.args.turbo, "run", *tasks, "--summarize"])
         if cache:
             command.append("--cache=" + cache)
@@ -311,7 +314,11 @@ class Experiment:
         self.start_proxy(team)
         producer_config = self.setup("producer-runtime", producer, team)
         self.start(producer_config)
+        # Correctness acceptance uses the production metadata budget. A modest
+        # delayed response must still publish, without asserting subsecond IO.
+        self.metadata_delay = 0.4
         cold = self.run("local-cold-published", producer_config, producer, 2)
+        self.metadata_delay = 0
         baseline = self.task_hashes(cold)
         for path in (producer / "packages/app/dist", producer / "packages/app/.test"):
             shutil.rmtree(path)
@@ -366,6 +373,13 @@ class Experiment:
             rerun["archives"][task_id] = {"local": local, "team": remote}
             if local["sha256"] == remote["sha256"]:
                 raise AssertionError("same-hash log difference did not produce different opaque archives")
+        if not self.args.allow_legacy_conflict_pins:
+            deadline = time.monotonic() + 10
+            while self.status(changed_logs_config).get("pendingUploads") != 0 and time.monotonic() < deadline:
+                time.sleep(0.05)
+            rerun["pendingUploads"] = self.status(changed_logs_config).get("pendingUploads")
+            if rerun["pendingUploads"] != 0:
+                raise AssertionError("verified immutable archive conflicts retained pending uploads")
         self.block_publication = True
         self.input(producer, source="unrelated")
         queued = self.run("unrelated-publication-pending", producer_config, producer, 2,
@@ -396,9 +410,11 @@ class Experiment:
         if self.status(offline_config).get("pendingUploads") != 0:
             raise AssertionError("restarted daemon did not finish queued publication")
         restored, restored_config = self.fresh("recovered-fresh-ci", team, source="offline")
+        self.metadata_delay = 0.4
         recovered = self.run("restarted-queue-result-restored-by-fresh-ci", restored_config, restored, 0, source="offline")
+        self.metadata_delay = 0
         self.source(recovered, "teamCache")
-        self.evidence["offlineRecovery"] = {"pendingBeforeStop": 2, "pendingAfterRestart": 0}
+        self.evidence["offlineRecovery"] = {"pendingBeforeStop": 2, "pendingAfterRestart": 0, "restoreMetadataDelayMs": 400}
         self.evidence["executions"] = self.executions()
         self.evidence["passed"] = True
 
@@ -425,6 +441,7 @@ def main():
     parser.add_argument("--turbo", required=True, help="pinned real Turbo 2.10.12 executable")
     parser.add_argument("--output", help="write sanitized JSON evidence to this file")
     parser.add_argument("--keep-workspace", action="store_true", help="retain the isolated fixture directory for diagnosis")
+    parser.add_argument("--allow-legacy-conflict-pins", action="store_true", help="qualify beta.3's known retained conflict pins; current candidates must omit this flag")
     args = parser.parse_args()
     args.binary = str(pathlib.Path(args.binary).resolve())
     args.turbo = str(pathlib.Path(args.turbo).resolve())
