@@ -9,21 +9,22 @@ and direct private endpoints; remote read-through and queued Nx publication are
 not implemented.
 It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
 signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest
-CLI beta, [v0.1.0-beta.3](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.3),
-adds confirmed publication of successful local Turbo tasks for CI reuse and
-includes the Xcode adapter. Complete Xcode graph protection under eviction
-remains a separate qualification in [#25](https://github.com/ziahamza/layercache/issues/25).
+CLI beta, [v0.1.0-beta.4](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.4),
+includes owner-only Personal projects, native Nx Local/direct private endpoints,
+permanent-conflict pin retirement, and complete Xcode graph retention qualified
+under quota pressure. Successful local Turbo results can be confirmed for CI
+reuse. Nx Local-to-private forwarding remains future work.
 Public Builds are not qualified by this beta, and the hosted self-serve cloud
 requires a separate deployment. npm/CDN mirrors, Bazel, Vite, Next.js, Windows,
 Actions cache v2, and a general adapter SDK remain out of scope.
 
 Release and deployment instructions are in the [verified installer](scripts/README.md), [GitHub runner setup](action/setup/README.md), and [Team Cache deployment guide](docs/deployment.md). See [quota administration](docs/cache-administration.md), [retention policies](docs/retention.md), [trust-key rotation](docs/public-trust.md), and [performance qualification](docs/performance.md) for operations. The beta release qualifies native Local/Team Cache clients; it does not establish a hosted cloud service or qualify Public Builds.
 
-To install the beta from an inspected checkout of commit `d99e6f685b5db878b924181926399c57be9f16d7`:
+To install the beta from an inspected checkout of commit `ca3d5889a52815bce9565d3825b081839ac7077b`:
 
 ```bash
 bash scripts/install.sh --repository ziahamza/layercache \
-  --version v0.1.0-beta.3 --prefix "$HOME/.local/bin"
+  --version v0.1.0-beta.4 --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
 
@@ -148,7 +149,7 @@ permissions:
   id-token: write
 steps:
   # Check out the project, configure Node/pnpm, and install dependencies first.
-  - uses: ziahamza/layercache/action/turbo@d99e6f685b5db878b924181926399c57be9f16d7
+  - uses: ziahamza/layercache/action/turbo@ca3d5889a52815bce9565d3825b081839ac7077b
     with:
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
@@ -157,7 +158,7 @@ steps:
 ```
 
 Use your Team Cache origin and a compatibility identity for your build toolchain.
-The server must authorize your repository. This action is pinned to beta.3's
+The server must authorize your repository. This action is pinned to beta.4's
 source commit and reads Team results while keeping required task commands present.
 Use `cache-mode: read-write` for an authorized publishing lane or `cache-mode: fresh`
 to execute without Turbo task-result reads or writes. Public action source does

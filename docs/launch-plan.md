@@ -1,11 +1,13 @@
 # LayerCache launch plan, 2026-10-14
 
 Reusing successful local tasks in required CI checks is the immediate priority.
-Keep the task commands present, restore compatible deterministic results, and
-execute on a miss. Protect useful compiler outputs and bounded storage before
-expanding the dashboard, machine management, or hosted runners. The existing
-operator-managed Team Cache is available again. The self-serve cloud
-implementation is present, but its public service has not been deployed.
+Measure whole-job savings in Phone and complete Nx read-through and durable
+publication between Local Cache and private endpoints before expanding Nx use. Keep the task commands
+present, restore compatible deterministic results, and execute on a miss.
+Protect useful compiler outputs and bounded storage before expanding the
+dashboard, machine management, or hosted runners. The existing operator-managed
+Team Cache is available again. The self-serve cloud implementation is present,
+but its public service has not been deployed.
 
 The product has three visibility tiers: Personal Cache, Team Cache and Public
 Cache. Local Cache is each machine's bounded storage under those tiers. Private
@@ -18,10 +20,12 @@ hashing and execution as we add integrations.
 
 | Area | State | Next acceptance target |
 | --- | --- | --- |
-| Existing Team Cache | Public HTTPS restored on October 11. All five configured projects pass authenticated status checks; anonymous Phone access is denied. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
-| Local results available to CI | [#23](https://github.com/ziahamza/layercache/pull/23) merged at `d99e6f685b5db878b924181926399c57be9f16d7`. Beta.3 includes successful Turbo-task publication confirmation, durable publication repair and explicit CI cache modes. | Verify the installed beta.3 artifacts on all three native architectures, then adopt a small audited task lane with read-only PR reuse. The active Phone CI chat owns Phone adoption. |
-| Phone Xcode integration | [LayerCache #20](https://github.com/ziahamza/layercache/pull/20) is merged and the adapter is included in beta.3. Real Xcode replay after deleting native CAS passed. The Phone CI chat owns workflow integration. | Protect complete graphs during streamed restores in [#25](https://github.com/ziahamza/layercache/issues/25), then qualify behavior under quota pressure before expanding shared native-cache use. |
-| Storage correctness | Existing byte quotas, LRU, pins and durable uploads remain the foundation. [#24](https://github.com/ziahamza/layercache/issues/24) tracks permanent Turbo archive conflicts retaining pins; [#25](https://github.com/ziahamza/layercache/issues/25) tracks Xcode graph consistency during reads. | Classify permanent publication conflicts, release their pins, and protect complete native graphs within the storage budget. |
+| Existing Team Cache | Public HTTPS restored on October 11. Recovery checks passed authenticated status for all five configured projects and denied anonymous Phone access. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
+| Local results available to CI | [#23](https://github.com/ziahamza/layercache/pull/23) added Turbo publication confirmation, durable repair and explicit CI cache modes. [Phone #241](https://github.com/ziahamza/phone-app/pull/241) merged main-writer and same-repository PR-reader lanes. Installed-release QA corrections merged in [#29](https://github.com/ziahamza/layercache/pull/29). | Prove a directly observed main-to-PR remote restore with an empty native cache, and measure whole-job time including setup, transfer and publication. Native snapshot hits alone do not attribute savings to LayerCache. The Phone CI chat owns application adoption. |
+| Personal Cache | Owner-only private projects merged in [#28](https://github.com/ziahamza/layercache/pull/28), with stable numeric ownership, separate project identities and owner-authorized CI. | Qualify cross-machine use through the configured private endpoint. The implementation does not establish a deployed self-serve service. |
+| Nx native HTTP | [#31](https://github.com/ziahamza/layercache/pull/31) merged at `7404090ac915c015dad37ef92ca662f3dec90a5f`. The released Nx client passed Local and direct private replay, owner/Team isolation, changed-input misses and failed-test reruns. | Add Local-to-private read-through, durable publication, exact-hash confirmation and reporting before claiming local Nx results are available to CI. |
+| Phone Xcode integration | [#20](https://github.com/ziahamza/layercache/pull/20) added the adapter. [#30](https://github.com/ziahamza/layercache/pull/30) merged native graph retention after real multiple-root Xcode replay under quota pressure. | Qualify Phone-scale lookup/restore timing and its pinned toolchain before expanding shared native use. Swift cache hits and signed-release timing remain separate measurements. The Phone CI chat owns application workflows. |
+| Storage correctness | [#27](https://github.com/ziahamza/layercache/pull/27) merged permanent Turbo conflict handling and pin retirement for [#24](https://github.com/ziahamza/layercache/issues/24). Existing byte quotas, LRU, pins and durable uploads remain the foundation. | Preserve conflict retirement and bounded graph leases in future native publication work. Retain LRU until representative workload traces justify another policy. |
 | Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), and [#18](https://github.com/ziahamza/layercache/pull/18) are merged. Recovery [#21](https://github.com/ziahamza/layercache/pull/21) merged at `447095385671323a186299e0718d10c6459abb6f`, including the unchanged device-flow fix from closed, superseded [#19](https://github.com/ziahamza/layercache/pull/19). Beta.2 passed fresh native installation; beta.3 retains those fixes. | Use the verified release for the limited cloud deployment once its real inputs are configured. |
 | Public self-serve cloud | Draft [config #27](https://github.com/ziahamza/config/pull/27) prepares deployment. No service, dedicated pool, protected cloud configuration, or new public route has been activated. | Real GitHub OAuth, an approved creator cohort, isolated bounded storage, and live two-user acceptance before declaring a hosted beta. |
 | Machine enrollment and hosted runners | Deferred. | Useful cross-machine cache reuse and operating costs measured first. |
@@ -45,7 +49,7 @@ route changed. The host monitor reports `healthy:true`. The independent
 [GitHub HTTPS and certificate check](https://github.com/ziahamza/layercache/actions/runs/38152753823)
 passed at 15:48:34 UTC.
 
-The existing gateway still runs image `layercache:qa-16868d9`, digest
+At recovery, the gateway ran image `layercache:qa-16868d9`, digest
 `sha256:d69ec986b4d2e76a0acc560add087a6bc4cd60879446e71aa1c4827492cff727`.
 It predates the Xcode adapter. The physical cache pool is 48 GiB with a 10 GiB
 reserve; roughly 161 MiB was used during recovery. Each of the five projects has
@@ -100,30 +104,51 @@ successful local and Team restores, failed-test reruns, changed-input misses,
 fresh execution and offline publication recovery. It does not qualify arbitrary
 task definitions or provide a commit-level attestation that a developer ran tests.
 
+Beta.4 pins protected main commit `ca3d5889a52815bce9565d3825b081839ac7077b`,
+including the storage fix, Personal projects, native Nx endpoints and complete
+native Xcode graph retention. Its
+[release workflow](https://github.com/ziahamza/layercache/actions/runs/38552629557)
+qualifies all three native binaries, persistence, performance and provenance.
+The [published installer qualification](../.github/workflows/beta-release-install.yml)
+uses the same exact source and runs both the 17-scenario Turbo contract and
+compiled Nx client against downloaded binaries. Beta.4 requires conflict pins
+to retire; it has no historical-beta exception. These are release/fixture proofs,
+not measurements of Phone's complete job or a deployed self-serve cloud.
+
 ## Priorities and landing gates
 
-1. **Reuse successful local tasks in CI.** Keep explicit compatible execution
-   profiles and complete deterministic inputs. Confirm publication with
-   `run --sync-team`; use `cache-mode: read-only` in required PR task lanes and
-   `cache-mode: fresh` for deliberate fresh checks. Preserve failed task exit
-   codes and execute on misses. The active Phone CI chat owns the initial
-   audited task lane, input fixes and rollout. Network/live suites and mutable
+1. **Measure Phone jobs and complete private task reuse.** Measure the merged
+   Phone lanes without attributing native snapshot hits to the remote service.
+   Finish read-through and durable Nx publication between Local Cache and
+   Personal/Team endpoints before expanding Nx adoption. Add exact-hash confirmation and
+   reporting before claiming that a local Nx result is available to CI.
+   Keep explicit compatible execution
+   profiles and complete deterministic inputs. For existing Turbo lanes,
+   confirm publication with `run --sync-team`; use `cache-mode: read-only` in
+   required PR task lanes and `cache-mode: fresh` for deliberate fresh checks.
+   Preserve failed task exit codes and execute on misses. The active Phone CI chat owns
+   application input fixes, rollout and post-merge measurements. Network/live suites and mutable
    Git-base checks retain fresh execution policies. Measure whole-job savings
    separately from task cache hits.
-2. **Finish storage and compiler correctness.** Resolve permanent archive
-   conflict retries and retained pins in
-   [#24](https://github.com/ziahamza/layercache/issues/24). Protect complete Xcode
-   graphs through streamed reads in [#25](https://github.com/ziahamza/layercache/issues/25),
-   with quota-pressure and eviction acceptance. Retain bounded LRU until native
-   traces justify a different admission policy. Keep useful shared snapshot
-   baselines within provider budgets. Local snapshots alone are not a remotely
+2. **Preserve compiler and storage correctness.** Keep the merged permanent
+   conflict, pin-retirement and graph-pressure regressions green. The native
+   multiple-root gate in [#30](https://github.com/ziahamza/layercache/pull/30)
+   passed; qualify Phone's larger workload before adopting a new adapter pin. Retain bounded LRU until native traces justify a different
+   admission policy. Keep useful shared snapshot baselines within provider
+   budgets. Local snapshots alone are not a remotely
    hosted compiler service. Expand shared native use after these checks pass.
-3. **Keep verified distribution pinned.** Qualify the installed beta.3 binary
-   with the real Turbo client on all three native architectures. Keep OAuth
-   fixtures confined to QA. Beta.2's historical publication and installer
-   evidence remains valid; current examples use beta.3's exact source. Do not
+3. **Add native OSS integrations in order.** Next qualify Gradle HTTP caching
+   for audited Phone Android tasks. Follow with an isolated, pinned
+   `bazel-remote` sidecar after native protocol qualification, then sccache.
+   Reuse native task hashes, clients and existing engines. Require fresh-consumer
+   output checks and private-scope isolation before application adoption. See
+   the [integration plan](oss-integration-plan.md).
+4. **Keep verified distribution pinned.** Use beta.4's exact source and
+   qualified downloaded binaries on all three native architectures. Keep
+   OAuth fixtures confined to QA. Beta.2's historical publication and installer
+   evidence remains valid; current examples use beta.4's exact source. Do not
    bypass branch or release protections.
-4. **Activate one limited cloud beta after its live inputs exist.** Configure
+5. **Activate one limited cloud beta after its live inputs exist.** Configure
    the real OAuth app with device flow and callback
    `https://cloud.services.ziahamza.com/auth/callback`, protected secret files,
    approved numeric creator IDs, a separate storage pool, and restart/backup
@@ -131,13 +156,13 @@ task definitions or provide a commit-level attestation that a developer ran test
    are ready. From two real identities, verify invitation acceptance, a cold
    upload, a fresh-machine Team Cache restore, role downgrade/removal, and
    recovery after restart through the public HTTPS origin.
-5. **Make successful onboarding repeatable.** Provide copyable CI setup pinned
+6. **Make successful onboarding repeatable.** Provide copyable CI setup pinned
    to a verified release. Show measured source, bytes, hit status, transfer
    overhead, and timing in the dashboard. Keep misses non-blocking. Resolve
    repository renames against the stored immutable numeric GitHub repository
    identity. Qualify Parle's native Safari reuse separately when Phone's cache
    path is working.
-6. **Expand after useful reuse is measured.** Add revocable machine identities,
+7. **Expand after useful reuse is measured.** Add revocable machine identities,
    enrollment, last-seen state, and usage reporting. Then consider runner
    admission, leases, cancellation, isolation, cleanup, and usage accounting.
    Public Builds retain their separate publisher trust model and native KVM
@@ -148,5 +173,5 @@ The beta stays limited to an explicit cohort and operator budget. Admission is
 bounded in code, and managed projects bind to signed numeric repository IDs.
 Before unrestricted signup, add billing/quotas, account and project lifecycle,
 and support escalation. The
-[v0.1.0-beta.3 CLI beta](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.3)
+[v0.1.0-beta.4 CLI beta](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.4)
 does not make the hosted service live. Public Builds remain unqualified.
