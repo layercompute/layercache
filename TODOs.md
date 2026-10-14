@@ -150,11 +150,19 @@ hit counts alone.
 - [ ] **Deploy limited self-serve only after live inputs are configured.**
   Real OAuth, numeric cohort, isolated bounded storage and two-user upload,
   fresh restore, removal and restart acceptance remain launch gates.
+- [ ] **Make private CI onboarding repeatable.** Provide copyable setup pinned
+  to a verified release and execution profile. Prove publication and an empty
+  consumer restore, preserve task execution on misses, and report source,
+  bytes, hit status, transfer overhead and whole-job time in the dashboard.
+  Resolve repository renames against the stored immutable numeric GitHub
+  repository identity. Qualify Parle's native Safari reuse separately after
+  Phone's cache path is working.
 - [ ] **Improve measured cache admission and reporting.** Preserve hard
   budgets and correct graph/read leases. Collect representative native traces
   before changing LRU. Count physical staging/deletion/metadata and report
   avoided work after lookup/transfer/verification overhead.
-- [ ] **Revisit machine management, hosted runners, Actions v2 and Public Builds.**
+- [ ] **Revisit machine management, hosted runners, Windows, Actions v2,
+  a wider adapter SDK and Public Builds.**
   Promote only after useful cross-machine reuse and costs are established.
   Public population stays confined to LayerCache-controlled builds.
 
