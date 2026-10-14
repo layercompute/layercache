@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/layercache/layercache/internal/access"
+	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/config"
 )
 
@@ -199,6 +200,10 @@ func (gateway *ProjectGateway) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	if (r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodPatch) && !strings.HasPrefix(r.URL.Path, "/v1/auth/") {
 		requested := max(r.ContentLength, 1<<20)
 		if requested > (1<<62) || !gateway.pool.admits(requested*2) {
+			if r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/cache/") {
+				http.Error(w, "cache capacity unavailable", http.StatusForbidden)
+				return
+			}
 			writeJSON(w, http.StatusInsufficientStorage, map[string]string{"error": "storage pool has insufficient headroom"})
 			return
 		}
@@ -232,7 +237,7 @@ type poolAdmissionBody struct {
 
 func (body *poolAdmissionBody) Read(buffer []byte) (int, error) {
 	if !body.pool.admits(int64(len(buffer)) * 2) {
-		return 0, errors.New("storage pool has insufficient streaming headroom")
+		return 0, fmt.Errorf("storage pool has insufficient streaming headroom: %w", artifact.ErrQuota)
 	}
 	return body.ReadCloser.Read(buffer)
 }

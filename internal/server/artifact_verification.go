@@ -13,10 +13,10 @@ import (
 	"github.com/layercache/layercache/internal/artifact"
 )
 
-// stageVerifiedTurboRead keeps cloud-backed bytes behind the HTTP boundary
+// stageVerifiedArtifactRead keeps cloud-backed bytes behind the HTTP boundary
 // until their complete size and digest have been verified. Streaming an S3
 // object directly cannot retract an HTTP 200 after a checksum failure at EOF.
-func (server *Server) stageVerifiedTurboRead(
+func (server *Server) stageVerifiedArtifactRead(
 	ctx context.Context,
 	entry artifact.Entry,
 	body io.Reader,
@@ -28,7 +28,7 @@ func (server *Server) stageVerifiedTurboRead(
 	if err != nil {
 		return nil, nil, err
 	}
-	temporary, err := os.CreateTemp(filepath.Join(server.config.DataDir, "staging"), "turbo-cloud-read-*")
+	temporary, err := os.CreateTemp(filepath.Join(server.config.DataDir, "staging"), "cloud-read-*")
 	if err != nil {
 		lease.Release()
 		return nil, nil, err

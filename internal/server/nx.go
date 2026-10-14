@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -62,7 +63,34 @@ func (server *Server) nxArtifact(writer http.ResponseWriter, request *http.Reque
 			http.Error(writer, "cache read failed", http.StatusInternalServerError)
 			return
 		}
-		defer body.Close()
+		if server.cloudStore != nil {
+			staged, cleanup, verifyErr := server.stageVerifiedArtifactRead(request.Context(), entry, body)
+			closeErr := body.Close()
+			if verifyErr == nil {
+				verifyErr = closeErr
+			}
+			if verifyErr != nil {
+				if cleanup != nil {
+					cleanup()
+				}
+				if errors.Is(verifyErr, artifact.ErrCorrupt) {
+					_ = server.store.Delete(context.WithoutCancel(request.Context()), key)
+					http.NotFound(writer, request)
+					return
+				}
+				if errors.Is(verifyErr, artifact.ErrQuota) {
+					writer.Header().Set("x-layercache-degraded", "verification-staging-full")
+					http.NotFound(writer, request)
+					return
+				}
+				http.Error(writer, "cache read failed", http.StatusInternalServerError)
+				return
+			}
+			body = staged
+			defer cleanup()
+		} else {
+			defer body.Close()
+		}
 		writer.Header().Set("Content-Type", "application/octet-stream")
 		writer.Header().Set("Content-Length", strconv.FormatInt(entry.Size, 10))
 		writer.Header().Set("x-layercache-digest", "sha256:"+entry.Digest)

@@ -53,8 +53,12 @@ Read-only and capacity-limited writes return 403, which the native client
 declines without replacing a successful task result. Invalid credentials return
 plain-text 401. Private responses use `Cache-Control: private, no-store`.
 The existing byte quota, staging limits, idle transfer deadlines and integrity
-checks apply. An integrity-rejected Local artifact becomes a miss and can be
-rebuilt. Existing cloud retention policy applies to cloud-backed project stores.
+checks apply. Cloud archives are fully verified in bounded staging before any
+success response or archive bytes are sent. Corrupt archives become misses and
+can be rebuilt; insufficient verification staging also returns a miss without
+deleting the cloud archive. Storage-pool admission rejects uploads with the
+native client's 403 decline response, including capacity lost during streaming.
+Existing cloud retention policy applies to cloud-backed project stores.
 
 ## Implemented limits and qualification
 

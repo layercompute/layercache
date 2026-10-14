@@ -646,7 +646,7 @@ func (server *Server) getTurbo(writer http.ResponseWriter, request *http.Request
 	}
 	if server.cloudStore != nil {
 		cloudBody := file
-		staged, cleanup, verifyErr := server.stageVerifiedTurboRead(request.Context(), entry, cloudBody)
+		staged, cleanup, verifyErr := server.stageVerifiedArtifactRead(request.Context(), entry, cloudBody)
 		closeErr := cloudBody.Close()
 		if verifyErr == nil {
 			verifyErr = closeErr
