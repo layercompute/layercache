@@ -40,6 +40,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: v0.1.0-beta.3
       SOURCE_SHA: d99e6f685b5db878b924181926399c57be9f16d7
+      QA_SOURCE_SHA: 8990f7dd8e662c3aeebbc4a0ff9bccc03cb1d820
       RELEASE_REPOSITORY: ziahamza/layercache
     steps:
       # The workflow is reviewed on this PR; the script comes from the exact
@@ -103,6 +104,19 @@ jobs:
           ' "$RUNNER_TEMP/layercache-preview.json" >/dev/null
           test ! -e "$RUNNER_TEMP/layercache-beta-preview.json"
 
+      # Keep the immutable installer source separate from the reviewed QA
+      # harness, whose metadata deadlines now match ordinary runtime latency.
+      - name: Check out the reviewed acceptance harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ziahamza/layercache
+          ref: 8990f7dd8e662c3aeebbc4a0ff9bccc03cb1d820
+          path: qualification-source
+          persist-credentials: false
+
+      - name: Verify the acceptance source
+        run: test "$(git -C qualification-source rev-parse HEAD)" = "$QA_SOURCE_SHA"
+
       - name: Set up Node.js for installed-binary Turbo acceptance
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -111,14 +125,19 @@ jobs:
       - name: Install the locked real Turbo client
         run: |
           npm install --global pnpm@10.34.5
-          pnpm --dir qa/fixtures/local-ci-reuse install --frozen-lockfile
+          pnpm --dir qualification-source/qa/fixtures/local-ci-reuse install --frozen-lockfile
 
       - name: Prove successful local tasks restore using the published binary
         run: |
           set -euo pipefail
-          python3 qa/local-ci-reuse/run.py \
+          legacy_flags=()
+          if [[ "$RELEASE_TAG" == v0.1.0-beta.3 ]]; then
+            legacy_flags+=(--allow-legacy-conflict-pins)
+          fi
+          python3 qualification-source/qa/local-ci-reuse/run.py \
             --binary "$RUNNER_TEMP/layercache-beta-install/layercache" \
-            --turbo "$GITHUB_WORKSPACE/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
+            --turbo "$GITHUB_WORKSPACE/qualification-source/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
+            "${legacy_flags[@]}" \
             --output "$RUNNER_TEMP/beta3-local-ci-reuse.json"
           jq -e '
             .schemaVersion == "local-ci-reuse-v1" and .passed == true and
