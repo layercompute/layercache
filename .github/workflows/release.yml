@@ -192,6 +192,21 @@ jobs:
           LAYERCACHE_SETUP_BINARY: ${{ github.workspace }}/dist/${{ matrix.artifact }}
         run: node --test action/setup/setup.test.mjs scripts/install.test.mjs
 
+      - name: Qualify the released Nx native client against the candidate
+        env:
+          LAYERCACHE_BIN: ${{ github.workspace }}/dist/${{ matrix.artifact }}
+          NX_QA_OUTPUT: ${{ runner.temp }}/nx-native-evidence.json
+        run: node qa/nx-native/run.mjs
+
+      - name: Preserve native Nx qualification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nx-native-release-evidence-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ runner.temp }}/nx-native-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Exercise pinned Turbo and stock Actions cache clients
         env:
           LAYER_CACHE_BIN: ${{ github.workspace }}/dist/${{ matrix.artifact }}

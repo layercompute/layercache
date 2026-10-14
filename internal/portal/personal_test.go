@@ -96,11 +96,14 @@ func TestPersonalCacheAPIAndSameRepositoryArtifactsRemainPrivate(t *testing.T) {
 	privateToken := q.capability(privateProject, "alice")
 	sharedToken := q.capability(sharedProject, "bob")
 	headers := func(token string) map[string]string {
-		return map[string]string{"Authorization": "Bearer " + token, "X-LayerCache-Compatibility": "linux-amd64-schema1"}
+		return map[string]string{"Authorization": "Bearer " + token}
 	}
-	requireStatus(t, q.request("PUT", "/v8/artifacts/full-context", "private-output", nil, headers(privateToken)), 200)
-	requireStatus(t, q.request("GET", "/v8/artifacts/full-context", "", nil, headers(sharedToken)), 404)
-	requireStatus(t, q.request("PUT", "/v8/artifacts/full-context", "shared-output", nil, headers(sharedToken)), 200)
+	paths := []string{"/v8/artifacts/full-context", "/v1/cache/full-context"}
+	for _, path := range paths {
+		requireStatus(t, q.request("PUT", path, "private-output", nil, headers(privateToken)), 200)
+		requireStatus(t, q.request("GET", path, "", nil, headers(sharedToken)), 404)
+		requireStatus(t, q.request("PUT", path, "shared-output", nil, headers(sharedToken)), 200)
+	}
 	if err := q.p.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -109,11 +112,13 @@ func TestPersonalCacheAPIAndSameRepositoryArtifactsRemainPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ token, expected string }{{privateToken, "private-output"}, {sharedToken, "shared-output"}} {
-		response := q.request("GET", "/v8/artifacts/full-context", "", nil, headers(tc.token))
-		requireStatus(t, response, 200)
-		if response.Body.String() != tc.expected {
-			t.Fatalf("artifact after restart = %q; want %q", response.Body.String(), tc.expected)
+	for _, path := range paths {
+		for _, tc := range []struct{ token, expected string }{{privateToken, "private-output"}, {sharedToken, "shared-output"}} {
+			response := q.request("GET", path, "", nil, headers(tc.token))
+			requireStatus(t, response, 200)
+			if response.Body.String() != tc.expected {
+				t.Fatalf("%s artifact after restart = %q; want %q", path, response.Body.String(), tc.expected)
+			}
 		}
 	}
 	requireStatus(t, q.request("GET", "/api/projects/"+privateProject.ID+"/snapshot", "", bob, nil), 403)
@@ -143,7 +148,7 @@ func TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy(t *testing.T) 
 	response := q.request("POST", "/api/teams", `{"kind":"personal"}`, alice, nil)
 	requireStatus(t, response, 201)
 	project := q.project(alice, decodeQA[Team](t, response), "acme/alpha")
-	exchange := func(actorID, event, ref string) *httptest.ResponseRecorder {
+	exchange := func(integration, actorID, event, ref string) *httptest.ResponseRecorder {
 		t.Helper()
 		now := time.Now().UTC()
 		claims := map[string]any{
@@ -153,35 +158,53 @@ func TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy(t *testing.T) 
 			"ref": ref, "sha": strings.Repeat("a", 40), "actor_id": actorID,
 			"event_name": event, "run_id": "123", "run_attempt": "1", "check_run_id": "456",
 		}
-		body, err := json.Marshal(map[string]string{"project": project.ID, "compatibility": "linux-amd64-schema1", "integration": "turbo", "idToken": signPortalOIDCTestToken(t, key, claims)})
+		body, err := json.Marshal(map[string]string{"project": project.ID, "compatibility": "linux-amd64-schema1", "integration": integration, "idToken": signPortalOIDCTestToken(t, key, claims)})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return q.request("POST", "/v1/auth/github-oidc/exchange", string(body), nil, nil)
 	}
-	for _, actor := range []string{"", "2", "invalid"} {
-		requireStatus(t, exchange(actor, "push", "refs/heads/main"), 401)
+	type issuedCapability struct {
+		token, path string
+		deniedRead  int
 	}
-	response = exchange("1", "push", "refs/heads/main")
-	requireStatus(t, response, 200)
-	writer := decodeQA[struct {
-		Token string `json:"token"`
-	}](t, response).Token
-	headers := map[string]string{"Authorization": "Bearer " + writer, "X-LayerCache-Compatibility": "linux-amd64-schema1"}
-	requireStatus(t, q.request("PUT", "/v8/artifacts/owner-ci", "owner-output", nil, headers), 200)
-	response = exchange("1", "pull_request", "refs/pull/1/merge")
-	requireStatus(t, response, 200)
-	reader := decodeQA[struct {
-		Token string `json:"token"`
-	}](t, response).Token
-	headers["Authorization"] = "Bearer " + reader
-	requireStatus(t, q.request("GET", "/v8/artifacts/owner-ci", "", nil, headers), 200)
-	requireStatus(t, q.request("PUT", "/v8/artifacts/owner-pr", "forbidden", nil, headers), 401)
+	var issued []issuedCapability
+	for _, protocol := range []struct {
+		integration, path       string
+		deniedRead, deniedWrite int
+	}{{"turbo", "/v8/artifacts/", 404, 401}, {"nx", "/v1/cache/", 401, 403}} {
+		t.Run(protocol.integration, func(t *testing.T) {
+			for _, actor := range []string{"", "2", "invalid"} {
+				requireStatus(t, exchange(protocol.integration, actor, "push", "refs/heads/main"), 401)
+			}
+			response := exchange(protocol.integration, "1", "push", "refs/heads/main")
+			requireStatus(t, response, 200)
+			writer := decodeQA[struct {
+				Token string `json:"token"`
+			}](t, response).Token
+			headers := map[string]string{"Authorization": "Bearer " + writer}
+			path := protocol.path + "owner-ci"
+			requireStatus(t, q.request("PUT", path, "owner-output", nil, headers), 200)
+			response = exchange(protocol.integration, "1", "pull_request", "refs/pull/1/merge")
+			requireStatus(t, response, 200)
+			reader := decodeQA[struct {
+				Token string `json:"token"`
+			}](t, response).Token
+			headers["Authorization"] = "Bearer " + reader
+			requireStatus(t, q.request("GET", path, "", nil, headers), 200)
+			requireStatus(t, q.request("PUT", protocol.path+"owner-pr", "forbidden", nil, headers), protocol.deniedWrite)
+			for _, token := range []string{writer, reader} {
+				issued = append(issued, issuedCapability{token, path, protocol.deniedRead})
+			}
+		})
+	}
 	// Recheck the personal delegation on every request, including issued tokens.
 	if _, err := q.p.store.db.Exec(`UPDATE lc_portal_teams SET created_by='2' WHERE id=$1`, project.TeamID); err != nil {
 		t.Fatal(err)
 	}
-	requireStatus(t, q.request("GET", "/v8/artifacts/owner-ci", "", nil, headers), 404)
+	for _, capability := range issued {
+		requireStatus(t, q.request("GET", capability.path, "", nil, map[string]string{"Authorization": "Bearer " + capability.token}), capability.deniedRead)
+	}
 	if _, err := q.p.store.GitHubActionsRole(context.Background(), project.ID, "1"); !errors.Is(err, ErrDenied) {
 		t.Fatalf("former owner CI = %v", err)
 	}

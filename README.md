@@ -3,7 +3,10 @@
 Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache and speaks native cache protocols. Cache visibility has three tiers: Personal Cache, Team Cache and verified Public Cache.
 
 This repository contains working implementations for Turborepo, GitHub Actions
-cache v1, Docker Buildx/BuildKit, and Xcode's LLVM compilation-cache protocol.
+cache v1, Docker Buildx/BuildKit, Xcode's LLVM compilation-cache protocol, and
+[Nx's native private HTTP cache](docs/nx-cache.md). The Nx adapter supports Local
+and direct private endpoints; remote read-through and queued Nx publication are
+not implemented.
 It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
 signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest
 CLI beta, [v0.1.0-beta.3](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.3),

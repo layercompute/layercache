@@ -132,7 +132,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	if input.Integration == "" {
 		input.Integration = "actions"
 	}
-	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit") ||
+	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit" && input.Integration != "nx") ||
 		input.TTLSeconds < 0 || input.TTLSeconds > 3600 ||
 		(input.Integration == "actions" && input.TTLSeconds != 0) ||
 		(input.Integration != "actions" && (input.RecipeDigest != "" || input.Target != "" ||
@@ -209,7 +209,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	// archives. A PR must not poison main's cache, including pull_request_target
 	// tokens whose ref is main. Missing/unknown event claims fail closed to reads.
 	trustedEvent := identity.EventName == "push" || identity.EventName == "workflow_dispatch" || identity.EventName == "schedule"
-	if (input.Integration == "buildkit" || input.Integration == "turbo") &&
+	if (input.Integration == "buildkit" || input.Integration == "turbo" || input.Integration == "nx") &&
 		(identity.Ref != server.config.ActionsDefaultRef || !trustedEvent) {
 		capabilities = []access.Capability{access.CapabilityRead}
 	}

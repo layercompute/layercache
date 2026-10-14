@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "cacheDirectory": ".nx/cache",
+  "namedInputs": {
+    "fixture": [
+      "{projectRoot}/src/**",
+      "{projectRoot}/task.mjs",
+      "{projectRoot}/project.json",
+      "{workspaceRoot}/dependency.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/pnpm-lock.yaml",
+      { "env": "NX_FIXTURE_ENV" },
+      { "env": "NX_FIXTURE_FAIL" }
+    ]
+  }
+}
