@@ -353,6 +353,7 @@ func (handler *Handler) lookup(writer http.ResponseWriter, request *http.Request
 		outcome.Degraded = errors.Is(err, errRemoteDegraded)
 		handler.recordOutcome(outcome)
 		handler.rememberActionsMiss(scope, keys[0], version, outcome, finishedAt)
+		writer.Header().Set("X-LayerCache-Miss-Reason", lookupMissReason(err))
 		writer.WriteHeader(http.StatusNoContent)
 		return
 	}

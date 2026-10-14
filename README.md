@@ -214,6 +214,11 @@ The integration owns only `.turbo/config.json`'s `apiUrl` field and preserves un
 
 The daemon implements the GitHub Actions cache v1 reserve, ranged-upload, commit, lookup, and archive-download flow. Exact keys, ordered restore-key prefixes, current/default ref scoping, first-writer-wins behavior, and Team Cache warming are covered.
 
+A successful cache commit does not reserve the entry for a future job. Required
+file handoffs need retained artifact storage. See the
+[Actions acknowledgement and miss contract](docs/actions-cache-contract.md)
+for diagnostics and the isolated PostgreSQL/S3 qualification loop.
+
 For a local CI tool that runs an existing workflow, keep the workflow's stock `actions/cache` step unchanged and launch the tool through Layer Cache:
 
 ```bash

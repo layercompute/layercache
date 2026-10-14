@@ -320,11 +320,11 @@ func (storage *ActionsStorage) Lookup(
 		return actionscache.LookupResult{}, err
 	}
 	if err := validateIdentity("Actions cache version", request.Version, 512); err != nil || len(request.Keys) == 0 {
-		return actionscache.LookupResult{}, actionscache.ErrNotFound
+		return actionscache.LookupResult{}, actionscache.ErrLookupNoMatch
 	}
 	for _, key := range request.Keys {
 		if err := validateIdentity("Actions cache lookup key", key, 512); err != nil {
-			return actionscache.LookupResult{}, actionscache.ErrNotFound
+			return actionscache.LookupResult{}, actionscache.ErrLookupNoMatch
 		}
 	}
 	refs := []struct {
@@ -337,31 +337,34 @@ func (storage *ActionsStorage) Lookup(
 			scope actionscache.RefScope
 		}{request.Scope.DefaultRef, actionscache.RefScopeDefault})
 	}
+	miss := actionscache.ErrLookupNoMatch
 	for _, ref := range refs {
 		for _, requestedKey := range request.Keys {
-			entry, found, err := storage.lookupCandidate(ctx, request, ref.value, requestedKey, true)
-			if err != nil {
-				return actionscache.LookupResult{}, err
-			}
-			if found {
-				return actionscache.LookupResult{
-					Entry: entry, Match: actionscache.MatchExact, RequestedKey: requestedKey,
-					RefScope: ref.scope, Source: actionscache.SourceTeamCache,
-				}, nil
-			}
-			entry, found, err = storage.lookupCandidate(ctx, request, ref.value, requestedKey, false)
-			if err != nil {
-				return actionscache.LookupResult{}, err
-			}
-			if found {
-				return actionscache.LookupResult{
-					Entry: entry, Match: actionscache.MatchPrefix, RequestedKey: requestedKey,
-					RefScope: ref.scope, Source: actionscache.SourceTeamCache,
-				}, nil
+			for _, match := range []actionscache.MatchKind{actionscache.MatchExact, actionscache.MatchPrefix} {
+				entry, found, err := storage.lookupCandidate(ctx, request, ref.value, requestedKey, match == actionscache.MatchExact)
+				if err != nil {
+					if !errors.Is(err, actionscache.ErrNotFound) {
+						return actionscache.LookupResult{}, err
+					}
+					miss = preferActionsLookupMiss(miss, err)
+				}
+				if found {
+					return actionscache.LookupResult{
+						Entry: entry, Match: match, RequestedKey: requestedKey,
+						RefScope: ref.scope, Source: actionscache.SourceTeamCache,
+					}, nil
+				}
 			}
 		}
 	}
-	return actionscache.LookupResult{}, actionscache.ErrNotFound
+	return actionscache.LookupResult{}, miss
+}
+
+func preferActionsLookupMiss(current, incoming error) error {
+	if current == nil || errors.Is(current, actionscache.ErrLookupNoMatch) || errors.Is(incoming, actionscache.ErrLookupIntegrity) {
+		return incoming
+	}
+	return current
 }
 
 func (storage *ActionsStorage) Open(
@@ -694,15 +697,22 @@ func (storage *ActionsStorage) lookupCandidate(
 	requestedKey string,
 	exact bool,
 ) (actionscache.Entry, bool, error) {
+	var miss error
 	for {
 		candidates, found, err := storage.queryCandidates(ctx, request, ref, requestedKey, exact, 64)
-		if err != nil || !found {
+		if err != nil {
 			return actionscache.Entry{}, false, err
+		}
+		if !found {
+			return actionscache.Entry{}, false, miss
 		}
 		for _, candidate := range candidates {
 			available, err := storage.actionsEntryAvailable(ctx, request, candidate)
 			if err != nil {
-				return actionscache.Entry{}, false, err
+				if !errors.Is(err, actionscache.ErrNotFound) {
+					return actionscache.Entry{}, false, err
+				}
+				miss = preferActionsLookupMiss(miss, err)
 			}
 			if available {
 				return candidate.entry, true, nil
@@ -797,7 +807,10 @@ func (storage *ActionsStorage) actionsEntryAvailable(
 			!errors.Is(invalidateErr, actionscache.ErrNotFound) {
 			return false, invalidateErr
 		}
-		return false, nil
+		if errors.Is(err, ErrCorrupt) {
+			return false, actionscache.ErrLookupIntegrity
+		}
+		return false, actionscache.ErrLookupEntryRemoved
 	}
 	if err != nil {
 		return false, err
@@ -807,7 +820,7 @@ func (storage *ActionsStorage) actionsEntryAvailable(
 			!errors.Is(invalidateErr, actionscache.ErrNotFound) {
 			return false, invalidateErr
 		}
-		return false, nil
+		return false, actionscache.ErrLookupIntegrity
 	}
 	return true, nil
 }
