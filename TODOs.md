@@ -33,6 +33,20 @@ hit counts alone.
   coverage for any proven bug and document acknowledgement/read-back guarantees.
   Qualify a separate gateway rollout if a service fix is needed.
 
+  Evidence on 2026-10-14: candidate
+  `c5a354badfab5d74bdcc2458141f277d382c61ec` adds the
+  [acknowledgement/miss contract](docs/actions-cache-contract.md) and a real
+  PostgreSQL 16/production S3 SDK loop with a disposable HTTP S3 fixture.
+  Deployed `16868d9` and current source both restore a varied 124,108,800-byte
+  payload with complete size/SHA-256 verification after commit acknowledgement.
+  Controlled quota, expiry, deletion, integrity, scope, failed-copy and lost
+  response cases distinguish expected behavior; pin, healthy-fallback and
+  concurrent-maintenance/read-lease controls pass. The bounded miss header
+  reports only this lookup's observations, not a durable removal history.
+  The historical cause remains unproven; no backend bug was reproduced.
+  Next: obtain exact request identity and authoritative removal/commit evidence
+  for the reported incident. Gateway rollout remains separate and pending.
+
 - [ ] **Make expensive Phone test groups independently reusable.**
   Owner: Phone workflow owner for task definitions; LayerCache for publication
   and fresh-consumer proof. Five sampled PRs had median unit time 16m20s,
