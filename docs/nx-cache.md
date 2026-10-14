@@ -38,9 +38,9 @@ endpoint and a project capability. The credential must include a valid
 compatibility profile. Nx hashes remain opaque; Layer Cache scopes every key
 by authenticated project, `nx` integration and compatibility. Another project's
 credential, another profile or a Turbo credential cannot restore that archive.
-The shared private project engine can serve owner-only Personal Cache projects
-when the personal collection feature is installed. Shared Team projects retain
-current membership checks.
+The shared private project engine serves owner-only Personal Cache projects.
+Shared Team projects retain current membership checks. Personal CI additionally
+requires the owner's signed stable actor identity.
 
 GitHub Actions exchanges accept `integration: nx`. Main push, manual and
 scheduled runs retain the existing writer policy. Other refs, PRs and unknown
