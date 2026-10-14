@@ -3,6 +3,7 @@ type GenerateHook = NonNullable<LanguageModelMiddleware['wrapGenerate']>;
 type LanguageModelV4GenerateResult = Awaited<ReturnType<GenerateHook>>;
 type LanguageModelV4Usage = LanguageModelV4GenerateResult['usage'];
 import type { Options, Result } from './client.js';
+export { NativeCacheConflictError, NativeCachePublicationError } from './client.js';
 export type LLMReuseMode = 'record' | 'replay' | 'read-through' | 'fresh';
 export interface LLMReuseProfile {
     endpointIdentity: string;
@@ -47,4 +48,3 @@ export declare class LLMReplayMissError extends Error {
 /** Completed AI SDK v4 generations only. Put this middleware last, nearest the
  * provider, after request transformations. Provider defaults belong in profile. */
 export declare function createLLMReuseMiddleware(options: LLMReuseOptions): LanguageModelMiddleware;
-export {};

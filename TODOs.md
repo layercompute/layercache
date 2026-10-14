@@ -99,6 +99,13 @@ hit counts alone.
   tool execution and app assertions remain outside this middleware's success
   contract. First-writer consistency lasts only while retained; strict replay
   fails on eviction/expiry, while read-through may record again after eviction.
+  A [direct private gateway checkpoint](docs/evidence/llm-private-gateway-20261014.json)
+  at that source also proves plain/structured recording, empty-consumer replay
+  and changed-input/slot strict misses with two fixture calls and no paid
+  inference, configuration change or deployment. The Local-daemon immutable
+  publication fix adds degraded/pending/full acknowledgement regressions and
+  preserves possibly accepted or queued server bytes; its new exact-source
+  review and live rerun are pending.
   Streaming replay, provider-hidden observations, durable frozen corpora, paid
   provider/live Phone adoption and hosted candidate acceptance remain pending.
   Next: finish hosted candidate qualification, then coordinate the smallest real

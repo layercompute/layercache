@@ -10033,6 +10033,12 @@ var Extractions = class {
 };
 
 // native/client.ts
+var NativeCachePublicationError = class extends Error {
+  constructor() {
+    super("Immutable recording publication was not confirmed");
+    this.name = "NativeCachePublicationError";
+  }
+};
 var NativeCacheConflictError = class extends Error {
   constructor() {
     super("Artifact key already has different content; use a new recording generation");
@@ -10265,6 +10271,9 @@ var NativeCache = class {
           if (response.status === 409) {
             if (immutable) throw new NativeCacheConflictError();
             throw new Error("Native artifact key already has different content; use a complete build key");
+          }
+          if (immutable && (response.headers.has("x-layercache-degraded") || response.headers.has("x-layercache-upload-queue") || response.headers.has("x-layercache-team-upload") && response.headers.get("x-layercache-team-upload") !== "complete")) {
+            throw new NativeCachePublicationError();
           }
         }
         if (immutable) {
@@ -10741,12 +10750,15 @@ function createLLMReuseMiddleware(options) {
           mode: options.mode,
           outcome: "unrecorded",
           key: identity.key,
-          reason: error instanceof UnsupportedLLMValue ? error.message : "cache-write-failed",
+          reason: error instanceof UnsupportedLLMValue ? error.message : error instanceof NativeCachePublicationError ? "remote-publication-unconfirmed" : "cache-write-failed",
           currentProviderCalls: 1,
           currentUsage: result.usage
         };
         emit(event);
-        if (options.mode === "record") throw new Error("LLM recording could not be committed");
+        if (options.mode === "record") {
+          if (error instanceof NativeCachePublicationError) throw error;
+          throw new Error("LLM recording could not be committed");
+        }
         return metadata(result, event);
       } finally {
         if (directory) await rm3(directory, { recursive: true, force: true });
@@ -10756,5 +10768,7 @@ function createLLMReuseMiddleware(options) {
 }
 export {
   LLMReplayMissError,
+  NativeCacheConflictError,
+  NativeCachePublicationError,
   createLLMReuseMiddleware
 };

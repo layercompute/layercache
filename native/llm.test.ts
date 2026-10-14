@@ -11,7 +11,7 @@ import type { LanguageModelV4CallOptions, LanguageModelV4GenerateResult } from '
 import { createLLMReuseMiddleware, LLMReplayMissError } from './llm.ts';
 import type { LLMReuseEvent, LLMReuseOptions } from './llm.ts';
 import { canonicalLLMValue, decodeLLMValue } from './llm-codec.ts';
-import { NativeCache, NativeCacheConflictError, artifactKey } from './client.ts';
+import { NativeCache, NativeCacheConflictError, NativeCachePublicationError, artifactKey } from './client.ts';
 
 const usage = { inputTokens: { total: 8, noCache: 8, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 3, text: 2, reasoning: 1 } };
 const result = (text = 'recorded answer'): LanguageModelV4GenerateResult => ({ content: [{ type: 'text', text }], finishReason: { unified: 'stop', raw: 'stop' }, usage, warnings: [] });
@@ -193,16 +193,18 @@ test('streaming always delegates without recording, and event callback failures 
   await fresh.doGenerate(params); await fresh.doGenerate(params);
 });
 
-async function privateServer(t: { after: (callback: () => Promise<void>) => void }) {
+async function privateServer(t: { after: (callback: () => Promise<void>) => void }, uploadHeaders: Record<string, string> = {}) {
   const objects = new Map<string, Buffer>();
+  let deletes = 0;
   const server = createServer(async (request, response) => {
     if (request.headers.authorization !== 'Bearer owner-token') { response.writeHead(403).end(); return; }
     const key = request.url!;
+    if (request.method === 'DELETE') { deletes++; objects.delete(key); response.writeHead(204).end(); return; }
     if (request.method === 'PUT') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       const bytes = Buffer.concat(chunks); const existing = objects.get(key);
       if (existing && !existing.equals(bytes)) { response.writeHead(409).end(); return; }
-      objects.set(key, bytes); response.writeHead(200).end(); return;
+      objects.set(key, bytes); response.writeHead(200, uploadHeaders).end(); return;
     }
     const bytes = objects.get(key);
     if (!bytes) { response.writeHead(404).end(); return; }
@@ -211,7 +213,7 @@ async function privateServer(t: { after: (callback: () => Promise<void>) => void
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
-  return { endpoint: `http://127.0.0.1:${address.port}`, objects };
+  return { endpoint: `http://127.0.0.1:${address.port}`, objects, get deletes() { return deletes; } };
 }
 
 test('private transport restores on an empty consumer and concurrent read-through returns the committed winner', async t => {
@@ -377,5 +379,44 @@ test('valid-digest restored tool and structured results must pass current semant
     const fallback = wrapped({ ...scoped, onEvent: event => { current.push(event); } }, async () => { calls++; return result('{}'); });
     await generateText({ model: fallback, maxRetries: 0, ...request });
     assert.equal(calls, 1); assert.ok(current.every(event => event.outcome !== 'hit'));
+  }
+});
+
+test('immutable publication rejects degraded pending/full acknowledgements without deleting queued server bytes', async t => {
+  const { root, options } = await fixture(t);
+  for (const [name, headers] of [
+    ['pending', { 'x-layercache-degraded': 'team-publication-failed', 'x-layercache-upload-queue': 'pending' }],
+    ['full', { 'x-layercache-degraded': 'team-publication-failed', 'x-layercache-upload-queue': 'full-or-unavailable' }],
+    ['failed', { 'x-layercache-degraded': 'team-publication-failed' }],
+    ['queue-only', { 'x-layercache-upload-queue': 'pending' }],
+    ['upload-incomplete', { 'x-layercache-team-upload': 'pending' }],
+  ] as const) {
+    const remote = await privateServer(t, headers);
+    const { endpoint, objects } = remote;
+    const events: LLMReuseEvent[] = [];
+    const cacheDir = join(root, name);
+    const model = wrapped({ ...options, cache: { ...options.cache, endpoint, token: 'owner-token', cacheDir }, onEvent: event => { events.push(event); } });
+    const output = await generateText({ model, prompt: 'degraded', maxRetries: 0 });
+    assert.equal(output.text, 'recorded answer'); assert.equal(events.at(-1)?.outcome, 'unrecorded');
+    assert.equal(events.at(-1)?.reason, 'remote-publication-unconfirmed'); assert.equal(objects.size, 1);
+    assert.deepEqual(await readdir(cacheDir), []); // no canonical client-local archive/digest was installed
+    const strict = wrapped({ ...options, mode: 'record', corpus: { ...options.corpus, generation: 'strict' }, cache: { ...options.cache, endpoint, token: 'owner-token', cacheDir: join(root, name + '-strict') } });
+    await assert.rejects(generateText({ model: strict, prompt: 'degraded', maxRetries: 0 }), NativeCachePublicationError);
+    assert.equal(objects.size, 2); // strict failure also leaves possibly committed/queued server artifacts intact
+    assert.deepEqual(await readdir(join(root, name + '-strict')), []);
+    assert.equal(remote.deletes, 0);
+  }
+});
+
+test('complete intermediary publication and direct private acknowledgements admit a fresh consumer', async t => {
+  const { root, options } = await fixture(t);
+  for (const [name, headers] of [['complete', { 'x-layercache-team-upload': 'complete' }], ['direct', {}]] as const) {
+    const { endpoint } = await privateServer(t, headers); let calls = 0;
+    const producer = wrapped({ ...options, mode: 'record', cache: { ...options.cache, endpoint, token: 'owner-token', cacheDir: join(root, name) } }, async () => { calls++; return result(); });
+    const first = await generateText({ model: producer, prompt: 'confirmed', maxRetries: 0 });
+    assert.equal(first.providerMetadata?.layercache?.outcome, 'recorded');
+    const consumer = wrapped({ ...options, mode: 'replay', cache: { ...options.cache, endpoint, token: 'owner-token', cacheDir: join(root, name + '-consumer') } }, async () => { calls++; throw new Error('must never call provider'); });
+    const replay = await generateText({ model: consumer, prompt: 'confirmed', maxRetries: 0 });
+    assert.equal(replay.text, first.text); assert.equal(replay.usage.totalTokens, 0); assert.equal(calls, 1);
   }
 });

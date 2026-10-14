@@ -80,6 +80,8 @@ membership policy establish authority; setting `scope: 'personal'` does not
 grant owner-only access to a Team project. This adapter has no Public lookup or
 publication path. The legacy transport result `source: 'local' | 'team'` means
 local disk or the authenticated remote artifact endpoint, not a visibility tier.
+A remote endpoint can itself be a Local daemon: a hit there does not establish
+that another machine can already read the entry from Team Cache.
 
 By default the middleware accepts paired `TURBO_API`/`TURBO_TOKEN` or
 `LAYER_CACHE_URL`/`LAYER_CACHE_TOKEN` from the existing setup/login flow. Explicit
@@ -91,7 +93,16 @@ then run the caller through that config. An existing Phone CI profile does not
 automatically authorize a different compatibility value. With no credentials,
 recordings stay on local disk. Remote publication uses the existing native
 artifact integration; it has no dedicated LLM server accounting label or durable
-publication queue in this slice.
+publication queue in this slice. For immutable admission, HTTP success carrying
+`x-layercache-degraded`, a pending/full upload queue header, or an incomplete
+Team-upload state is unconfirmed publication. Strict `record` throws the
+exported `NativeCachePublicationError`; read-through returns the fresh response
+with `outcome: 'unrecorded'` and `reason: 'remote-publication-unconfirmed'`.
+The adapter does not install those bytes as its client-local winner and never
+deletes possibly accepted or queued server bytes. A later Local-daemon hit
+remains a local availability observation, rather than Team readiness. Direct
+private acknowledgements and explicit `x-layercache-team-upload: complete`
+responses are supported.
 
 ## Modes and immutable samples
 

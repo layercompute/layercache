@@ -7,8 +7,9 @@ type GenerateHook = NonNullable<LanguageModelMiddleware['wrapGenerate']>;
 type LanguageModelV4CallOptions = Parameters<GenerateHook>[0]['params'];
 type LanguageModelV4GenerateResult = Awaited<ReturnType<GenerateHook>>;
 type LanguageModelV4Usage = LanguageModelV4GenerateResult['usage'];
-import { NativeCache, NativeCacheConflictError, environmentOptions } from './client.ts';
+import { NativeCache, NativeCacheConflictError, NativeCachePublicationError, environmentOptions } from './client.ts';
 import type { Identity, Options, Result } from './client.ts';
+export { NativeCacheConflictError, NativeCachePublicationError } from './client.ts';
 import { canonicalLLMValue, decodeLLMValue, UnsupportedLLMValue } from './llm-codec.ts';
 import { validateLLMGeneration } from './llm-schema.ts';
 
@@ -242,9 +243,12 @@ export function createLLMReuseMiddleware(options: LLMReuseOptions): LanguageMode
           emit(event); return metadata(result, event);
         }
         const event: LLMReuseEvent = { mode: options.mode, outcome: 'unrecorded', key: identity.key,
-          reason: error instanceof UnsupportedLLMValue ? error.message : 'cache-write-failed', currentProviderCalls: 1, currentUsage: result.usage };
+          reason: error instanceof UnsupportedLLMValue ? error.message : error instanceof NativeCachePublicationError ? 'remote-publication-unconfirmed' : 'cache-write-failed', currentProviderCalls: 1, currentUsage: result.usage };
         emit(event);
-        if (options.mode === 'record') throw new Error('LLM recording could not be committed');
+        if (options.mode === 'record') {
+          if (error instanceof NativeCachePublicationError) throw error;
+          throw new Error('LLM recording could not be committed');
+        }
         return metadata(result, event);
       } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
     },

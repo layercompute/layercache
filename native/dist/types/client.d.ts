@@ -11,6 +11,9 @@ export interface Options {
     timeoutMs?: number;
     maxAgeMs?: number;
 }
+export declare class NativeCachePublicationError extends Error {
+    constructor();
+}
 export declare class NativeCacheConflictError extends Error {
     constructor();
 }

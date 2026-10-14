@@ -3077,6 +3077,12 @@ var Extractions = class {
 };
 
 // native/client.ts
+var NativeCachePublicationError = class extends Error {
+  constructor() {
+    super("Immutable recording publication was not confirmed");
+    this.name = "NativeCachePublicationError";
+  }
+};
 var NativeCacheConflictError = class extends Error {
   constructor() {
     super("Artifact key already has different content; use a new recording generation");
@@ -3304,6 +3310,9 @@ var NativeCache = class {
           if (response.status === 409) {
             if (immutable) throw new NativeCacheConflictError();
             throw new Error("Native artifact key already has different content; use a complete build key");
+          }
+          if (immutable && (response.headers.has("x-layercache-degraded") || response.headers.has("x-layercache-upload-queue") || response.headers.has("x-layercache-team-upload") && response.headers.get("x-layercache-team-upload") !== "complete")) {
+            throw new NativeCachePublicationError();
           }
         }
         if (immutable) {

@@ -23,6 +23,10 @@ export interface Options {
   timeoutMs?: number;
   maxAgeMs?: number;
 }
+export class NativeCachePublicationError extends Error {
+  constructor() { super('Immutable recording publication was not confirmed'); this.name = 'NativeCachePublicationError'; }
+}
+
 export class NativeCacheConflictError extends Error {
   constructor() { super('Artifact key already has different content; use a new recording generation'); this.name = 'NativeCacheConflictError'; }
 }
@@ -258,6 +262,12 @@ export class NativeCache {
           if (response.status === 409) {
             if (immutable) throw new NativeCacheConflictError();
             throw new Error('Native artifact key already has different content; use a complete build key');
+          }
+          if (immutable && (response.headers.has('x-layercache-degraded') || response.headers.has('x-layercache-upload-queue') ||
+              response.headers.has('x-layercache-team-upload') && response.headers.get('x-layercache-team-upload') !== 'complete')) {
+            // Local acceptance may leave a durable queue or an uncertain remote
+            // commit. Keep server bytes intact, but do not install a winner here.
+            throw new NativeCachePublicationError();
           }
         }
         if (immutable) {
