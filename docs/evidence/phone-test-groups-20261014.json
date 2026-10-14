@@ -1,0 +1,719 @@
+{
+  "schemaVersion": "phone-test-group-reuse-v1",
+  "source": "1f97be8b753194fd58b13f25550c78721e92e96e",
+  "compatibility": "phone-ci-v1-ubuntu24.04-linux-x64-node24.21.0-pnpm10.7.1",
+  "qualification": "real Phone producer to independent compatible fresh consumer through existing Team Cache",
+  "tools": {
+    "os": "Ubuntu 24.04",
+    "architecture": "x64",
+    "node": "24.21.0",
+    "pnpm": "10.7.1",
+    "turbo": "2.10.12",
+    "vitest": "5.0.4",
+    "layercacheRelease": "v0.1.0-beta.4",
+    "layercacheBinarySha256": "2910a3905cbbcf45740d51db48e07cebb3c8bebe161b5216ff884dfb6c10b044"
+  },
+  "producer": {
+    "startedAtMs": 1791993510259,
+    "finishedAtMs": 1791993760614,
+    "elapsedMs": 250355,
+    "exitCode": 0,
+    "executedTasks": 10,
+    "cachedTasks": 2,
+    "workflowInvocations": 30,
+    "confirmedReady": 12,
+    "sourceCounts": {
+      "none": 10,
+      "unattributed": 2
+    },
+    "tasks": [
+      {
+        "taskId": "@phone-app/core#typecheck",
+        "hash": "f11e8aad790566f2",
+        "status": "HIT",
+        "nativeLocalHit": true,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993670555,
+        "finishedAtMs": 1791993670555,
+        "elapsedMs": 0,
+        "exitCode": 0,
+        "layercacheSource": "unattributed",
+        "layercacheResult": "unknown"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:unit",
+        "hash": "c08621ffc1c4f56f",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993658085,
+        "finishedAtMs": 1791993670555,
+        "elapsedMs": 12470,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:auth",
+        "hash": "db417d7c47b58348",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993649935,
+        "finishedAtMs": 1791993658085,
+        "elapsedMs": 8150,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+        "hash": "cebed25706650f54",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993510298,
+        "finishedAtMs": 1791993547865,
+        "elapsedMs": 37567,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:fixtures",
+        "hash": "96f12d95f3c8a598",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993547865,
+        "finishedAtMs": 1791993562570,
+        "elapsedMs": 14705,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:http",
+        "hash": "73ec371d97124269",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993670556,
+        "finishedAtMs": 1791993685779,
+        "elapsedMs": 15223,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:native",
+        "hash": "d89d39fb8f26e394",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993520714,
+        "finishedAtMs": 1791993597624,
+        "elapsedMs": 76910,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:numbers",
+        "hash": "586316e6a09a8b0f",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993604891,
+        "finishedAtMs": 1791993649935,
+        "elapsedMs": 45044,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:personal",
+        "hash": "07025343a51cd2d7",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993562570,
+        "finishedAtMs": 1791993760613,
+        "elapsedMs": 198043,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:settings",
+        "hash": "c5c47f592b801d76",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993510298,
+        "finishedAtMs": 1791993520714,
+        "elapsedMs": 10416,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:shared",
+        "hash": "8b63305b5b2ee37d",
+        "status": "MISS",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993597624,
+        "finishedAtMs": 1791993604890,
+        "elapsedMs": 7266,
+        "exitCode": 0,
+        "layercacheSource": "none",
+        "layercacheResult": "miss"
+      },
+      {
+        "taskId": "@phone-app/mobile#typecheck",
+        "hash": "a19e3a79469e3786",
+        "status": "HIT",
+        "nativeLocalHit": true,
+        "nativeRemoteHit": false,
+        "startedAtMs": 1791993685780,
+        "finishedAtMs": 1791993685780,
+        "elapsedMs": 0,
+        "exitCode": 0,
+        "layercacheSource": "unattributed",
+        "layercacheResult": "unknown"
+      }
+    ]
+  },
+  "consumer": {
+    "startedAtMs": 1791993819619,
+    "finishedAtMs": 1791993820584,
+    "elapsedMs": 965,
+    "exitCode": 0,
+    "executedTasks": 0,
+    "cachedTasks": 12,
+    "emptyLocalCacheAtPreflight": true,
+    "sourceCounts": {
+      "teamCache": 12
+    },
+    "tasks": [
+      {
+        "taskId": "@phone-app/core#typecheck",
+        "hash": "f11e8aad790566f2",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820418,
+        "finishedAtMs": 1791993820519,
+        "elapsedMs": 101,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:unit",
+        "hash": "c08621ffc1c4f56f",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820241,
+        "finishedAtMs": 1791993820329,
+        "elapsedMs": 88,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:auth",
+        "hash": "db417d7c47b58348",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820371,
+        "finishedAtMs": 1791993820458,
+        "elapsedMs": 87,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+        "hash": "cebed25706650f54",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820330,
+        "finishedAtMs": 1791993820418,
+        "elapsedMs": 88,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:fixtures",
+        "hash": "96f12d95f3c8a598",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820154,
+        "finishedAtMs": 1791993820270,
+        "elapsedMs": 116,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:http",
+        "hash": "73ec371d97124269",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820152,
+        "finishedAtMs": 1791993820241,
+        "elapsedMs": 89,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:native",
+        "hash": "d89d39fb8f26e394",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993819959,
+        "finishedAtMs": 1791993820154,
+        "elapsedMs": 195,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:numbers",
+        "hash": "586316e6a09a8b0f",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993819959,
+        "finishedAtMs": 1791993820086,
+        "elapsedMs": 127,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:personal",
+        "hash": "07025343a51cd2d7",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820458,
+        "finishedAtMs": 1791993820547,
+        "elapsedMs": 89,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:settings",
+        "hash": "c5c47f592b801d76",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820086,
+        "finishedAtMs": 1791993820152,
+        "elapsedMs": 66,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#test:workflow:shared",
+        "hash": "8b63305b5b2ee37d",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820271,
+        "finishedAtMs": 1791993820371,
+        "elapsedMs": 100,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      },
+      {
+        "taskId": "@phone-app/mobile#typecheck",
+        "hash": "a19e3a79469e3786",
+        "status": "HIT",
+        "nativeLocalHit": false,
+        "nativeRemoteHit": true,
+        "startedAtMs": 1791993820519,
+        "finishedAtMs": 1791993820584,
+        "elapsedMs": 65,
+        "exitCode": 0,
+        "layercacheSource": "teamCache",
+        "layercacheResult": "hit"
+      }
+    ]
+  },
+  "nativeEvidence": {
+    "personal-native.json": {
+      "sha256": "63c2dd1dbaf06d9adc476319584761c87291dd8076fd4e6e36814974c4fdebb5",
+      "bytes": 27642970
+    },
+    "shared-native-contacts-route-refresh.json": {
+      "sha256": "a91b5e25df9ea0edbde9136c61f91c86b35ea38a64dde0bd288dda233b293573",
+      "bytes": 89308
+    },
+    "shared-native-current-ack.json": {
+      "sha256": "bf0298dcb54d83d2e1a42b98bb2a36c97825a59b4ec9d9e5fb3cffd531f3c579",
+      "bytes": 97782
+    },
+    "shared-native-issued-aba-ack.json": {
+      "sha256": "d9b5b1768da01436153d290e04e516cf0e1a803be322fc6d86e108ea9f6eeae1",
+      "bytes": 152051
+    },
+    "shared-native-issued-aba-error.json": {
+      "sha256": "4fab455dcf033d5f147941f8430136661216f46e82f1b22fbd9dfd19b7553efe",
+      "bytes": 152039
+    },
+    "shared-native-issued-auth-ack.json": {
+      "sha256": "3a4cf5bad908033208b5b08eb8e9bb5635faae272b058cc7bb4133403c32ea14",
+      "bytes": 138502
+    },
+    "shared-native-issued-auth-error.json": {
+      "sha256": "74e68be1089261765003fce9d14ddecc5b1935db2d9d9a8422456405b368cca2",
+      "bytes": 138490
+    },
+    "shared-native-late-failure-first.json": {
+      "sha256": "ab6614ecebf36d74bf5d81d3ea09cec6e57c4f05515d792428be91c89553f9ad",
+      "bytes": 137559
+    },
+    "shared-native-late-success-first.json": {
+      "sha256": "34d49919e0c66d6cfa6091bbdeb9b7e576465a1e53c2f94ac31b918ad567cd0f",
+      "bytes": 137559
+    },
+    "shared-native-newest-failure.json": {
+      "sha256": "f1de2136611d4b022ae5723892af53074e92e3e3108183b94408928b5d093da4",
+      "bytes": 107457
+    }
+  },
+  "controls": {
+    "status": "passed",
+    "cases": [
+      {
+        "kind": "failed-auth-rerun",
+        "attempt": 1,
+        "cumulativeAuthExecutions": 1,
+        "startedAtMs": 1791993972820,
+        "finishedAtMs": 1791993981937,
+        "elapsedMs": 9117,
+        "exitCode": 1,
+        "executedTasks": 2,
+        "cachedTasks": 10,
+        "tasks": [
+          {
+            "taskId": "@phone-app/core#typecheck",
+            "hash": "f11e8aad790566f2",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972953,
+            "finishedAtMs": 1791993972964,
+            "elapsedMs": 11,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:unit",
+            "hash": "c08621ffc1c4f56f",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972958,
+            "finishedAtMs": 1791993972978,
+            "elapsedMs": 20,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:auth",
+            "hash": "fae52d7477904b2d",
+            "status": "MISS",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993972964,
+            "finishedAtMs": 1791993981937,
+            "elapsedMs": 8973,
+            "exitCode": 1
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+            "hash": "cebed25706650f54",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972914,
+            "finishedAtMs": 1791993972924,
+            "elapsedMs": 10,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:fixtures",
+            "hash": "96f12d95f3c8a598",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972978,
+            "finishedAtMs": 1791993972989,
+            "elapsedMs": 11,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:http",
+            "hash": "73ec371d97124269",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972924,
+            "finishedAtMs": 1791993972942,
+            "elapsedMs": 18,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:native",
+            "hash": "d89d39fb8f26e394",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972870,
+            "finishedAtMs": 1791993972958,
+            "elapsedMs": 88,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:numbers",
+            "hash": "586316e6a09a8b0f",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972904,
+            "finishedAtMs": 1791993972914,
+            "elapsedMs": 10,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:personal",
+            "hash": "07025343a51cd2d7",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972942,
+            "finishedAtMs": 1791993972953,
+            "elapsedMs": 11,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:settings",
+            "hash": "c5c47f592b801d76",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972859,
+            "finishedAtMs": 1791993972870,
+            "elapsedMs": 11,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:shared",
+            "hash": "8b63305b5b2ee37d",
+            "status": "HIT",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": true,
+            "startedAtMs": 1791993972859,
+            "finishedAtMs": 1791993972903,
+            "elapsedMs": 44,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#typecheck",
+            "hash": "0074a006e755d10a",
+            "status": "MISS",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993972989,
+            "finishedAtMs": 1791993977054,
+            "elapsedMs": 4065,
+            "exitCode": 0
+          }
+        ]
+      },
+      {
+        "kind": "failed-auth-rerun",
+        "attempt": 2,
+        "cumulativeAuthExecutions": 2,
+        "startedAtMs": 1791993982314,
+        "finishedAtMs": 1791993986648,
+        "elapsedMs": 4334,
+        "exitCode": 1,
+        "executedTasks": 1,
+        "cachedTasks": 11,
+        "tasks": [
+          {
+            "taskId": "@phone-app/core#typecheck",
+            "hash": "f11e8aad790566f2",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:unit",
+            "hash": "c08621ffc1c4f56f",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:auth",
+            "hash": "fae52d7477904b2d",
+            "status": "MISS",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993986647,
+            "elapsedMs": 4295,
+            "exitCode": 1
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+            "hash": "cebed25706650f54",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982353,
+            "elapsedMs": 1,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:fixtures",
+            "hash": "96f12d95f3c8a598",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:http",
+            "hash": "73ec371d97124269",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:native",
+            "hash": "d89d39fb8f26e394",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982353,
+            "finishedAtMs": 1791993982353,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:numbers",
+            "hash": "586316e6a09a8b0f",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:personal",
+            "hash": "07025343a51cd2d7",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:settings",
+            "hash": "c5c47f592b801d76",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#test:workflow:shared",
+            "hash": "8b63305b5b2ee37d",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982352,
+            "finishedAtMs": 1791993982352,
+            "elapsedMs": 0,
+            "exitCode": 0
+          },
+          {
+            "taskId": "@phone-app/mobile#typecheck",
+            "hash": "0074a006e755d10a",
+            "status": "HIT",
+            "nativeLocalHit": true,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993982353,
+            "finishedAtMs": 1791993982353,
+            "elapsedMs": 0,
+            "exitCode": 0
+          }
+        ]
+      },
+      {
+        "kind": "fresh-auth-execution",
+        "workflowInvocations": 2,
+        "startedAtMs": 1791993987040,
+        "finishedAtMs": 1791993999764,
+        "elapsedMs": 12724,
+        "exitCode": 0,
+        "executedTasks": 1,
+        "cachedTasks": 0,
+        "tasks": [
+          {
+            "taskId": "@phone-app/mobile#test:workflow:auth",
+            "hash": "db417d7c47b58348",
+            "status": "MISS",
+            "nativeLocalHit": false,
+            "nativeRemoteHit": false,
+            "startedAtMs": 1791993987065,
+            "finishedAtMs": 1791993999764,
+            "elapsedMs": 12699,
+            "exitCode": 0
+          }
+        ]
+      }
+    ]
+  },
+  "interpretation": "Local native task spans only; no hosted CI median, runner-cost or timing-savings claim. Execution counts come from native cache status, not replayed log markers."
+}

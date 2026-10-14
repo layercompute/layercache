@@ -22,6 +22,9 @@ hashing and execution as we add integrations.
 | --- | --- | --- |
 | Existing Team Cache | Public HTTPS restored on October 11. Recovery checks passed authenticated status for all five configured projects and denied anonymous Phone access. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
 | Local results available to CI | [#23](https://github.com/ziahamza/layercache/pull/23) added Turbo publication confirmation, durable repair and explicit CI cache modes. [Phone #241](https://github.com/ziahamza/phone-app/pull/241) merged main-writer and same-repository PR-reader lanes. Installed-release QA corrections merged in [#29](https://github.com/ziahamza/layercache/pull/29). | Prove a directly observed main-to-PR remote restore with an empty native cache, and measure whole-job time including setup, transfer and publication. Native snapshot hits alone do not attribute savings to LayerCache. The Phone CI chat owns application adoption. |
+| Phone test groups | LayerCache's separate candidate defines ten leaf groups behind a scriptless Turbo mobile-test aggregate with required typechecking, preserving all thirty isolated workflow invocations. Work is coordinated in [Phone #295](https://github.com/ziahamza/phone-app/pull/295#issuecomment-6171999562); the active Phone CI owner retains workflow and release routing. | Qualify group coverage, complete inputs, unaffected-group reuse, miss/failure controls and real local-producer/fresh-consumer replay. Candidate passes and whole-job savings remain unproven. |
+| Actions acknowledgement diagnosis | [#36](https://github.com/ziahamza/layercache/pull/36) merged at `fc98937922f69daad788a89cc132845ff4c0c79e`. Real PostgreSQL/S3 SDK qualification restores the reported payload size and distinguishes controlled misses; the historical incident's cause remains unknown. | Obtain exact incident identity and authoritative removal/commit evidence. Gateway rollout remains separate. |
+| AI SDK LLM replay | [#37](https://github.com/ziahamza/layercache/pull/37) merged at `453c09487a2268700821417e830d2fb1e3296526`, with actual SDK fixtures, 72 local tests, independent reviews, [hosted source qualification](https://github.com/ziahamza/layercache/actions/runs/38580949339) and a [direct private gateway proof](evidence/llm-private-gateway-20261014.json). | Qualify real planner adoption with a raw judge. Streaming, a shared LLM gateway, durable corpora and Local-to-Team winner reconciliation remain outstanding. CLI release and service deployment have separate qualification. |
 | Personal Cache | Owner-only private projects merged in [#28](https://github.com/ziahamza/layercache/pull/28), with stable numeric ownership, separate project identities and owner-authorized CI. | Qualify cross-machine use through the configured private endpoint. The implementation does not establish a deployed self-serve service. |
 | Nx native HTTP | [#31](https://github.com/ziahamza/layercache/pull/31) merged at `7404090ac915c015dad37ef92ca662f3dec90a5f`. The released Nx client passed Local and direct private replay, owner/Team isolation, changed-input misses and failed-test reruns. | Add Local-to-private read-through, durable publication, exact-hash confirmation and reporting before claiming local Nx results are available to CI. |
 | Phone Xcode integration | [#20](https://github.com/ziahamza/layercache/pull/20) added the adapter. [#30](https://github.com/ziahamza/layercache/pull/30) merged native graph retention after real multiple-root Xcode replay under quota pressure. | Qualify Phone-scale lookup/restore timing and its pinned toolchain before expanding shared native use. Swift cache hits and signed-release timing remain separate measurements. The Phone CI chat owns application workflows. |
@@ -31,9 +34,10 @@ hashing and execution as we add integrations.
 | Machine enrollment and hosted runners | Deferred. | Useful cross-machine cache reuse and operating costs measured first. |
 
 The LayerCache recovery effort owns integration, PR disposition, deployment
-evidence, and this plan. The Phone CI chat owns active Phone task-input, PR reuse
-and native workflow changes. Keep those branches separate while implementation
-is underway.
+evidence, and this plan. LayerCache owns the separate Phone package-task and
+cache-qualification candidate. The Phone CI chat owns active PR reuse, native
+workflow and release routing changes. Keep those branches separate while
+implementation is underway.
 
 ## Recovery evidence
 

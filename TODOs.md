@@ -35,8 +35,9 @@ hit counts alone.
   coverage for any proven bug and document acknowledgement/read-back guarantees.
   Qualify a separate gateway rollout if a service fix is needed.
 
-  Evidence on 2026-10-14: candidate
-  `c5a354badfab5d74bdcc2458141f277d382c61ec` adds the
+  Evidence on 2026-10-14: [#36](https://github.com/ziahamza/layercache/pull/36)
+  merged reviewed source `276400c70b1fe4d0a65f069f73b877ba674200eb` at
+  `fc98937922f69daad788a89cc132845ff4c0c79e`. It adds the
   [acknowledgement/miss contract](docs/actions-cache-contract.md) and a real
   PostgreSQL 16/production S3 SDK loop with a disposable HTTP S3 fixture.
   Deployed `16868d9` and current source both restore a varied 124,108,800-byte
@@ -50,8 +51,9 @@ hit counts alone.
   for the reported incident. Gateway rollout remains separate and pending.
 
 - [ ] **Make expensive Phone test groups independently reusable.**
-  Owner: Phone workflow owner for task definitions; LayerCache for publication
-  and fresh-consumer proof. Five sampled PRs had median unit time 16m20s,
+  Owner: LayerCache for the separate package-task candidate and fresh-consumer
+  proof; the active Phone CI owner for workflow and release routing.
+  Five sampled PRs had median unit time 16m20s,
   including 11m40s in Turbo, at the October 14 research checkpoint.
   Separate ordinary mobile unit tests and the existing workflow suites/variants
   through Turbo/Vitest. Preserve SDK process isolation and complete transitive
@@ -61,6 +63,22 @@ hit counts alone.
   groups, failed tests remain failures, and compatible local results restore on
   an empty CI consumer. Attribute remote hits directly; native snapshot hits
   alone are insufficient. Measure allocated runner time and whole jobs.
+
+  [Phone #298](https://github.com/ziahamza/phone-app/pull/298), reviewed source
+  `1f97be8b753194fd58b13f25550c78721e92e96e`, defines ten leaf groups behind
+  a scriptless native Turbo `@phone-app/mobile#test` aggregate with required
+  typechecking. All thirty isolated workflow invocations remain. The
+  [real-client qualification](docs/phone-test-reuse.md) proves local execution,
+  confirmed private publication and an empty independent consumer: ten test
+  groups execute in a 4m10.355s native stage; all twelve results, including both
+  prerequisite typechecks, restore in 965ms with zero executions and twelve
+  directly attributed Team hits. Two failure reruns and explicit fresh auth
+  execution pass. Native controls cover test-only, helper, shared-source,
+  fixture and environment changes, plus generated-log stability.
+  This is local task evidence. Next: finish #298's required hosted gates,
+  verify hosted attribution and whole-job allocation, then land and measure
+  representative follow-up runs. The active Phone owner keeps workflow,
+  signed-release and retained-artifact changes in #295.
 
 - [ ] **Reduce repeated Phone setup and deterministic tooling checks.**
   Owner: Phone CI owner. The same sample has 4m07s median outside Turbo.
@@ -72,7 +90,8 @@ hit counts alone.
 ## P1: LLM and native outputs across machines
 
 - [ ] **Deliver exact LLM response replay through existing model interfaces.**
-  Owner: LayerCache; implementation in progress. First target: the AI SDK model
+  Owner: LayerCache; first slice merged, application adoption pending.
+  First target: the AI SDK model
   seam used by Callstack/TesterArmy e2e. Reuse its model interface and LayerCache's
   bounded private artifact storage. Identity includes provider configuration,
   model revision, complete messages/tools/tool results, sampling/options,
@@ -85,7 +104,11 @@ hit counts alone.
   seed or temperature setting. Streaming and external mutable inputs require
   separately qualified support.
 
-  Evidence on 2026-10-14: first-slice candidate
+  Evidence on 2026-10-14: [#37](https://github.com/ziahamza/layercache/pull/37)
+  merged reviewed head `7df375d9a1b40394496b51038a55a4ea0b77cbac` at
+  `453c09487a2268700821417e830d2fb1e3296526`.
+  [Hosted source qualification](https://github.com/ziahamza/layercache/actions/runs/38580949339)
+  passed at that reviewed head. Runtime source
   `c2fe2f9d2c990bb9918bb6a69ec7b813f9bfc4be` provides
   [`@layercache/native/llm`](native/LLM.md) through pinned AI SDK 7.0.107.
   Actual `generateText`/`ToolLoopAgent` fixtures prove zero-call replay, live tool
@@ -109,9 +132,9 @@ hit counts alone.
   the canonical Team winner. Frozen samples across machines require the direct
   shared private endpoint until Local-to-Team reconciliation is qualified.
   Streaming replay, provider-hidden observations, durable frozen corpora, paid
-  provider/live Phone adoption and hosted candidate acceptance remain pending.
-  Next: finish hosted candidate qualification, then coordinate the smallest real
-  planner integration with an explicit raw judge.
+  provider/live Phone adoption and Local-to-Team winner reconciliation remain
+  pending. Next: coordinate the smallest real planner integration with an
+  explicit raw judge. Gateway and CLI release qualification remain separate.
 
 - [ ] **Qualify Phone E2E action replay with fresh runtime assertions.**
   Owner: Phone E2E owner with LayerCache integration. Use upstream e2e and
