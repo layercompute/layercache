@@ -38,6 +38,19 @@ jobs:
         run: |
           go build -o "$RUNNER_TEMP/layercache-native-test" ./cmd/layercache
           LAYERCACHE_SETUP_BINARY="$RUNNER_TEMP/layercache-native-test" pnpm test
+      - name: Gate candidate with real Nx native HTTP acceptance
+        env:
+          LAYERCACHE_BIN: ${{ runner.temp }}/layercache-native-test
+          NX_QA_OUTPUT: ${{ runner.temp }}/nx-native-evidence.json
+        run: pnpm qa:nx-native
+      - name: Preserve sanitized Nx evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nx-native-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/nx-native-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
       - name: Verify shipped JavaScript matches TypeScript
         run: git diff --exit-code -- native/dist action/native/dist internal/dashboard/assets/app.js internal/portal/assets/app.js
 
