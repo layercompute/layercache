@@ -14,7 +14,11 @@ python3 qa/local-ci-reuse/run.py \
   --output /tmp/layercache-local-ci-reuse.json
 ```
 
-Successful builds and tests publish with `run --sync-team --sync-timeout 1s`.
+Successful builds and tests publish with `run --sync-team --sync-timeout 10s`.
+The cold publication and recovered fresh restore include 400 ms metadata delays
+under the production two-second metadata budget. Offline confirmation retains a
+one-second deadline. This acceptance checks reuse correctness; calibrated timing
+tests remain separate.
 Warm repetition and a fresh read-only consumer must restore byte-identical
 outputs without executing tasks. Failed tests retain exit code 7 and run again.
 Changing source, a declared dependency input, a declared environment variable
@@ -31,6 +35,12 @@ durable queued publication after a daemon restart. Readiness must appear only
 after Team confirms the completed tasks. JSON evidence contains native task
 hashes, real Turbo summaries, execution counts, output digests, elapsed times
 and publication warnings. It never contains daemon configuration or tokens.
+
+Current candidates must retire verified immutable conflicts. When qualifying
+the immutable beta.3 release only, pass `--allow-legacy-conflict-pins` to preserve
+its known [#24](https://github.com/ziahamza/layercache/issues/24) limitation.
+This exception does not weaken fresh restore, failed-test, input-change,
+offline-recovery or archive-digest assertions.
 
 The small fixture is an acceptance test, not a Phone performance benchmark.
 `--keep-workspace` retains its isolated installation for diagnosis. Treat the
