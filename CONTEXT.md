@@ -2,6 +2,9 @@
 
 Layer Cache describes how engineers reuse build artifacts across machines and trust boundaries.
 
+It also describes reuse of recorded model responses and successful agent actions
+under complete input identities, while current runtime checks remain distinct.
+
 ## Language
 
 **Local Cache**:
@@ -48,3 +51,15 @@ _Avoid_: Agent box, runner when it is not specifically a CI runner
 **Transparent Cache**:
 An integration that redirects an existing tool's cache protocol to Layer Cache without changing the workload definition.
 _Avoid_: Automatic cache, invisible cache
+
+**Recorded model response**:
+A completed model result retained for one exact generation context and sample identity. Reusing it is recorded inference, rather than a new observation of the current model.
+_Avoid_: Fresh model result, cached eval pass
+
+**Generation context**:
+The complete model, provider, request, tools, observations and sampling context that identifies a model invocation within an authorized project.
+_Avoid_: Prompt-only identity, model-name-only identity
+
+**Agent action replay**:
+Executing previously recorded agent actions against a current application and checking its current assertions. The recording is reusable work, not a retained verdict that the application still passes.
+_Avoid_: Cached E2E pass, skipping runtime assertions

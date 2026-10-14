@@ -1,0 +1,173 @@
+# LayerCache TODOs
+
+Last strategic review: 2026-10-14. This file owns outstanding work. Checkboxes
+mean that every acceptance target is satisfied, not that a prototype exists.
+[Launch status](docs/launch-plan.md) records delivered/deployed qualification;
+[roadmap review](docs/roadmap-review.md) explains how to reprioritize.
+
+The next milestone is reliable Phone handoffs plus less repeated test and
+inference work across compatible local machines and CI. Reuse established
+build/test/model clients. Prefer fewer expensive executions over higher cache
+hit counts alone.
+
+## P0: reliable Phone reuse
+
+- [ ] **Qualify required file handoffs independently of evictable caches.**
+  Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
+  [Phone #273](https://github.com/ziahamza/phone-app/pull/273) contains the narrow
+  retained web/APK/receipt transport. Prove an exact producer-to-consumer
+  transfer and consumer-only rerun with source/run/attempt/job/digest checks.
+  Required publication fails visibly. The separate fourteen-day release-package
+  policy does not establish this handoff. Preserve the held stack's unrelated
+  acceptance requirements.
+
+- [ ] **Explain acknowledged Actions uploads that miss before consumption.**
+  Owner: LayerCache; investigation in progress. Migrated from
+  [issue #34](https://github.com/ziahamza/layercache/issues/34).
+  The reported 124,108,800-byte acknowledgement followed by GET lookup HTTP 204
+  is unexplained; 204 denotes a miss. Establish an isolated PostgreSQL/S3
+  upload/finalize/lookup/restore loop at deployed `16868d9` and current source.
+  Verify exact lookup/profile/ref identity and full bytes, including concurrent
+  maintenance. Distinguish eviction, expiry, integrity rejection, scope mismatch
+  and interrupted commit with bounded evidence. Add meaningful regression
+  coverage for any proven bug and document acknowledgement/read-back guarantees.
+  Qualify a separate gateway rollout if a service fix is needed.
+
+- [ ] **Make expensive Phone test groups independently reusable.**
+  Owner: Phone workflow owner for task definitions; LayerCache for publication
+  and fresh-consumer proof. Five sampled PRs had median unit time 16m20s,
+  including 11m40s in Turbo, at the October 14 research checkpoint.
+  Separate ordinary mobile unit tests and the existing workflow suites/variants
+  through Turbo/Vitest. Preserve SDK process isolation and complete transitive
+  source, fixture, configuration and environment inputs. Keep full typechecking
+  required while establishing accurate subgroup cache identities. Prove that
+  an unrelated edit reuses unaffected groups, shared-input changes rerun affected
+  groups, failed tests remain failures, and compatible local results restore on
+  an empty CI consumer. Attribute remote hits directly; native snapshot hits
+  alone are insufficient. Measure allocated runner time and whole jobs.
+
+- [ ] **Reduce repeated Phone setup and deterministic tooling checks.**
+  Owner: Phone CI owner. The same sample has 4m07s median outside Turbo.
+  Break down dependencies, tooling contracts and resources before caching them.
+  Reuse complete deterministic contracts and qualified runner/toolchain images;
+  validate misses when their inputs change. Compare whole-job time, including
+  transfer and setup, rather than presenting task time as total CI savings.
+
+## P1: LLM and native outputs across machines
+
+- [ ] **Deliver exact LLM response replay through existing model interfaces.**
+  Owner: LayerCache; implementation in progress. First target: the AI SDK model
+  seam used by Callstack/TesterArmy e2e. Reuse its model interface and LayerCache's
+  bounded private artifact storage. Identity includes provider configuration,
+  model revision, complete messages/tools/tool results, sampling/options,
+  multimodal bytes, execution context, recording generation and sample slot.
+  Absolute expiry never renews on a hit. Prove cold capture, zero-call replay,
+  a fresh private consumer, changed-input misses, failures/cancellation,
+  per-result/storage bounds, and explicit fresh bypass using actual OSS client
+  calls and a deterministic provider fixture. Preserve historical usage without
+  crediting it as newly billed inference. Never infer model determinism from a
+  seed or temperature setting. Streaming and external mutable inputs require
+  separately qualified support.
+
+- [ ] **Qualify Phone E2E action replay with fresh runtime assertions.**
+  Owner: Phone E2E owner with LayerCache integration. Use upstream e2e and
+  agent-device rather than another device driver. Record successful actions,
+  execute them on the current app, and validate current assertions. Configure
+  the judge explicitly when wrapping a planner; upstream defaults can share the
+  same model. A saved plan or LLM result alone is not a current passing test.
+  Validate changed UI/context, divergent replay, exact assertions and retained
+  failure evidence on an actual device target before adoption.
+
+- [ ] **Add a shared HTTP LLM gateway through an OSS gateway cache seam.**
+  Owner: LayerCache. Evaluate pinned LiteLLM core and its custom backend/key
+  hooks after the first real-client adapter. Preserve provider-native request
+  semantics, full identity, private project isolation, cancellation, bounded
+  streams and truthful hit/current-cost reporting. Default gateway key
+  allowlists do not establish complete context. Require real HTTP client
+  cold/restore/miss/failure qualification. Document supported protocols and
+  providers rather than claiming universal compatibility.
+
+- [ ] **Separate frozen eval corpora from fresh model benchmarks.**
+  Owner: LayerCache/eval integration. Record independent sample slots and model
+  revisions; replay exact recorded outputs for regression comparisons. Fresh
+  benchmarks bypass reads and writes. Changed evaluator/judge/data/tool context
+  invalidates the applicable result. Qualify promptfoo or other existing eval
+  clients through their native provider/cache interfaces. Keep current billing
+  distinct from historical token usage and estimated avoided calls.
+
+- [ ] **Qualify shared Debug development clients for Phone.**
+  Owner: Phone native owner with LayerCache client support. The existing Expo
+  provider is configured, but trusted CI production and fresh local consumption
+  need end-to-end proof. Use the app's pinned Expo fingerprint and actual
+  Xcode/SDK/architecture or Android toolchain identity. Verify install/launch
+  and current Metro JS. Debug clients and bundled Release QA apps have distinct
+  identities; physical iOS devices and EAS Build retain their own contracts.
+
+- [ ] **Add Gradle's native HTTP task cache for Phone Android.**
+  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
+  Keep Gradle's keys and executor and retain ccache for C++. Implement bounded
+  scoped GET/PUT and its native authentication/error semantics. Prove a trusted
+  producer, empty compatible local/CI consumers, exact outputs, toolchain/input
+  misses, read-only PRs, revocation, outages and quota pressure. Measure actual
+  whole builds before broadening rollout.
+
+- [ ] **Measure residual iOS work before extending shared LLVM transport.**
+  Owner: Phone native owner. Two recent RunCloud samples already hit all 1,725
+  cacheable compiler tasks but occupied Macs for 16m44s/18m28s. Time setup,
+  packaging, runtime acceptance and receipt misses separately. Qualify beta.4
+  graph retention on Phone's exact toolchain/scale before expanded use. Swift
+  replay and signed-build cost remain separate evidence targets.
+
+## P1: complete supported private protocols
+
+- [ ] **Complete Nx Local-to-private reuse and confirmed durable publication.**
+  Owner: LayerCache. Migrated from
+  [issue #33](https://github.com/ziahamza/layercache/issues/33).
+  Beta.4 provides Local and direct private endpoints; the bridge remains absent.
+  Reuse native Nx hashing/packing and existing bounded storage, capabilities,
+  durable queues and conflict/pin lifecycle. Read through and publish only to an
+  explicitly configured Personal/Team destination, preserving project/profile
+  identity. Recover after outages/restarts, release verified permanent-conflict
+  pins, and distinguish uploads from already-present winners. Confirm exact
+  requested native hashes at the destination before reporting CI availability.
+  Extend the compiled-client fixture through an empty consumer with zero task
+  executions and exact outputs/logs, changed-input/profile misses, failed-test
+  reruns, interruption, quota pressure, owner/Team revocation and authorized CI.
+  Report transfer overhead and direct attribution. Nx's separate filesystem
+  cache remains outside LayerCache's byte budget until its lifecycle is bounded.
+  Public Nx stays disabled until separately qualified.
+
+## P2: broaden after measured value
+
+- [ ] **Qualify an isolated pinned bazel-remote sidecar, then sccache.**
+  Start with a real personal workload. Preserve per-project/profile isolation;
+  an instance-name label alone is not an access boundary. Reuse permissively
+  licensed engines and native clients. Follow [the OSS plan](docs/oss-integration-plan.md).
+- [ ] **Qualify the existing operator gateway upgrade.** Preserve current
+  project configs/backends/routes and unrelated deployment edits. Build an
+  exact-source image, test an isolated recovery copy and authenticated restores,
+  then update only the gateway. Record rollback compatibility for issued tokens.
+- [ ] **Deploy limited self-serve only after live inputs are configured.**
+  Real OAuth, numeric cohort, isolated bounded storage and two-user upload,
+  fresh restore, removal and restart acceptance remain launch gates.
+- [ ] **Improve measured cache admission and reporting.** Preserve hard
+  budgets and correct graph/read leases. Collect representative native traces
+  before changing LRU. Count physical staging/deletion/metadata and report
+  avoided work after lookup/transfer/verification overhead.
+- [ ] **Revisit machine management, hosted runners, Actions v2 and Public Builds.**
+  Promote only after useful cross-machine reuse and costs are established.
+  Public population stays confined to LayerCache-controlled builds.
+
+## Delivered baseline
+
+- [x] Reviewed beta.4 CLI, immutable publication and installed Turbo/Nx proof
+  on Linux x64/arm64 and macOS arm64, source
+  `ca3d5889a52815bce9565d3825b081839ac7077b`.
+- [x] Owner-only Personal projects, native Nx Local/direct private endpoints,
+  permanent Turbo conflict pin retirement and complete native Xcode graph
+  retention under quota pressure, merged in #27–#31.
+- [x] Five Local services upgraded with preserved data/profiles/budgets and
+  authenticated health. This does not establish a gateway/cloud deployment.
+
+New evidence belongs beside its acceptance target. Move completed items here
+with exact sources and tests; keep unresolved qualifications unchecked.
