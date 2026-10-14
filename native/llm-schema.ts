@@ -1,4 +1,5 @@
 import { Ajv } from 'ajv';
+import { parse } from 'secure-json-parse';
 import type { LanguageModelMiddleware } from 'ai';
 import { UnsupportedLLMValue } from './llm-codec.ts';
 
@@ -13,11 +14,12 @@ export function validateLLMGeneration(result: GenerateResult, params: CallOption
   const validator = new Ajv({ strict: true, allErrors: false, validateFormats: true });
   function validateJSON(text: string, schema: unknown, emptyObject = false): void {
     let value: unknown;
-    try { value = emptyObject && text.trim() === '' ? {} : JSON.parse(text); }
+    try { value = emptyObject && text.trim() === '' ? {} : parse(text); }
     catch { throw new UnsupportedLLMValue('invalid-generated-json'); }
     if (schema === undefined) return;
     try {
       const validate = validator.compile(schema as object);
+      if ('$async' in validate && validate.$async) throw new UnsupportedLLMValue('unsupported-async-json-schema');
       if (!validate(value)) throw new UnsupportedLLMValue('generated-json-schema-mismatch');
     } catch (error) {
       if (error instanceof UnsupportedLLMValue) throw error;

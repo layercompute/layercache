@@ -339,3 +339,43 @@ test('qualified normalized structured schemas replay, unsupported schemas declin
   for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(generateText({ model: hidden, prompt: 'custom', maxRetries: 0, output: Output.object({ schema: jsonSchema(schema, { validate: () => ({ success: false, error: new Error('live custom condition') }) }) }) }), error => error instanceof Error && error.name === 'AI_NoObjectGeneratedError');
   assert.equal(calls, 5);
 });
+
+test('async schemas and SDK-forbidden JSON properties are never admitted', async t => {
+  const { options } = await fixture(t);
+  const asyncSchema = { $async: true, type: 'object' as const, properties: { ok: { type: 'boolean' as const } }, required: ['ok'] };
+  for (const { id, text, schema } of [
+    { id: 'async', text: '{"ok":"wrong"}', schema: asyncSchema },
+    { id: 'prototype', text: '{"__proto__":{"changed":true}}', schema: { type: 'object' as const } },
+  ]) {
+    let calls = 0; const events: LLMReuseEvent[] = [];
+    const model = wrapped({ ...options, corpus: { ...options.corpus, generation: id }, onEvent: event => { events.push(event); } }, async () => { calls++; return result(text); });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { await generateText({ model, prompt: 'object', maxRetries: 0, output: Output.object({ schema: jsonSchema({ ...schema }) }) }); }
+      catch (error) { assert.ok(error instanceof Error && error.name === 'AI_NoObjectGeneratedError'); }
+    }
+    assert.equal(calls, 2); assert.ok(events.every(event => event.outcome === 'unrecorded'));
+  }
+});
+
+test('valid-digest restored tool and structured results must pass current semantic admission before a hit', async t => {
+  const { root, options } = await fixture(t);
+  for (const format of ['tool', 'structured']) {
+    const events: LLMReuseEvent[] = [];
+    const scoped = { ...options, corpus: { ...options.corpus, generation: format } };
+    const tools = { observe: tool({ inputSchema: jsonSchema({ type: 'object' }), execute: async () => 'current' }) };
+    const request = format === 'tool' ? { prompt: 'poisoned', tools } : { prompt: 'poisoned', output: Output.object({ schema: jsonSchema({ type: 'object' }) }) };
+    const replay = wrapped({ ...scoped, mode: 'replay', onEvent: event => { events.push(event); } }, async () => { throw new Error('replay must not execute provider'); });
+    await assert.rejects(generateText({ model: replay, maxRetries: 0, ...request }), LLMReplayMissError);
+    const identity = { project: options.project, compatibility: options.compatibility, key: events.at(-1)!.key! };
+    const bad: LanguageModelV4GenerateResult = format === 'tool' ? { ...result(), content: [{ type: 'tool-call', toolCallId: 'bad', toolName: 'observe', input: 'not-json' }], finishReason: { unified: 'tool-calls', raw: 'tool_calls' } } : result('not-json');
+    const recordedAt = Date.now(); const file = join(root, 'response.json');
+    await writeFile(file, JSON.stringify({ version: 1, key: identity.key, recordedAt, expiresAt: recordedAt + options.ttlMs, result: canonicalLLMValue(bad, 10000) }));
+    await new NativeCache(options.cache).save(identity, file); // valid tar, sha256 and codec, bad generation semantics
+    await assert.rejects(generateText({ model: replay, maxRetries: 0, ...request }), LLMReplayMissError);
+    assert.ok(events.every(event => event.outcome !== 'hit'));
+    let calls = 0; const current: LLMReuseEvent[] = [];
+    const fallback = wrapped({ ...scoped, onEvent: event => { current.push(event); } }, async () => { calls++; return result('{}'); });
+    await generateText({ model: fallback, maxRetries: 0, ...request });
+    assert.equal(calls, 1); assert.ok(current.every(event => event.outcome !== 'hit'));
+  }
+});

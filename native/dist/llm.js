@@ -3832,7 +3832,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse(serialize(uri, options), options);
+        parse2(serialize(uri, options), options);
       }
       return uri;
     }
@@ -3872,8 +3872,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse(serialize(base, options), options);
-        relative = parse(serialize(relative, options), options);
+        base = parse2(serialize(base, options), options);
+        relative = parse2(serialize(relative, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative.scheme) {
@@ -4172,7 +4172,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse(uri, opts) {
+    function parse2(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4209,7 +4209,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse
+      parse: parse2
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -6865,6 +6865,110 @@ var require_ajv = __commonJS({
     Object.defineProperty(exports, "MissingRefError", { enumerable: true, get: function() {
       return ref_error_1.default;
     } });
+  }
+});
+
+// node_modules/.pnpm/secure-json-parse@4.1.0/node_modules/secure-json-parse/index.js
+var require_secure_json_parse = __commonJS({
+  "node_modules/.pnpm/secure-json-parse@4.1.0/node_modules/secure-json-parse/index.js"(exports, module) {
+    "use strict";
+    var hasBuffer = typeof Buffer !== "undefined";
+    var suspectProtoRx = /"(?:_|\\u005[Ff])(?:_|\\u005[Ff])(?:p|\\u0070)(?:r|\\u0072)(?:o|\\u006[Ff])(?:t|\\u0074)(?:o|\\u006[Ff])(?:_|\\u005[Ff])(?:_|\\u005[Ff])"\s*:/;
+    var suspectConstructorRx = /"(?:c|\\u0063)(?:o|\\u006[Ff])(?:n|\\u006[Ee])(?:s|\\u0073)(?:t|\\u0074)(?:r|\\u0072)(?:u|\\u0075)(?:c|\\u0063)(?:t|\\u0074)(?:o|\\u006[Ff])(?:r|\\u0072)"\s*:/;
+    function _parse(text, reviver, options) {
+      if (options == null) {
+        if (reviver !== null && typeof reviver === "object") {
+          options = reviver;
+          reviver = void 0;
+        }
+      }
+      if (hasBuffer && Buffer.isBuffer(text)) {
+        text = text.toString();
+      }
+      if (text && text.charCodeAt(0) === 65279) {
+        text = text.slice(1);
+      }
+      const obj = JSON.parse(text, reviver);
+      if (obj === null || typeof obj !== "object") {
+        return obj;
+      }
+      const protoAction = options && options.protoAction || "error";
+      const constructorAction = options && options.constructorAction || "error";
+      if (protoAction === "ignore" && constructorAction === "ignore") {
+        return obj;
+      }
+      if (protoAction !== "ignore" && constructorAction !== "ignore") {
+        if (suspectProtoRx.test(text) === false && suspectConstructorRx.test(text) === false) {
+          return obj;
+        }
+      } else if (protoAction !== "ignore" && constructorAction === "ignore") {
+        if (suspectProtoRx.test(text) === false) {
+          return obj;
+        }
+      } else {
+        if (suspectConstructorRx.test(text) === false) {
+          return obj;
+        }
+      }
+      return filter(obj, { protoAction, constructorAction, safe: options && options.safe });
+    }
+    function filter(obj, { protoAction = "error", constructorAction = "error", safe } = {}) {
+      let next = [obj];
+      while (next.length) {
+        const nodes = next;
+        next = [];
+        for (const node of nodes) {
+          if (protoAction !== "ignore" && Object.prototype.hasOwnProperty.call(node, "__proto__")) {
+            if (safe === true) {
+              return null;
+            } else if (protoAction === "error") {
+              throw new SyntaxError("Object contains forbidden prototype property");
+            }
+            delete node.__proto__;
+          }
+          if (constructorAction !== "ignore" && Object.prototype.hasOwnProperty.call(node, "constructor") && node.constructor !== null && typeof node.constructor === "object" && Object.prototype.hasOwnProperty.call(node.constructor, "prototype")) {
+            if (safe === true) {
+              return null;
+            } else if (constructorAction === "error") {
+              throw new SyntaxError("Object contains forbidden prototype property");
+            }
+            delete node.constructor;
+          }
+          for (const key in node) {
+            const value = node[key];
+            if (value && typeof value === "object") {
+              next.push(value);
+            }
+          }
+        }
+      }
+      return obj;
+    }
+    function parse2(text, reviver, options) {
+      const { stackTraceLimit } = Error;
+      Error.stackTraceLimit = 0;
+      try {
+        return _parse(text, reviver, options);
+      } finally {
+        Error.stackTraceLimit = stackTraceLimit;
+      }
+    }
+    function safeParse(text, reviver) {
+      const { stackTraceLimit } = Error;
+      Error.stackTraceLimit = 0;
+      try {
+        return _parse(text, reviver, { safe: true });
+      } catch {
+        return void 0;
+      } finally {
+        Error.stackTraceLimit = stackTraceLimit;
+      }
+    }
+    module.exports = parse2;
+    module.exports.default = parse2;
+    module.exports.parse = parse2;
+    module.exports.safeParse = safeParse;
+    module.exports.scan = filter;
   }
 });
 
@@ -10365,18 +10469,20 @@ function decodeLLMValue(text, maxBytes) {
 
 // native/llm-schema.ts
 var import_ajv = __toESM(require_ajv(), 1);
+var import_secure_json_parse = __toESM(require_secure_json_parse(), 1);
 function validateLLMGeneration(result, params) {
   const validator = new import_ajv.Ajv({ strict: true, allErrors: false, validateFormats: true });
   function validateJSON(text, schema, emptyObject = false) {
     let value;
     try {
-      value = emptyObject && text.trim() === "" ? {} : JSON.parse(text);
+      value = emptyObject && text.trim() === "" ? {} : (0, import_secure_json_parse.parse)(text);
     } catch {
       throw new UnsupportedLLMValue("invalid-generated-json");
     }
     if (schema === void 0) return;
     try {
       const validate = validator.compile(schema);
+      if ("$async" in validate && validate.$async) throw new UnsupportedLLMValue("unsupported-async-json-schema");
       if (!validate(value)) throw new UnsupportedLLMValue("generated-json-schema-mismatch");
     } catch (error) {
       if (error instanceof UnsupportedLLMValue) throw error;
@@ -10543,7 +10649,7 @@ function createLLMReuseMiddleware(options) {
         if (Object.keys(params).some((key) => !requestFields.has(key))) throw new UnsupportedLLMValue("unknown-request-option");
         validateRequestData(params);
         const { abortSignal: _signal, ...request } = params;
-        identity = { project: options.project, compatibility: options.compatibility, key: sha2(canonicalLLMValue({ version: 2, validation: "ajv-8.17.1-draft7-v1", operation: "generate", provider: model.provider, modelId: model.modelId, declared, compatibility: options.compatibility, request, ttlMs: options.ttlMs }, maxInputBytes)) };
+        identity = { project: options.project, compatibility: options.compatibility, key: sha2(canonicalLLMValue({ version: 3, validation: "ajv-8.17.1-draft7-sync-secure-json-4.1.0-v1", operation: "generate", provider: model.provider, modelId: model.modelId, declared, compatibility: options.compatibility, request, ttlMs: options.ttlMs }, maxInputBytes)) };
       } catch (error) {
         const reason = error instanceof UnsupportedLLMValue ? error.message : "unsupported-request";
         if (options.mode === "replay" || options.mode === "record") {

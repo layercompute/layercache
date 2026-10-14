@@ -25,8 +25,8 @@ for (const name of ['tar', '@isaacs/fs-minipass', 'chownr', 'minipass', 'minizli
 }
 await writeFile('action/native/dist/THIRD_PARTY_LICENSES.txt', notices.join('\n\n'));
 const llmDependency = createRequire(require.resolve('ajv/package.json'));
-for (const name of ['ajv', 'fast-deep-equal', 'fast-uri', 'json-schema-traverse', 'require-from-string']) {
-  const directory = dirname(llmDependency.resolve(`${name}/package.json`));
+for (const name of ['ajv', 'fast-deep-equal', 'fast-uri', 'json-schema-traverse', 'require-from-string', 'secure-json-parse']) {
+  const directory = dirname((name === 'secure-json-parse' ? require : llmDependency).resolve(`${name}/package.json`));
   const license = (await readdir(directory)).find(name => /^license/i.test(name));
   if (!license) throw new Error(`Missing bundled dependency license: ${name}`);
   notices.push(`${name}\n${await readFile(join(directory, license), 'utf8')}`);

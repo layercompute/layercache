@@ -183,7 +183,7 @@ export function createLLMReuseMiddleware(options: LLMReuseOptions): LanguageMode
         if (Object.keys(params).some(key => !requestFields.has(key))) throw new UnsupportedLLMValue('unknown-request-option');
         validateRequestData(params);
         const { abortSignal: _signal, ...request } = params;
-        identity = { project: options.project, compatibility: options.compatibility, key: sha(canonicalLLMValue({ version: 2, validation: 'ajv-8.17.1-draft7-v1', operation: 'generate', provider: model.provider, modelId: model.modelId, declared, compatibility: options.compatibility, request, ttlMs: options.ttlMs }, maxInputBytes)) };
+        identity = { project: options.project, compatibility: options.compatibility, key: sha(canonicalLLMValue({ version: 3, validation: 'ajv-8.17.1-draft7-sync-secure-json-4.1.0-v1', operation: 'generate', provider: model.provider, modelId: model.modelId, declared, compatibility: options.compatibility, request, ttlMs: options.ttlMs }, maxInputBytes)) };
       } catch (error) {
         const reason = error instanceof UnsupportedLLMValue ? error.message : 'unsupported-request';
         if (options.mode === 'replay' || options.mode === 'record') {

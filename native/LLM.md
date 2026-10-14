@@ -148,8 +148,11 @@ Declared client function names and JSON tool arguments are checked; empty
 arguments follow AI SDK's empty-object convention. Terminal structured JSON
 output is parsed and checked against its normalized schema. Schema admission
 uses pinned MIT [Ajv 8.17.1](https://github.com/ajv-validator/ajv/tree/9050ba1359fb87cd7c143f3c79513ea7624ea443)
-with strict Draft 7 validation. Unknown schema keywords, formats, dialects or
-unresolved external references decline admission. No custom schema engine is
+with strict synchronous Draft 7 validation. Asynchronous schemas, unknown
+schema keywords, formats, dialects or unresolved external references decline
+admission. Pinned BSD-3-Clause `secure-json-parse@4.1.0` rejects the prototype
+properties forbidden by the SDK parser rather than accepting a response that
+the SDK will reject. No custom schema engine is
 implemented. Ajv and its bundled dependencies are confined to the LLM bundle
 and listed in the packaged third-party notices.
 

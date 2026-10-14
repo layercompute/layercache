@@ -11,6 +11,9 @@ importers:
       ajv:
         specifier: 8.17.1
         version: 8.17.1
+      secure-json-parse:
+        specifier: 4.1.0
+        version: 4.1.0
       tar:
         specifier: 7.5.22
         version: 7.5.22
@@ -292,6 +295,9 @@ packages:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
     engines: {node: '>=0.10.0'}
 
+  secure-json-parse@4.1.0:
+    resolution: {integrity: sha512-l4KnYfEyqYJxDwlNVyRfO2E4NTHfMKAWdUuA8J0yve2Dz/E/PdBepY03RvyJpssIpRFwJoCD55wA+mEDs6ByWA==}
+
   tar@7.5.22:
     resolution: {integrity: sha512-MFO/QzvtAOmJbkhOaCTvbGcFN9L9b+JunIsDwaKljSOdcLMea3NJ1k9Usz/rjdfSXTq4dfzfeS7W4p4YOAAHeA==}
     engines: {node: '>=18'}
@@ -503,6 +509,8 @@ snapshots:
       playwright-core: 1.63.0
 
   require-from-string@2.0.2: {}
+
+  secure-json-parse@4.1.0: {}
 
   tar@7.5.22:
     dependencies:
