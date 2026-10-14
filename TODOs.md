@@ -86,21 +86,23 @@ hit counts alone.
   separately qualified support.
 
   Evidence on 2026-10-14: first-slice candidate
-  `06e976bc158b2d843c857870ea7a59bca49b0435` provides
+  `340ac52844499730f3fecec42003655af306d61a` provides
   [`@layercache/native/llm`](native/LLM.md) through pinned AI SDK 7.0.107.
   Actual `generateText`/`ToolLoopAgent` fixtures prove zero-call replay, live tool
   execution and a separately fresh judge. An authenticated disposable Go
   artifact service proves a concurrent committed winner and an empty consumer.
-  Local validation passes 68 tests with the installed service and a packed,
-  separately typechecked SDK consumer. Strict pinned Ajv 8.17.1 validates visible
-  tool names/JSON and normalized structured schemas; later custom validators,
+  Local validation passes 70 tests with the installed service and a packed,
+  separately typechecked SDK consumer. Independent Standards and Spec reviews
+  completed without remaining findings at that runtime source. Strict pinned
+  Ajv 8.17.1 and secure-json-parse 4.1.0 validate visible tool names/JSON and
+  synchronous normalized structured schemas; later custom validators,
   tool execution and app assertions remain outside this middleware's success
   contract. First-writer consistency lasts only while retained; strict replay
   fails on eviction/expiry, while read-through may record again after eviction.
   Streaming replay, provider-hidden observations, durable frozen corpora, paid
   provider/live Phone adoption and hosted candidate acceptance remain pending.
-  Next: finish independent review and hosted qualification, then coordinate the
-  smallest real planner integration with an explicit raw judge.
+  Next: finish hosted candidate qualification, then coordinate the smallest real
+  planner integration with an explicit raw judge.
 
 - [ ] **Qualify Phone E2E action replay with fresh runtime assertions.**
   Owner: Phone E2E owner with LayerCache integration. Use upstream e2e and
