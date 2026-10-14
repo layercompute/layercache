@@ -14,8 +14,10 @@ hit counts alone.
 
 - [ ] **Qualify required file handoffs independently of evictable caches.**
   Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
-  [Phone #273](https://github.com/ziahamza/phone-app/pull/273) contains the narrow
-  retained web/APK/receipt transport. Prove an exact producer-to-consumer
+  [Phone #295](https://github.com/ziahamza/phone-app/pull/295) owns current signed
+  build and retained web/APK/receipt qualification;
+  [Phone #273](https://github.com/ziahamza/phone-app/pull/273) remains the
+  historical held-stack reference. Prove an exact producer-to-consumer
   transfer and consumer-only rerun with source/run/attempt/job/digest checks.
   Required publication fails visibly. The separate fourteen-day release-package
   policy does not establish this handoff. Preserve the held stack's unrelated
