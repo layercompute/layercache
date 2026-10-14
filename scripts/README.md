@@ -47,6 +47,13 @@ installed release binary, with no candidate compilation. The retained JSON
 contains task execution, restore, changed-input and offline-recovery evidence;
 it contains no daemon configuration or credentials.
 
+The installer still comes from the exact release source. Acceptance uses a
+separate inspected QA checkout, pinned to
+`8990f7dd8e662c3aeebbc4a0ff9bccc03cb1d820`, with the production metadata timeout
+and deterministic delayed responses. Beta.3's known retained conflict pins are
+explicitly excluded from its historical qualification; current candidates must
+retire them. The binary, tag, attestation and checksum checks remain unchanged.
+
 The earlier [beta.2 release workflow](https://github.com/ziahamza/layercache/actions/runs/38155658632)
 passed native Linux amd64/arm64 and macOS arm64 qualification before immutable
 publication. The
