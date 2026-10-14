@@ -33,16 +33,42 @@ async function waitForClose(state, timeout) {
   }
 }
 
+function groupExists(child) {
+  if (process.platform === 'win32' || !child.pid) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === 'ESRCH') return false;
+    if (error.code === 'EPERM') return true;
+    throw error;
+  }
+}
+
+async function waitForTermination(child, state, timeout) {
+  if (process.platform === 'win32' || !child.pid) return waitForClose(state, timeout);
+  const deadline = performance.now() + timeout;
+  for (;;) {
+    // The leader may exit and close its stdio while a detached command's
+    // descendants still belong to its process group. Keep the group owned
+    // until the kernel reports ESRCH, independently of the leader's close.
+    if (state.closed && !groupExists(child)) return true;
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) return false;
+    await delay(Math.min(remaining, 20));
+  }
+}
+
 export async function stopChild(child, { graceMs = 5000, killMs = 2000 } = {}) {
   if (!child) return;
   if (!children.has(child)) trackChild(child);
   const state = children.get(child);
-  if (state.closed) return;
   state.stopping ??= (async () => {
+    if (state.closed && !groupExists(child)) return;
     if (child.pid) signalChild(child, 'SIGTERM');
-    if (await waitForClose(state, graceMs)) return;
+    if (await waitForTermination(child, state, graceMs)) return;
     if (child.pid) signalChild(child, 'SIGKILL');
-    if (!await waitForClose(state, killMs)) throw new Error(`QA child ${child.pid} did not close after SIGKILL`);
+    if (!await waitForTermination(child, state, killMs)) throw new Error(`QA process group ${child.pid} did not terminate after SIGKILL`);
     throw new Error(`QA child ${child.pid} required forced shutdown`);
   })();
   return state.stopping;

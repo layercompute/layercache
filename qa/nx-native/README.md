@@ -44,6 +44,11 @@ errors. The helper regressions use real children which ignore termination, and
 check that forced shutdown cannot leave a second child running. Exported success
 evidence is written only after cleanup finishes.
 
+On POSIX, cleanup waits for the whole owned process group after its leader
+closes, and escalates surviving descendants. The Linux descendant regression
+uses its own subreaper so orphaned zombies do not depend on the host's PID 1.
+The signal and direct-child checks also run on macOS.
+
 The existing Linux and macOS native-client CI jobs run this acceptance check
 against the candidate binary they already compile. Each matrix job uploads
 only `${{ runner.temp }}/nx-native-evidence.json`. This wires the candidate

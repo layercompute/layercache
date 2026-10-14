@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import test from 'node:test';
-import { trackChild, stopChildren } from './processes.mjs';
+import { fileURLToPath } from 'node:url';
+import { trackChild, stopChild, stopChildren } from './processes.mjs';
 
 test('cleanup waits for forced exit and still stops every owned child', async () => {
   const children = [];
@@ -30,6 +31,60 @@ test('cleanup waits for forced exit and still stops every owned child', async ()
     for (const child of children) {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     }
+  }
+});
+
+test('cleanup escalates a surviving descendant after its process-group leader closes', {
+  skip: process.platform !== 'linux', timeout: 15000,
+}, async () => {
+  const module = new URL('./processes.mjs', import.meta.url).href;
+  const descendant = "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000);";
+  const leader = `
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc']
+    });
+    child.once('message', () => { console.log(child.pid); child.disconnect(); });
+    setInterval(() => {}, 1000);
+  `;
+  const controller = `
+    import assert from 'node:assert/strict';
+    import { spawn } from 'node:child_process';
+    import { once } from 'node:events';
+    import { setTimeout as delay } from 'node:timers/promises';
+    import { stopChild, trackChild } from ${JSON.stringify(module)};
+    const child = trackChild(spawn(process.execPath, ['-e', ${JSON.stringify(leader)}], {
+      detached: true, stdio: ['ignore', 'pipe', 'ignore']
+    }));
+    try {
+      const [ready] = await once(child.stdout, 'data');
+      const descendantPID = Number(ready.toString().trim());
+      await assert.rejects(stopChild(child, { graceMs: 50, killMs: 1000 }), /forced shutdown/);
+      assert.equal(child.signalCode, 'SIGTERM');
+      assert.throws(() => process.kill(descendantPID, 0), { code: 'ESRCH' });
+      assert.throws(() => process.kill(-child.pid, 0), { code: 'ESRCH' });
+    } finally {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      const deadline = Date.now() + 1000;
+      while (Date.now() < deadline) {
+        try { process.kill(-child.pid, 0); }
+        catch (error) { if (error.code === 'ESRCH') break; throw error; }
+        await delay(10);
+      }
+    }
+  `;
+  // The outer fixture adopts and reaps the orphan after its leader exits.
+  // A container's PID 1 need not reap it, which would leave killpg(0) true for
+  // a zombie and make a correct cleanup appear to time out.
+  const fixture = trackChild(spawn('python3', [fileURLToPath(new URL('./reap-descendants.py', import.meta.url)),
+    process.execPath, '--input-type=module', '-e', controller], { detached: true, stdio: ['ignore', 'ignore', 'pipe'] }));
+  let stderr = '';
+  fixture.stderr.on('data', chunk => { stderr += chunk; });
+  try {
+    const [code] = await once(fixture, 'close');
+    assert.equal(code, 0, stderr);
+  } finally {
+    await stopChild(fixture, { graceMs: 3000, killMs: 1000 });
   }
 });
 
