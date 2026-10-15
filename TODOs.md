@@ -1,6 +1,6 @@
 # LayerCache TODOs
 
-Last strategic review: 2026-10-14. This file owns outstanding work. Checkboxes
+Last strategic review: 2026-10-15. This file owns outstanding work. Checkboxes
 mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
@@ -14,8 +14,10 @@ hit counts alone.
 
 - [ ] **Qualify required file handoffs independently of evictable caches.**
   Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
-  [Phone #295](https://github.com/ziahamza/phone-app/pull/295) owns current signed
-  build and retained web/APK/receipt qualification;
+  [Phone #299](https://github.com/ziahamza/phone-app/pull/299) repairs exact
+  retained web/APK handoffs and qualifies hosted producer/consumer use;
+  [Phone #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
+  qualifies the production signed-IPA handoff through Linux inspection and ASC;
   [Phone #273](https://github.com/ziahamza/phone-app/pull/273) remains the
   historical held-stack reference. Prove an exact producer-to-consumer
   transfer and consumer-only rerun with source/run/attempt/job/digest checks.
@@ -50,39 +52,34 @@ hit counts alone.
   Next: obtain exact request identity and authoritative removal/commit evidence
   for the reported incident. Gateway rollout remains separate and pending.
 
-- [ ] **Make expensive Phone test groups independently reusable.**
-  Owner: LayerCache for the separate package-task candidate and fresh-consumer
-  proof; the active Phone CI owner for workflow and release routing.
-  Five sampled PRs had median unit time 16m20s,
-  including 11m40s in Turbo, at the October 14 research checkpoint.
-  Separate ordinary mobile unit tests and the existing workflow suites/variants
-  through Turbo/Vitest. Preserve SDK process isolation and complete transitive
-  source, fixture, configuration and environment inputs. Keep full typechecking
-  required while establishing accurate subgroup cache identities. Prove that
-  an unrelated edit reuses unaffected groups, shared-input changes rerun affected
-  groups, failed tests remain failures, and compatible local results restore on
-  an empty CI consumer. Attribute remote hits directly; native snapshot hits
-  alone are insufficient. Measure allocated runner time and whole jobs.
+- [ ] **Measure representative Phone reuse and whole-job allocation after landing.**
+  Owner: LayerCache with the Phone CI owner. Phone #298 is merged and its
+  source, private publication, fresh consumers, failure/input controls and native
+  gates are qualified. Collect representative subsequent PR/main jobs with
+  source/profile, exact task hits/misses, direct Team versus runner snapshot
+  attribution, setup/transfer/tooling time and allocated runner spans. Current
+  8m28s/7m13s unit observations are not a controlled baseline or monthly saving.
+  Separate vendor queue/execution from Actions allocation and use actual billing
+  evidence before publishing a monthly-dollar comparison.
 
-  [Phone #298](https://github.com/ziahamza/phone-app/pull/298), reviewed source
-  `1f97be8b753194fd58b13f25550c78721e92e96e`, defines ten leaf groups behind
-  a scriptless native Turbo `@phone-app/mobile#test` aggregate with required
-  typechecking. All thirty isolated workflow invocations remain. The
-  [real-client qualification](docs/phone-test-reuse.md) proves local execution,
-  confirmed private publication and an empty independent consumer: ten test
-  groups execute in a 4m10.355s native stage; all twelve results, including both
-  prerequisite typechecks, restore in 965ms with zero executions and twelve
-  directly attributed Team hits. Two failure reruns and explicit fresh auth
-  execution pass. Native controls cover test-only, helper, shared-source,
-  fixture and environment changes, plus generated-log stability.
-  [Hosted Check](docs/evidence/phone-hosted-test-groups-20261014.json) also passes
-  on the PR merge tree with the exact twelve published hashes and twelve
-  gateway-attributed hits. The unit job takes 8m28s, including 3m20.413s in Turbo;
-  setup/tooling/resource/post steps remain substantial. Next: finish #298's
-  required Android/iOS native gates, land, and measure representative follow-up
-  whole jobs and allocation. No monthly or controlled before/after saving is
-  established. The active Phone owner keeps workflow,
-  signed-release and retained-artifact changes in #295.
+- [ ] **Reuse trusted exact-commit Check results in manual release preparation.**
+  Owner: Phone CI/release owner, with LayerCache reviewing context and invalidation.
+  [Production #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
+  passed RunCloud-to-TestFlight with zero GitHub Mac jobs, but forced manual
+  preparation took 28m18s, including 23m18s of repeated general validation and
+  17.9m of browser QA. Extract the strict latest-main Check lookup used by
+  `scripts/android/signed-benchmark.mjs`, rather than accepting any historical
+  successful check. Define one deterministic
+  QA profile shared by Check and manual validation, then bind a small trusted
+  proof to the literal source, workflow/recipe, latest run/attempt, full selected
+  gates, actual runtime and complete relevant environment. Current release EAS
+  and feature flags differ from Check; current green results have no matching
+  context proof and must not be assumed equivalent. Missing, expired, ambiguous,
+  changed, cancelled or uncertain proof runs fresh. Keep an explicit fresh
+  validation option separate from forcing an archive. Preserve deployment-time,
+  signing, package inspection and live-provider checks, and required artifact
+  availability. Prove reuse and invalidation with native GitHub API fixtures and
+  a real producer/consumer decision before claiming avoided job allocation.
 
 - [ ] **Reduce repeated Phone setup and deterministic tooling checks.**
   Owner: Phone CI owner. The same sample has 4m07s median outside Turbo.
@@ -90,6 +87,23 @@ hit counts alone.
   Reuse complete deterministic contracts and qualified runner/toolchain images;
   validate misses when their inputs change. Compare whole-job time, including
   transfer and setup, rather than presenting task time as total CI savings.
+
+  The 2026-10-15 installed Phone profile confirms 28/28 results in Team Cache.
+  The first warm replay restores 25 results from Local in 13.714s. Its three
+  analysis misses come from generated native evidence entering broad root
+  lint/format/Fallow inputs. On the same `b7279389` source, after generated
+  outputs stabilize, the second replay restores all 28 from Local with zero
+  executions in an 807ms native stage and confirms 28/28 Team results.
+  [Phone #309](https://github.com/ziahamza/phone-app/pull/309) then fixes those
+  three inputs at reviewed source `913e03fe`, merged as `716c8442`. It excludes
+  only the declared generated output directory. Real Turbo controls preserve
+  hashes across generated evidence changes and invalidate for genuine source
+  and configuration edits; all 28 local tasks and
+  [hosted Check](https://github.com/ziahamza/phone-app/actions/runs/38717692698) pass.
+  The package-input fix changes no native or workflow source. Qualify Git-base
+  changes separately for cached local Git-dependent analysis; required CI Fallow
+  still executes fresh. Setup, tooling contracts and image work remain open.
+
 
 ## P1: LLM and native outputs across machines
 
@@ -251,6 +265,18 @@ hit counts alone.
 
 ## Delivered baseline
 
+- [x] Phone's ten independent mobile test groups, all thirty isolated workflow
+  processes and mandatory typechecking, reviewed source `b7279389` merged in
+  [Phone #298](https://github.com/ziahamza/phone-app/pull/298) as
+  `3bae98fefadda18a21a5353a726a4567f00084fb`. The existing Check command and
+  two-task limit remain. [Qualification](docs/phone-test-reuse.md) includes real
+  local publication/fresh consumption, exact input/failure controls, current
+  hosted Check and passing actual Android Contacts/iOS startup-CallKit acceptance.
+  The simulator has one entitlement producer and unchanged strict verification.
+  The installed persistent Local profile confirms all 28 results in Team Cache;
+  its stable full native stage restores all 28 from Local in 807ms with zero
+  execution. This does not establish full signed-in iOS Contacts coverage,
+  physical calling, monthly savings or a self-serve cloud deployment.
 - [x] Reviewed beta.4 CLI, immutable publication and installed Turbo/Nx proof
   on Linux x64/arm64 and macOS arm64, source
   `ca3d5889a52815bce9565d3825b081839ac7077b`.

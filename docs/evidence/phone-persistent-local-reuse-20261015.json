@@ -1,0 +1,523 @@
+{
+  "schemaVersion": "phone-persistent-local-reuse-v1",
+  "source": "b7279389b24ca8f6d813451910dce8f2b50efd20",
+  "profile": "phone-ci-v1-ubuntu24.04-linux-x64-node24.21.0-pnpm10.7.1",
+  "installedCli": {
+    "version": "v0.1.0-beta.4",
+    "sha256": "2910a3905cbbcf45740d51db48e07cebb3c8bebe161b5216ff884dfb6c10b044"
+  },
+  "existingPersistentLocalService": true,
+  "configurationChanged": false,
+  "budgetBytes": 1073741824,
+  "evictionPolicy": "lru",
+  "runs": {
+    "publish": {
+      "runId": "run-fmnGqGe8zJ55Vzw86PWe",
+      "startedAt": "2026-10-15T09:41:45.646Z",
+      "finishedAt": "2026-10-15T09:43:58.471Z",
+      "nativeStageMs": 133037,
+      "nativeTasks": 28,
+      "nativeCachedTasks": 16,
+      "nativeExecutedTasks": 12,
+      "eligible": 28,
+      "hits": 16,
+      "misses": 12,
+      "sources": [
+        {
+          "source": "teamCache",
+          "hits": 16,
+          "downloadedBytes": 398719,
+          "uploadedBytes": 0
+        }
+      ],
+      "bytes": {
+        "downloaded": 398719,
+        "uploaded": 27779
+      },
+      "degraded": false,
+      "confirmedTeamResults": 28,
+      "nativeTasksDetail": [
+        {
+          "taskId": "//#fallow",
+          "hash": "89cf078374553acb",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "//#format:check",
+          "hash": "330b2d617f85592a",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "//#lint",
+          "hash": "f94734ffa6a472af",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "//#test:qa",
+          "hash": "9fdce9a296971fee",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "//#typecheck:qa",
+          "hash": "e03aba532b081349",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "@phone-app/core#test",
+          "hash": "66bb93c2f04c38a6",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/core#typecheck",
+          "hash": "f11e8aad790566f2",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/desktop#typecheck",
+          "hash": "1362ee61b9f12a70",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "@phone-app/infra#test",
+          "hash": "04ceb6eba09af80b",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "@phone-app/infra#typecheck",
+          "hash": "f9349f08aeb6ad5a",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:unit",
+          "hash": "c08621ffc1c4f56f",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:auth",
+          "hash": "db417d7c47b58348",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+          "hash": "cebed25706650f54",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:fixtures",
+          "hash": "96f12d95f3c8a598",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:http",
+          "hash": "73ec371d97124269",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:native",
+          "hash": "d89d39fb8f26e394",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:numbers",
+          "hash": "586316e6a09a8b0f",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:personal",
+          "hash": "07025343a51cd2d7",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:settings",
+          "hash": "c5c47f592b801d76",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:shared",
+          "hash": "8b63305b5b2ee37d",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#typecheck",
+          "hash": "a19e3a79469e3786",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/persistence#typecheck",
+          "hash": "002bcdea7550f5dc",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/providers#test",
+          "hash": "79fceb448a178474",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/providers#typecheck",
+          "hash": "ed8c6b28e3b94227",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/server#test",
+          "hash": "a6fa1a5bf8972adc",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "@phone-app/server#typecheck",
+          "hash": "febc1a9f2b4176c2",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "@phone-app/worker#test",
+          "hash": "72b5206aaf5d8036",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "@phone-app/worker#typecheck",
+          "hash": "5f5ccb407cc43098",
+          "cacheStatus": "MISS"
+        }
+      ],
+      "logSha256": "8428510db7d53831af41eda508e8fd35e8029af53604256e53e08350018804c4"
+    },
+    "firstReplay": {
+      "runId": "run-UpwzkAIWzghdEdgDj-sw",
+      "startedAt": "2026-10-15T09:45:30.063Z",
+      "finishedAt": "2026-10-15T09:45:43.655Z",
+      "nativeStageMs": 13714,
+      "nativeTasks": 28,
+      "nativeCachedTasks": 25,
+      "nativeExecutedTasks": 3,
+      "eligible": 28,
+      "hits": 25,
+      "misses": 3,
+      "sources": [
+        {
+          "source": "localCache",
+          "hits": 25,
+          "downloadedBytes": 423013,
+          "uploadedBytes": 0
+        }
+      ],
+      "bytes": {
+        "downloaded": 423013,
+        "uploaded": 3484
+      },
+      "degraded": false,
+      "confirmedTeamResults": 28,
+      "nativeTasksDetail": [
+        {
+          "taskId": "//#fallow",
+          "hash": "88dbb174982c55ef",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "//#format:check",
+          "hash": "80cbc740f7628993",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "//#lint",
+          "hash": "c79850a1ce8c54fd",
+          "cacheStatus": "MISS"
+        },
+        {
+          "taskId": "//#test:qa",
+          "hash": "9fdce9a296971fee",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "//#typecheck:qa",
+          "hash": "e03aba532b081349",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/core#test",
+          "hash": "66bb93c2f04c38a6",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/core#typecheck",
+          "hash": "f11e8aad790566f2",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/desktop#typecheck",
+          "hash": "1362ee61b9f12a70",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/infra#test",
+          "hash": "04ceb6eba09af80b",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/infra#typecheck",
+          "hash": "f9349f08aeb6ad5a",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:unit",
+          "hash": "c08621ffc1c4f56f",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:auth",
+          "hash": "db417d7c47b58348",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+          "hash": "cebed25706650f54",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:fixtures",
+          "hash": "96f12d95f3c8a598",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:http",
+          "hash": "73ec371d97124269",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:native",
+          "hash": "d89d39fb8f26e394",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:numbers",
+          "hash": "586316e6a09a8b0f",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:personal",
+          "hash": "07025343a51cd2d7",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:settings",
+          "hash": "c5c47f592b801d76",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:shared",
+          "hash": "8b63305b5b2ee37d",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#typecheck",
+          "hash": "a19e3a79469e3786",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/persistence#typecheck",
+          "hash": "002bcdea7550f5dc",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/providers#test",
+          "hash": "79fceb448a178474",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/providers#typecheck",
+          "hash": "ed8c6b28e3b94227",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/server#test",
+          "hash": "a6fa1a5bf8972adc",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/server#typecheck",
+          "hash": "febc1a9f2b4176c2",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/worker#test",
+          "hash": "72b5206aaf5d8036",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/worker#typecheck",
+          "hash": "5f5ccb407cc43098",
+          "cacheStatus": "HIT"
+        }
+      ],
+      "logSha256": "db8c0a15488da22ea83a50aac99cab31f87ce3977536c5659e4de3b81783416d"
+    },
+    "stableReplay": {
+      "runId": "run-szlN1pMoOcR-x0tDehtU",
+      "startedAt": "2026-10-15T09:48:16.788Z",
+      "finishedAt": "2026-10-15T09:48:17.511Z",
+      "nativeStageMs": 807,
+      "nativeTasks": 28,
+      "nativeCachedTasks": 28,
+      "nativeExecutedTasks": 0,
+      "eligible": 28,
+      "hits": 28,
+      "misses": 0,
+      "sources": [
+        {
+          "source": "localCache",
+          "hits": 28,
+          "downloadedBytes": 426497,
+          "uploadedBytes": 0
+        }
+      ],
+      "bytes": {
+        "downloaded": 426497,
+        "uploaded": 0
+      },
+      "degraded": false,
+      "confirmedTeamResults": 28,
+      "nativeTasksDetail": [
+        {
+          "taskId": "//#fallow",
+          "hash": "88dbb174982c55ef",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "//#format:check",
+          "hash": "80cbc740f7628993",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "//#lint",
+          "hash": "c79850a1ce8c54fd",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "//#test:qa",
+          "hash": "9fdce9a296971fee",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "//#typecheck:qa",
+          "hash": "e03aba532b081349",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/core#test",
+          "hash": "66bb93c2f04c38a6",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/core#typecheck",
+          "hash": "f11e8aad790566f2",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/desktop#typecheck",
+          "hash": "1362ee61b9f12a70",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/infra#test",
+          "hash": "04ceb6eba09af80b",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/infra#typecheck",
+          "hash": "f9349f08aeb6ad5a",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:unit",
+          "hash": "c08621ffc1c4f56f",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:auth",
+          "hash": "db417d7c47b58348",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+          "hash": "cebed25706650f54",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:fixtures",
+          "hash": "96f12d95f3c8a598",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:http",
+          "hash": "73ec371d97124269",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:native",
+          "hash": "d89d39fb8f26e394",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:numbers",
+          "hash": "586316e6a09a8b0f",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:personal",
+          "hash": "07025343a51cd2d7",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:settings",
+          "hash": "c5c47f592b801d76",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#test:workflow:shared",
+          "hash": "8b63305b5b2ee37d",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/mobile#typecheck",
+          "hash": "a19e3a79469e3786",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/persistence#typecheck",
+          "hash": "002bcdea7550f5dc",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/providers#test",
+          "hash": "79fceb448a178474",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/providers#typecheck",
+          "hash": "ed8c6b28e3b94227",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/server#test",
+          "hash": "a6fa1a5bf8972adc",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/server#typecheck",
+          "hash": "febc1a9f2b4176c2",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/worker#test",
+          "hash": "72b5206aaf5d8036",
+          "cacheStatus": "HIT"
+        },
+        {
+          "taskId": "@phone-app/worker#typecheck",
+          "hash": "5f5ccb407cc43098",
+          "cacheStatus": "HIT"
+        }
+      ],
+      "logSha256": "df127f4be7362b5b94c68b54166bf4cf0b27bec7451aff24dd81d094126b5e9d"
+    }
+  },
+  "interpretation": "Observed native stages through the installed persistent Phone Local service, not total CLI wall time or a billing/control comparison. The first replay has three root analysis misses because restored generated native evidence enters broad analyzer inputs; the stable replay has no executions. Configurations, credential material and raw logs are excluded."
+}

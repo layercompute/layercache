@@ -1,0 +1,355 @@
+{
+  "version": 1,
+  "generated_at": "2026-10-15T09:58:59.597474+00:00",
+  "scope": "Phone PR 298 bounded Android runtime and iOS Release simulator acceptance",
+  "verdict": "passed",
+  "source": {
+    "repository": "ziahamza/phone-app",
+    "pull_request": 298,
+    "candidate_sha": "b7279389b24ca8f6d813451910dce8f2b50efd20",
+    "base_sha": "d194ea69299c0ac95c177586a8d62c669bbfe407",
+    "tested_merge_sha": "9407e02c5590a2b3e9264bbbef5389a8a7ed1790",
+    "tested_merge_parents": [
+      "d194ea69299c0ac95c177586a8d62c669bbfe407",
+      "b7279389b24ca8f6d813451910dce8f2b50efd20"
+    ],
+    "tested_merge_metadata_url": "https://github.com/ziahamza/phone-app/commit/9407e02c5590a2b3e9264bbbef5389a8a7ed1790",
+    "tested_merge_parent_verification": "GitHub commit metadata returned the expected base and candidate parents",
+    "native_fix": {
+      "staging_filename": "stage-runcloud-ios.py",
+      "simulator_setting": "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]",
+      "entitlements_basename": "RunCloudSimulator.entitlements",
+      "manual_section_injection_removed": true,
+      "unqualified_device_entitlements_setting_not_reassigned": true,
+      "ordinary_and_simulator_linker_flags_not_reassigned": true,
+      "worker_filename": "runcloud-ios-postbuild.py",
+      "worker_unchanged_from_candidate_parent": true,
+      "worker_sha256": "3416287d84d042bbf460a6d1b0e5b1865e630f5b083b50773daf2e497b7c1c47"
+    }
+  },
+  "android": {
+    "run": {
+      "id": 38712658336,
+      "name": "Android contact review QA",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "b7279389b24ca8f6d813451910dce8f2b50efd20",
+      "created_at": "2026-10-15T09:24:06Z",
+      "updated_at": "2026-10-15T09:54:48Z",
+      "run_started_at": "2026-10-15T09:24:06Z",
+      "html_url": "https://github.com/ziahamza/phone-app/actions/runs/38712658336",
+      "run_attempt": 1
+    },
+    "compile_job": {
+      "id": 116347616238,
+      "name": "Compile isolated x86_64 Debug helper",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T09:24:29Z",
+      "completed_at": "2026-10-15T09:45:31Z",
+      "duration_seconds": 1262,
+      "html_url": "https://github.com/ziahamza/phone-app/actions/runs/38712658336/job/116347616238"
+    },
+    "native_build_step": {
+      "name": "Build the credential-free native Debug APK",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 14,
+      "started_at": "2026-10-15T09:26:42Z",
+      "completed_at": "2026-10-15T09:42:53Z",
+      "duration_seconds": 971.0
+    },
+    "kotlin_tests_step": {
+      "name": "Run PhoneNative Kotlin JVM tests",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 16,
+      "started_at": "2026-10-15T09:42:53Z",
+      "completed_at": "2026-10-15T09:44:01Z",
+      "duration_seconds": 68.0
+    },
+    "runtime_job": {
+      "id": 116356384535,
+      "name": "Review, cancel, save and verify actual Contacts entry",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T09:46:04Z",
+      "completed_at": "2026-10-15T09:54:47Z",
+      "duration_seconds": 523,
+      "html_url": "https://github.com/ziahamza/phone-app/actions/runs/38712658336/job/116356384535"
+    },
+    "runtime_execution_step": {
+      "name": "Operate only the fresh fictional-data emulator",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 13,
+      "started_at": "2026-10-15T09:51:16Z",
+      "completed_at": "2026-10-15T09:54:37Z",
+      "duration_seconds": 201.0
+    },
+    "scope_limit": "The direct-capture continuous-accessibility job was skipped; the successful runtime job reviews, cancels, saves and verifies the actual Contacts entry."
+  },
+  "ios": {
+    "run": {
+      "id": 38713331278,
+      "name": "iOS Release simulator smoke",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "b7279389b24ca8f6d813451910dce8f2b50efd20",
+      "created_at": "2026-10-15T09:29:39Z",
+      "updated_at": "2026-10-15T09:55:00Z",
+      "run_started_at": "2026-10-15T09:29:39Z",
+      "html_url": "https://github.com/ziahamza/phone-app/actions/runs/38713331278",
+      "run_attempt": 1
+    },
+    "native_job": {
+      "id": 116350901907,
+      "name": "Run native iOS QA through RunCloud (Linux)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T09:32:27Z",
+      "completed_at": "2026-10-15T09:54:59Z",
+      "duration_seconds": 1352,
+      "html_url": "https://github.com/ziahamza/phone-app/actions/runs/38713331278/job/116350901907"
+    },
+    "acceptance_step": {
+      "name": "Build, sign and accept the simulator app in RunCloud",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 10,
+      "started_at": "2026-10-15T09:34:08Z",
+      "completed_at": "2026-10-15T09:54:50Z",
+      "duration_seconds": 1242.0
+    },
+    "provider": {
+      "build_id": "xcb_2aef9ff95cce4f1b8fad92d044f7de32",
+      "status": "succeeded",
+      "result": {
+        "status": "SUCCEEDED",
+        "exitCode": 0
+      },
+      "timings": {
+        "createdAt": "2026-10-15T09:34:11.700Z",
+        "queuedAt": "2026-10-15T09:34:12.552Z",
+        "startedAt": "2026-10-15T09:34:28.236Z",
+        "completedAt": "2026-10-15T09:54:18.891Z",
+        "updatedAt": "2026-10-15T09:54:18.973Z"
+      },
+      "logs_retained": true,
+      "artifact_available": true,
+      "artifact_installable": true
+    },
+    "retained_log_sha256": "a6d50c594597ee1072a8fd6e6fcd95015f9e8f19337a8a709700aa0d1ddfb757",
+    "packaging": [
+      {
+        "line": 7670,
+        "input_basename": "RunCloudSimulator.entitlements",
+        "output_basename": "Phone.app.xcent"
+      },
+      {
+        "line": 7680,
+        "input_basename": "RunCloudSimulator.entitlements",
+        "output_basename": "Phone.app-Simulated.xcent"
+      }
+    ],
+    "phone_link": {
+      "line": 9110,
+      "sections": [
+        {
+          "segment": "__TEXT",
+          "section": "__entitlements",
+          "input_basename": "Phone.app-Simulated.xcent"
+        },
+        {
+          "segment": "__TEXT",
+          "section": "__ents_der",
+          "input_basename": "Phone.app-Simulated.xcent.der"
+        }
+      ],
+      "direct_generated_entitlements_linker_input": false,
+      "text_entitlements_producer_count": 1,
+      "der_section_is_separate": true
+    },
+    "embedded_entitlement_verification": {
+      "marker": "PHONE_RUNCLOUD_SIMULATOR_ENTITLEMENTS",
+      "count": 3,
+      "instances": [
+        {
+          "line": 12722,
+          "value": {
+            "applicationIdentifier": "FAKETEAMID.com.ziahamza.phoneapp",
+            "keychainAccessGroups": [
+              "FAKETEAMID.com.ziahamza.phoneapp"
+            ],
+            "architectureCount": 1
+          }
+        },
+        {
+          "line": 12723,
+          "value": {
+            "applicationIdentifier": "FAKETEAMID.com.ziahamza.phoneapp",
+            "keychainAccessGroups": [
+              "FAKETEAMID.com.ziahamza.phoneapp"
+            ],
+            "architectureCount": 1
+          }
+        },
+        {
+          "line": 12731,
+          "value": {
+            "applicationIdentifier": "FAKETEAMID.com.ziahamza.phoneapp",
+            "keychainAccessGroups": [
+              "FAKETEAMID.com.ziahamza.phoneapp"
+            ],
+            "architectureCount": 1
+          }
+        }
+      ],
+      "phases": [
+        "prepare before worker signing",
+        "after initial worker signing",
+        "after final worker signing"
+      ],
+      "verification_contract": "The unchanged worker parses exactly one complete entitlement plist per Mach-O architecture and requires exact equality with the generated plist."
+    },
+    "post_sign_signature_verification": {
+      "marker": "PHONE_RUNCLOUD_SIGNATURE_ENTITLEMENTS",
+      "count": 2,
+      "instances": [
+        {
+          "line": 12724,
+          "value": {}
+        },
+        {
+          "line": 12732,
+          "value": {}
+        }
+      ],
+      "required_command": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict"
+      ],
+      "proof_kind": "Successful marker reachability through the unchanged sign function, which runs strict signature verification before the embedded-entitlement check and signature-entitlement marker.",
+      "signature_claims": "Both reports are empty dictionaries; nonempty reports must parse as a plist dictionary and conflicting identity claims are rejected.",
+      "strict_command_is_not_printed_verbatim_in_retained_log": true
+    },
+    "qa": {
+      "marker": "PHONE_RUNCLOUD_QA_PASSED",
+      "line": 12734,
+      "sourceSha": "9407e02c5590a2b3e9264bbbef5389a8a7ed1790",
+      "appFingerprint": "c946b3272cd56c227ef45963e6d96ac65e3fe30966c1f714a1e50634786b9f05",
+      "qaFingerprint": "cc940b78fa8c024da6211f429fd99b151cd174661ac3d1ec25fefbdc0f19dabf",
+      "coverage": [
+        "callkit",
+        "startup"
+      ],
+      "elapsedSeconds": 398.753,
+      "passed": true,
+      "provider": "runcloud",
+      "bundlerNodeVersion": "24.21.0",
+      "installerNodeVersion": "v26.8.1",
+      "configuration": {
+        "architecture": "arm64",
+        "buildConfiguration": "Release",
+        "destination": "generic/platform=iOS Simulator",
+        "host_audio_probe": false,
+        "local_auth_qa": false,
+        "native_contacts_qa": false,
+        "platform": "ios-simulator",
+        "prebuildNodeVersion": "24.21.0",
+        "scheme": "Phone"
+      },
+      "toolchain": {
+        "architecture": "arm64",
+        "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+        "fingerprint": "8a05bc68245515482e4a29d81f909602b69cba51196dd003b0622c10fbb5562c",
+        "macOS": "26.6.2",
+        "macOSBuild": "25G83",
+        "nodeVersion": "24.21.0",
+        "simulatorRuntimes": [
+          {
+            "buildversion": "23F77",
+            "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+            "version": "26.5"
+          }
+        ],
+        "simulatorSDK": "26.5",
+        "simulatorSDKBuild": "23F73",
+        "version": 1,
+        "xcode": "Xcode 26.5\nBuild version 17F42"
+      },
+      "stages": [
+        {
+          "line": 12725,
+          "value": {
+            "stage": "ui-harness",
+            "status": "started"
+          }
+        },
+        {
+          "line": 12726,
+          "value": {
+            "stage": "ui-harness",
+            "status": "passed",
+            "seconds": 0.113
+          }
+        },
+        {
+          "line": 12727,
+          "value": {
+            "stage": "startup-lifecycle",
+            "status": "started"
+          }
+        },
+        {
+          "line": 12728,
+          "value": {
+            "stage": "startup-lifecycle",
+            "status": "passed",
+            "seconds": 198.279
+          }
+        },
+        {
+          "line": 12729,
+          "value": {
+            "stage": "callkit",
+            "status": "started"
+          }
+        },
+        {
+          "line": 12730,
+          "value": {
+            "stage": "callkit",
+            "status": "passed",
+            "seconds": 198.754
+          }
+        }
+      ],
+      "app_inventory_sha256": "e9b083d04dec758fcfaba78be6dee62273e7274d1a1b05e86f2b366db77a0036"
+    },
+    "cleanup": {
+      "marker": "PHONE_RUNCLOUD_SIMULATOR_CLEANUP",
+      "line": 12735,
+      "recorded_owned_simulator_count": 2,
+      "meaning": "The worker attempted shutdown and delete only for its recorded owned simulator UUIDs. The count records attempts and does not independently prove successful deletion.",
+      "cleanup_failure_diagnostic_present": false,
+      "github_owned_build_cleanup_step": {
+        "name": "Cancel only this job's owned unfinished RunCloud build",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 11,
+        "started_at": "2026-10-15T09:54:50Z",
+        "completed_at": "2026-10-15T09:54:50Z",
+        "duration_seconds": 0.0
+      }
+    },
+    "build_succeeded_line": 12790,
+    "scope_limit": "Acceptance covers an arm64 iOS Release simulator build, startup lifecycle and CallKit. Host audio, local-auth UI and native Contacts QA were disabled. No physical-device acceptance is claimed."
+  },
+  "residual_pending": [],
+  "evidence_handling": "Only allowlisted hashes, public GitHub links, build identifiers, timing, marker payloads and basenames are included. Raw provider logs, credentials, storage keys, provider paths and signed URLs are excluded."
+}

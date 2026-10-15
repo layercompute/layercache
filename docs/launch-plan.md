@@ -1,4 +1,4 @@
-# LayerCache launch plan, 2026-10-14
+# LayerCache launch plan, 2026-10-15
 
 [TODOs.md](../TODOs.md) owns current priorities and outstanding acceptance.
 Reuse successful local tasks in required CI checks, preserve reliable required
@@ -22,7 +22,7 @@ hashing and execution as we add integrations.
 | --- | --- | --- |
 | Existing Team Cache | Public HTTPS restored on October 11. Recovery checks passed authenticated status for all five configured projects and denied anonymous Phone access. | Keep external health and capacity monitoring green, then prove useful fresh-runner restores for each integration actually in use. |
 | Local results available to CI | [#23](https://github.com/ziahamza/layercache/pull/23) added Turbo publication confirmation, durable repair and explicit CI cache modes. [Phone #241](https://github.com/ziahamza/phone-app/pull/241) merged main-writer and same-repository PR-reader lanes. Installed-release QA corrections merged in [#29](https://github.com/ziahamza/layercache/pull/29). | Prove a directly observed main-to-PR remote restore with an empty native cache, and measure whole-job time including setup, transfer and publication. Native snapshot hits alone do not attribute savings to LayerCache. The Phone CI chat owns application adoption. |
-| Phone test groups | [Phone #298](https://github.com/ziahamza/phone-app/pull/298), source `1f97be8b`, preserves thirty isolated workflow invocations under ten native Turbo groups and required typechecking. [Local qualification](phone-test-reuse.md) passes full checks and miss/failure controls: ten groups execute, twelve results confirm publication, and an empty consumer restores twelve directly attributed Team hits with zero execution. The active Phone CI owner keeps workflow/release changes in #295. | Hosted Check restores all twelve published hashes and passes; observed unit allocation is 8m28s with 3m20.413s in Turbo. Finish required Android/iOS native QA, land and measure representative follow-up runs. Neither checkpoint establishes monthly or controlled before/after savings. |
+| Phone test groups | [Phone #298](https://github.com/ziahamza/phone-app/pull/298) merged as `3bae98fe`, preserving thirty isolated workflow invocations under ten Turbo groups and required typechecking. [Qualification](phone-test-reuse.md) includes private publication/fresh consumption and current hosted Check plus Android Contacts/iOS startup-CallKit acceptance. The simulator entitlement repair is qualified with unchanged strict verification. The installed Local service restores all 28 tasks in an 807ms native stage and confirms Team availability. | Measure representative follow-up whole jobs and direct Team versus snapshot attribution. Current unit observations are 8m28s and 7m13s, not monthly or controlled savings. Production RunCloud-to-TestFlight qualified in [#305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570); duplicate manual validation remains the next large latency target. |
 | Actions acknowledgement diagnosis | [#36](https://github.com/ziahamza/layercache/pull/36) merged at `fc98937922f69daad788a89cc132845ff4c0c79e`. Real PostgreSQL/S3 SDK qualification restores the reported payload size and distinguishes controlled misses; the historical incident's cause remains unknown. | Obtain exact incident identity and authoritative removal/commit evidence. Gateway rollout remains separate. |
 | AI SDK LLM replay | [#37](https://github.com/ziahamza/layercache/pull/37) merged at `453c09487a2268700821417e830d2fb1e3296526`, with actual SDK fixtures, 72 local tests, independent reviews, [hosted source qualification](https://github.com/ziahamza/layercache/actions/runs/38580949339) and a [direct private gateway proof](evidence/llm-private-gateway-20261014.json). | Qualify real planner adoption with a raw judge. Streaming, a shared LLM gateway, durable corpora and Local-to-Team winner reconciliation remain outstanding. CLI release and service deployment have separate qualification. |
 | Personal Cache | Owner-only private projects merged in [#28](https://github.com/ziahamza/layercache/pull/28), with stable numeric ownership, separate project identities and owner-authorized CI. | Qualify cross-machine use through the configured private endpoint. The implementation does not establish a deployed self-serve service. |
@@ -35,9 +35,10 @@ hashing and execution as we add integrations.
 
 The LayerCache recovery effort owns integration, PR disposition, deployment
 evidence, and this plan. LayerCache owns the separate Phone package-task and
-cache-qualification candidate. The Phone CI chat owns active PR reuse, native
-workflow and release routing changes. Keep those branches separate while
-implementation is underway.
+cache qualification and bounded simulator repair explicitly delegated in
+[the Phone handoff](https://github.com/ziahamza/phone-app/pull/298#issuecomment-6173637809).
+The Phone CI chat owns workflow and production release routing. Coordinate
+separate branches and acceptance evidence for follow-ups.
 
 ## Recovery evidence
 
