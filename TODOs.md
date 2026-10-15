@@ -32,9 +32,21 @@ hit counts alone.
   [#44](https://github.com/ziahamza/layercache/pull/44) measurement preserved all
   13 required contexts and reduced selected workflow allocation from 40m54s to
   2m15s (94.5%); its active execution span was 27s versus 5m21s. Exact source
-  and runs are recorded in [self-CI evidence](docs/self-ci.md). Later main
-  cache-hit measurement remains acceptance work; standalone LayerCache
-  transport adoption remains separately unqualified.
+  and runs are recorded in [self-CI evidence](docs/self-ci.md). The subsequent
+  full main run verified an arm64 compiler-cache hit with fresh tests (109s
+  versus the preceding 225s miss); x64 and macOS correctly missed changed
+  runner-image profiles. Broader hit-rate and whole-job economics remain
+  measurement work; standalone LayerCache transport adoption stays unqualified.
+  The [opt-in Go archive qualification](qa/go-dogfood/README.md) now uses the
+  existing stock Actions v1 client and account-free standalone daemon. On
+  Linux amd64 / Go 1.25.13 it reduced a stdlib-only package's cold compile plus
+  fresh tests from 4.623s to 0.755s including a 13,076,823-byte loopback restore.
+  Source, native compiler-profile, signed-profile, repeated fresh failure and
+  forced-cleanup controls passed; [the receipts](docs/evidence/go-dogfood-20261015.json)
+  pin exact source `32e3446` and driver/binary digests. Publication, startup and
+  bootstrap make first use slower. This is qualification, not routine CI
+  adoption, module download, Phone or live local-to-cloud savings. Measure real
+  network/setup cost before enrolling another transport.
 
 - [ ] **Keep standalone OSS independent from managed cloud enrollment.**
   Owner: LayerCache product and control plane. Standalone CLI/daemon use is

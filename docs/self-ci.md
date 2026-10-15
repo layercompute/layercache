@@ -42,11 +42,14 @@ performance, release-installation and local-to-CI qualification jobs retain
 their independent cache setup. No fixture output is warmed by these caches.
 
 This uses GitHub's native cache transport. It does not establish LayerCache
-archive transport savings or live local-to-cloud Go reuse. A useful dogfood
-slice must use bounded repository-owned paths, the existing archive client and
-standalone daemon, and report transfer/setup alongside native compilation and
-fresh test execution. Cloud signup is not a prerequisite for that standalone
-qualification.
+archive transport savings or live local-to-cloud Go reuse. The
+[opt-in standalone probe](../qa/go-dogfood/README.md) separately qualifies
+bounded repository-owned Go caches through the existing stock archive client
+and account-free daemon. It records loopback transfer/setup, native source and
+profile misses, fresh tests and forced-failure cleanup. Its first use is slower;
+the current native GitHub transport remains the routine CI choice. Measure
+real network/setup costs before adopting another transport. Cloud signup is
+not a prerequisite for this standalone qualification.
 
 ## Baseline and acceptance
 
@@ -83,6 +86,16 @@ performance work were skipped as intended. Workflow/shell checks and all 16
 classifier and profile controls executed. Main continues to run full
 qualification.
 
-Measure a later main run with native Go cache hits while tests execute fresh.
-Report observed job spans and cache bytes rather than inferred dollar savings.
-Outstanding work remains in [TODOs](../TODOs.md).
+The subsequent full [main CI](https://github.com/ziahamza/layercache/actions/runs/38742706456)
+at `bee15829ada7b3be60e2f3903e81685ab2fd9fc5` and both companion workflows
+passed all 14 jobs. Linux arm64 restored 476,949,343 bytes and executed fresh
+tests, race checks and vet. Its observed job span was 109s versus 225s for the
+preceding cache miss at `29f5d51`. Linux x64 and macOS arm64 correctly missed
+after their runner images changed, so this run establishes hosted reuse only
+on arm64. The [evidence review](https://github.com/ziahamza/layercache/pull/44#issuecomment-6193181812)
+records exact image changes, timings and cache cleanup.
+
+Measure further hit rates and whole-job costs under the strict image profiles;
+the mixed-image run does not establish an all-platform speedup. Report observed
+job spans and cache bytes rather than inferred dollar savings. Outstanding
+work remains in [TODOs](../TODOs.md).

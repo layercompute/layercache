@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "go-dogfood-forced-cleanup-v1",
+  "sourceRevision": "32e3446ef914aa20233ea136a4253f96fb351b6c",
+  "actualDriver": true,
+  "actualPinnedGoAndStockModule": true,
+  "fault": "Owned setup child ignores SIGTERM; controller sends SIGTERM only to driver.",
+  "driverExitStatus": 1,
+  "shutdownWallMs": 5222,
+  "assertions": {
+    "preseededSuccessRemovedBeforeSignal": true,
+    "setupChildWasOwned": true,
+    "setupChildIgnoredTerm": true,
+    "driverExitedNonzero": true,
+    "noPassedReceiptFile": true,
+    "noPassedReceiptOnStdout": true,
+    "setupChildPidGone": true,
+    "driverPrivateDirectoryRemoved": true,
+    "forcedShutdownErrorObserved": true,
+    "shutdownUnder15Seconds": true,
+    "noReceiptTemporaryFiles": true
+  },
+  "passed": true,
+  "stdoutSha256": "0ce2dfa88a9ead6df9e81a9804ed03a21e4078834e8d10c5b8305e6918bbf707",
+  "stderrSha256": "da78f532475c0bf0af48536a13ec12e4f66b47b465c00b4d420c33a714979584",
+  "invalidBinaryPreflight": {
+    "driverExitStatus": 1,
+    "assertions": {
+      "driverExitedNonzero": true,
+      "preseededSuccessfulReceiptRemoved": true,
+      "noPassedReceiptOnStdout": true,
+      "driverPrivateDirectoryRemoved": true,
+      "noReceiptTemporaryFiles": true
+    },
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSha256": "8a8b614b50bafd6dcbffe9ba893a12d1894e9b1b9cb631e53ef5b266b072e8a4"
+  },
+  "missingTmpdirPreflight": {
+    "driverExitStatus": 1,
+    "assertions": {
+      "driverExitedNonzero": true,
+      "preseededSuccessfulReceiptRemoved": true,
+      "noPassedReceiptOnStdout": true,
+      "noPrivateDirectoryCreated": true,
+      "noReceiptTemporaryFiles": true
+    },
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSha256": "e1069264fd6ae1ccc4843b4c0d0d4499db851317311fd9b21264e98e6426da2c"
+  }
+}
