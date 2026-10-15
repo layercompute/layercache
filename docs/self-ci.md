@@ -58,8 +58,31 @@ job spans, excluding queue time and billing multipliers. The primary
 and [main CI run](https://github.com/ziahamza/layercache/actions/runs/38734588412)
 account for 33m11s and 33m57s respectively; companion workflows make up the rest.
 
-Qualification requires a full implementation PR, then an actual prose-only PR
-with every required context present and only the intended steps skipped.
+The full implementation [PR #43](https://github.com/ziahamza/layercache/pull/43)
+passed all 18 reported checks, including all 13 required contexts, on source
+`0045810b3c69cf448633fd34a236b96d95d505f7`. Independent Standards and Spec
+reviews found no issues. The merged tree at
+`29f5d51eeaf3f398b815c7582387c10d894d67f8` is identical to that reviewed source.
+Its three ordinary Go jobs correctly began with cache misses.
+
+The prose-only [PR #44](https://github.com/ziahamza/layercache/pull/44) at
+`e7d0030e55e098986d121425ba187d9ee55030db` preserved all 13 required contexts.
+All 14 GitHub jobs passed. Its
+[CI](https://github.com/ziahamza/layercache/actions/runs/38741889687),
+[PostgreSQL](https://github.com/ziahamza/layercache/actions/runs/38741889363) and
+[local-to-CI](https://github.com/ziahamza/layercache/actions/runs/38741889396)
+workflows allocated **2m15s**, down from 40m54s in the prior prose-only PR
+(94.5% less runner time). Their first-job-start to last-job-completion span
+fell from 5m21s to 27s. Job allocation excludes queue time; the active span
+starts with the first job and may include scheduling gaps. External review is
+excluded. These measurements do not establish dollar savings for free public
+runners.
+
+The ordinary Go lanes' setup/build/test steps and native, browser, protocol and
+performance work were skipped as intended. Workflow/shell checks and all 16
+classifier and profile controls executed. Main continues to run full
+qualification.
+
 Measure a later main run with native Go cache hits while tests execute fresh.
 Report observed job spans and cache bytes rather than inferred dollar savings.
 Outstanding work remains in [TODOs](../TODOs.md).
