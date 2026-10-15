@@ -215,10 +215,17 @@ assert.equal(value, undefined); console.log('profile-miss');\n`, { mode: 0o600 }
     stages, testsAlwaysFresh: true, hostCacheDirectoriesArchived: false, bootstrapIncluded: false,
     qualification: 'loopback Actions v1 archive of private Go compiler cache; stdlib-only package; no hosted or Phone claim' };
 } finally {
-  await stopChildren(processes);
-  await finishSignals();
-  // Default runs retain no credentials, compiler state or subprocess logs.
-  if (process.env.KEEP_GO_DOGFOOD_QA !== '1') rmSync(root, { recursive: true, force: true });
+  try {
+    await stopChildren(processes);
+  } finally {
+    try {
+      await finishSignals();
+    } finally {
+      // Default runs retain no credentials, compiler state or subprocess logs,
+      // including when a child requires forced shutdown.
+      if (process.env.KEEP_GO_DOGFOOD_QA !== '1') rmSync(root, { recursive: true, force: true });
+    }
+  }
 }
 receipt.totalWallMs = Math.round(performance.now() - started);
 receipt.cleanup = { processesStopped: true, privateStateRemoved: process.env.KEEP_GO_DOGFOOD_QA !== '1' };
