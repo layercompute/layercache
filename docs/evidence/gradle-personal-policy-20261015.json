@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "gradle-personal-policy-v1",
+  "passed": true,
+  "sourceRevision": "3fa8aa7e2e87ae34376b0c98ded5474aaa7cbf0b",
+  "regression": {
+    "baselineRuntimeRevision": "c6cb8a51283b04d6f684d7c4a8338f1f5917c109",
+    "newGradlePersonalControlsAddedBeforeFix": true,
+    "observedBeforeFix": "Both Gradle Personal artifact and owner-OIDC paths returned HTTP404 instead of200.",
+    "redLogSha256": "577a548d3fbfe50497052ae87027345161307658577236300c202a12721bce16",
+    "fix": "Forward /v1/gradle-cache/ through the existing managed portal project gateway."
+  },
+  "validation": [
+    {
+      "command": "go test ./internal/portal -count=1",
+      "passed": true,
+      "packageTestSeconds": 11.152,
+      "logSha256": "0b3fbb70e0741f3efd6d60c89a5e1c0567810ada4f5c5e95fc63d98a36d6f2f2"
+    },
+    {
+      "command": "go test -race ./internal/portal -run 'TestPersonalCacheAPIAndSameRepositoryArtifactsRemainPrivate|TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy' -count=1",
+      "passed": true,
+      "packageTestSeconds": 2.517,
+      "logSha256": "7983302936fbe016266c078c2c7db36356f5f2f46a2bc6980d6a6686aa9f5619"
+    }
+  ],
+  "coverage": [
+    "Distinct Personal and Team outputs for the same repository, preserved across restart",
+    "Non-owner cannot obtain a Personal project capability",
+    "Only owner signed stable actor receives Personal CI authority",
+    "Owner main writer and PR read-only policy",
+    "Previously issued owner tokens denied after owner changes"
+  ],
+  "scope": {
+    "realPortalGatewayAndArtifactEngine": true,
+    "realGitHubNetworkOrProductionOAuth": false,
+    "nativeGradleArchiveClientEvidence": "gradle-native-private-20261015.json",
+    "installationOrDeployment": false
+  }
+}

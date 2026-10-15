@@ -136,6 +136,21 @@ hit counts alone.
   savings, installation and gateway rollout remain separate acceptance targets.
   Public Gradle publication remains disabled.
 
+  First protocol slice is source-qualified at `3fa8aa7e2e87ae34376b0c98ded5474aaa7cbf0b`.
+  The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
+  22 actual Gradle 9.3.1/JDK 17 commands in 139.112s, with empty independent
+  Local/private consumers restoring exact compiled and verification outputs
+  as `FROM-CACHE` with zero actions. It covers native duplicate winners,
+  input/compiler/profile misses, failed-task reruns, read-only/revoked clients,
+  explicit fresh bypass, init conflicts, quota and service outage behavior.
+  [Personal policy controls](docs/evidence/gradle-personal-policy-20261015.json)
+  reproduce and fix the missing managed-portal route, then pass actual isolation,
+  restart, owner-only CI, PR-reader and former-owner revocation checks, including
+  race detection. The [contract](docs/gradle-cache.md) separates this Java
+  protocol proof from Phone Android adoption and measured build savings.
+  Next: qualify an isolated Phone-native Gradle producer/fresh consumer, then
+  coordinate an installed release and gateway upgrade before workflow adoption.
+
 - [ ] **Deliver exact LLM response replay through existing model interfaces.**
   Owner: LayerCache; first slice merged, application adoption pending.
   First target: the AI SDK model
@@ -286,6 +301,13 @@ hit counts alone.
 
 ## Delivered baseline
 
+- [x] Source-qualified native Gradle HTTP over existing bounded artifact storage,
+  expiring process credentials and an opt-in init script, source `3fa8aa7`.
+  The [22-command real-client qualification](docs/evidence/gradle-native-private-20261015.json)
+  and [managed Personal policy proof](docs/evidence/gradle-personal-policy-20261015.json)
+  pass. The Linux native-client CI gate uses the pinned Gradle distribution and
+  candidate binary. Installation, gateway rollout, Local forwarding and Phone
+  whole-build savings remain open above.
 - [x] Phone's ten independent mobile test groups, all thirty isolated workflow
   processes and mandatory typechecking, reviewed source `b7279389` merged in
   [Phone #298](https://github.com/ziahamza/phone-app/pull/298) as

@@ -97,6 +97,17 @@ private Gradle homes.
 
 ## Qualification and scope
 
+Reviewed runtime source `3fa8aa7e2e87ae34376b0c98ded5474aaa7cbf0b` passes
+[22 real-client commands](evidence/gradle-native-private-20261015.json) with
+Gradle 9.3.1 and JDK 17.0.20.1. Total qualification time is 139.112s, including
+25.490s of setup. The cold Local command takes 5.350s and its empty consumer
+4.948s; direct private production takes 5.380s and its empty reader 4.979s.
+Both consumers restore exact compiled and verification outputs with zero task
+actions. Fresh Gradle initialization dominates this small Java fixture; these
+times are not Android savings. The receipt records 7,176 upload bytes and
+10,316 download bytes from native requests; independent archive verification
+downloads are outside those counts.
+
 The [real-client runner](../qa/gradle-native/README.md) uses pinned Gradle 9.3.1
 and fresh compatible consumers. Its receipt distinguishes executed tasks from
 native `FROM-CACHE` outcomes, verifies exact outputs, and records complete
@@ -106,7 +117,8 @@ revocation, concurrent duplicates, interrupted uploads, integrity and quota
 pressure. Source qualification is separate from CLI installation, application
 adoption and gateway deployment.
 
-The managed portal's Personal controls also exercise the Gradle route: Personal
+The [managed portal's Personal controls](evidence/gradle-personal-policy-20261015.json)
+also exercise the Gradle route: Personal
 and Team projects for the same repository retain different bytes across restart;
 only the Personal owner's signed CI identity can obtain authority; PR access is
 read-only; and owner changes revoke previously issued credentials. These controls
