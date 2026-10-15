@@ -34,7 +34,8 @@
     "test:dashboard": "node qa/dashboard/run.ts",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "test:cloud": "node qa/cloud/run.ts",
-    "qa:nx-native": "node --test qa/nx-native/*.test.mjs && node qa/nx-native/run.mjs"
+    "qa:nx-native": "node --test qa/nx-native/*.test.mjs && node qa/nx-native/run.mjs",
+    "qa:gradle-native": "node qa/gradle-native/run.mjs"
   },
   "dependencies": {
     "ajv": "8.17.1",

@@ -62,8 +62,19 @@ hit counts alone.
   Separate vendor queue/execution from Actions allocation and use actual billing
   evidence before publishing a monthly-dollar comparison.
 
+  The first post-merge main observation at `716c8442`,
+  [Check 38718878987](https://github.com/ziahamza/phone-app/actions/runs/38718878987),
+  passes all selected gates. Its unit job takes 6m15s, including a 2m02.667s
+  Turbo stage with 20 of 27 tasks cached. A prior runner snapshot restores;
+  the direct Team report has zero hits among seven eligible tasks. Keep those
+  native hits separate from the earlier directly attributed Team qualification.
+
 - [ ] **Reuse trusted exact-commit Check results in manual release preparation.**
   Owner: Phone CI/release owner, with LayerCache reviewing context and invalidation.
+  Active implementation is [Phone #310](https://github.com/ziahamza/phone-app/pull/310),
+  including latest-attempt/race controls, two-worker fallback and native
+  fingerprint qualification. Keep application workflows with that owner;
+  verify the actual resulting scope and post-merge measurement before completion.
   [Production #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
   passed RunCloud-to-TestFlight with zero GitHub Mac jobs, but forced manual
   preparation took 28m18s, including 23m18s of repeated general validation and
@@ -106,6 +117,24 @@ hit counts alone.
 
 
 ## P1: LLM and native outputs across machines
+
+- [ ] **Add Gradle's native HTTP task cache for Phone Android.**
+  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
+  Current next implementation, while the Phone owner handles release reuse.
+  The October 15 Android acceptance spent 16m11s in the build step inside a
+  21m02s compile job. Current Phone source already enables Gradle build caching
+  and ccache. The avoidable fraction and transfer overhead remain unmeasured.
+  Keep Gradle's native keys, executor and archives. Add scoped GET/PUT over the
+  existing bounded artifact engine and an opt-in credential-free init script.
+  Qualify Local standalone and direct Personal/Team endpoints with the actual
+  pinned Gradle client: trusted producer, empty compatible consumer, exact
+  outputs, input/profile misses, failed-task reruns, read-only PRs, revocation,
+  outages, cancellation, duplicates and quota pressure. Preserve source/profile
+  identity and report native outcomes, transfer bytes and complete command time.
+  A Local acknowledgement does not establish private publication. Automatic
+  Local-to-private forwarding, Phone workflow adoption, whole Android build
+  savings, installation and gateway rollout remain separate acceptance targets.
+  Public Gradle publication remains disabled.
 
 - [ ] **Deliver exact LLM response replay through existing model interfaces.**
   Owner: LayerCache; first slice merged, application adoption pending.
@@ -189,14 +218,6 @@ hit counts alone.
   Xcode/SDK/architecture or Android toolchain identity. Verify install/launch
   and current Metro JS. Debug clients and bundled Release QA apps have distinct
   identities; physical iOS devices and EAS Build retain their own contracts.
-
-- [ ] **Add Gradle's native HTTP task cache for Phone Android.**
-  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
-  Keep Gradle's keys and executor and retain ccache for C++. Implement bounded
-  scoped GET/PUT and its native authentication/error semantics. Prove a trusted
-  producer, empty compatible local/CI consumers, exact outputs, toolchain/input
-  misses, read-only PRs, revocation, outages and quota pressure. Measure actual
-  whole builds before broadening rollout.
 
 - [ ] **Measure residual iOS work before extending shared LLVM transport.**
   Owner: Phone native owner. Two recent RunCloud samples already hit all 1,725

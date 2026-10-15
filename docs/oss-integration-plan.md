@@ -63,9 +63,12 @@ Turbo publication confirmation and explicit read-only/read-write/fresh task
 policies are in beta.3. Xcode LLVM replay is implemented with local snapshot
 transport; complete streamed graph retention merged in #30 for
 [#25](https://github.com/ziahamza/layercache/issues/25). Nx's native Local and
-direct private endpoints merged in #31. Bazel, Gradle HTTP and
-sccache remote adapters remain future work. Nx capability support does not provide an Nx upload queue or remote read-through. New
-adapters must extend those boundaries deliberately.
+direct private endpoints merged in #31. The current
+[Gradle HTTP candidate](gradle-cache.md) adds Local standalone and direct private
+endpoints through the native client. It is separate from the installed beta.4
+and gateway rollout. Bazel and sccache remain future work. Neither Nx nor Gradle
+currently forwards Local writes or misses to a private endpoint; those bridges
+need their own durable publication and confirmation qualification.
 
 ## Native Nx and the remaining private-cache bridge
 
@@ -150,12 +153,16 @@ separated writer authority. Use the native API rather than those plugins.
 
 | Integration | Reuse | Concrete next work |
 | --- | --- | --- |
-| Gradle, next | Native task hashing and `HttpBuildCache`; Gradle is [Apache-2.0](https://github.com/gradle/gradle/blob/master/LICENSE). | Add bounded GET/PUT opaque artifacts and a narrow Basic-auth bridge to scoped credentials. An init script can configure it without a custom Gradle plugin. Qualify audited Phone Android tasks; cache outputs and task execution remain distinct from live runtime tests. |
+| Gradle, current candidate | Native task hashing and `HttpBuildCache`; Gradle is [Apache-2.0](https://github.com/gradle/gradle/blob/v9.3.1/LICENSE). | [Bounded GET/PUT and opt-in init script](gradle-cache.md) reuse scoped private credentials. Qualify real native producer/consumer behavior, then audited Phone Android tasks. Local forwarding and live runtime assertions remain separate. |
 | Bazel, after protocol qualification | [bazel-remote, Apache-2.0](https://github.com/buchgr/bazel-remote/blob/1605e32b5921d05e373407b98b3c021e40c277da/LICENSE), pinned executable first. | Put an authorization gateway above isolated per-project/profile instances with explicit byte budgets. Add a real Bazel fixture before moving a repository. |
 | sccache | [Apache-2.0 compiler client](https://github.com/mozilla/sccache/blob/7bdb9bdcde435fd365e291715a6003f3ca28c2f9/LICENSE). | Add a separate bounded WebDAV namespace and use its bearer token, key prefix and READ_ONLY mode. Set `SCCACHE_WEBDAV_DISABLE_CREATE_DIR=true` when the gateway implements only object operations. |
 
 Gradle's built-in remote protocol uses GET/PUT opaque keys, 404 misses and 2xx
-success; 413 declines an oversize write. It supports Basic credentials, separate
+success; 413 declines an oversize write. The pinned 9.3.1 client warns and
+disables its remote after that response, so it is not an invisible quota decline.
+Its archives contain variable origin metadata; duplicate native keys retain the
+first committed winner without requiring equal archive bytes.
+It supports Basic credentials, separate
 local/remote settings and remote push disabled by default. Keep its hashing and
 task declarations. [Gradle protocol and configuration](https://docs.gradle.org/current/userguide/build_cache.html).
 

@@ -84,10 +84,13 @@ multiple-root native pressure gate passed. These implementations are included in
 beta.4; they do not deploy a hosted service. See the
 [verified release instructions](../scripts/README.md).
 
-Complete that private-cache bridge and measure real Phone whole-job savings
-before expanding adoption. Native Gradle HTTP for Phone Android comes next,
-followed by an isolated, pinned `bazel-remote` sidecar after protocol qualification,
-then sccache. Require real-client cold upload, fresh restore, changed-input
+The Nx private-cache bridge remains open. The current
+[Gradle native candidate](gradle-cache.md) targets a concrete Phone Android
+workload while the Phone owner handles repeated release validation. It qualifies
+Local standalone and direct Personal/Team endpoints; Local-to-private forwarding
+and Phone whole-build savings remain separate. Follow with an isolated, pinned
+`bazel-remote` sidecar after protocol qualification, then sccache.
+Require real-client cold upload, fresh restore, changed-input
 misses and private-project isolation. Reuse native protocols and permissively
 licensed engines; keep their task hashing and scheduling. See the
 [integration plan](oss-integration-plan.md) for the remaining work and the
