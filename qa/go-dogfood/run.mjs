@@ -11,11 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { cleanupOnSignals, stopChild, stopChildren, trackChild } from '../nx-native/processes.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const receiptPath = process.env.GO_DOGFOOD_QA_RECEIPT ? resolve(process.env.GO_DOGFOOD_QA_RECEIPT) : undefined;
+// Invalidate before even creating private state: setup itself can fail.
+if (receiptPath) rmSync(receiptPath, { force: true });
 const root = mkdtempSync(join(tmpdir(), 'layercache-go-dogfood-'));
 chmodSync(root, 0o700);
 const started = performance.now();
 const binary = process.env.LAYERCACHE_BIN;
-const receiptPath = process.env.GO_DOGFOOD_QA_RECEIPT ? resolve(process.env.GO_DOGFOOD_QA_RECEIPT) : undefined;
 const client = process.env.ACTIONS_CACHE_MODULE ?? join(repo, 'action/cache/node_modules/@actions/cache/lib/cache.js');
 const processes = [];
 const cancellation = new AbortController();
@@ -127,8 +129,6 @@ async function start(config, address) {
 }
 
 try {
-  // A failed attempt must not leave a previous run's successful result.
-  if (receiptPath) rmSync(receiptPath, { force: true });
   assert.equal(process.platform, 'linux', 'this bounded qualification uses Linux');
   assert.equal(process.arch, 'x64', 'this qualification varies GOAMD64 on amd64');
   assert.ok(binary && isAbsolute(binary) && existsSync(binary), 'LAYERCACHE_BIN must name an existing absolute candidate binary');
