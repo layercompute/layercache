@@ -58,8 +58,14 @@ job spans, excluding queue time and billing multipliers. The primary
 and [main CI run](https://github.com/ziahamza/layercache/actions/runs/38734588412)
 account for 33m11s and 33m57s respectively; companion workflows make up the rest.
 
-Qualification requires a full implementation PR, then an actual prose-only PR
-with every required context present and only the intended steps skipped.
-Measure a later main run with native Go cache hits while tests execute fresh.
-Report observed job spans and cache bytes rather than inferred dollar savings.
-Outstanding work remains in [TODOs](../TODOs.md).
+The full implementation [PR #43](https://github.com/ziahamza/layercache/pull/43)
+passed all 18 reported checks, including all 13 required contexts, on source
+`0045810b3c69cf448633fd34a236b96d95d505f7`. Independent Standards and Spec
+reviews found no issues. The merged tree at
+`29f5d51eeaf3f398b815c7582387c10d894d67f8` is identical to that reviewed source.
+Its three ordinary Go jobs correctly began with cache misses.
+
+An actual prose-only follow-up must preserve every required context and skip
+only the intended steps. Measure a later main run with native Go cache hits
+while tests execute fresh. Report observed job spans and cache bytes rather
+than inferred dollar savings. Outstanding work remains in [TODOs](../TODOs.md).

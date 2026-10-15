@@ -26,6 +26,11 @@ hit counts alone.
   #42 PR used 40m54s across its selected workflows and main used 36m52s, without
   queue time or billing multipliers. Record cold/warm controls and hosted checks
   before marking the delivered slice complete.
+  Source: [#43](https://github.com/ziahamza/layercache/pull/43) landed the
+  conservative prose lane and native Go compilation reuse, with all 18 checks
+  green and independent Standards/Spec reviews. Hosted prose-lane and later
+  main cache-hit measurements remain acceptance work; standalone LayerCache
+  transport adoption remains separately unqualified.
 
 - [ ] **Keep standalone OSS independent from managed cloud enrollment.**
   Owner: LayerCache product and control plane. Standalone CLI/daemon use is
