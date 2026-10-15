@@ -1,0 +1,73 @@
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+
+plugins {
+    id 'java'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+tasks.named('compileJava') {
+    options.release = providers.gradleProperty('fixtureRelease').map { it.toInteger() }.orElse(17)
+    doFirst {
+        new File(System.getenv('GRADLE_FIXTURE_COUNTER')).append('compileJava\n')
+        println 'GRADLE_FIXTURE_EXEC task=compileJava'
+    }
+}
+
+// A dependency-free current-runtime assertion against the compiled Java output.
+// Gradle owns this task's complete declared identity, packing and execution.
+@CacheableTask
+abstract class VerifyFixture extends DefaultTask {
+    @InputDirectory
+    @PathSensitive(PathSensitivity.RELATIVE)
+    File classesDirectory
+
+    @Input
+    String expectedGreeting
+
+    @Input
+    boolean failFixture
+
+    @Input
+    String fixtureLabel
+
+    @Input
+    String runtimeIdentity
+
+    @OutputFile
+    File resultFile
+
+    @Inject
+    abstract ExecOperations getExecOperations()
+
+    @TaskAction
+    void verify() {
+        new File(System.getenv('GRADLE_FIXTURE_COUNTER')).append('verifyFixture\n')
+        println 'GRADLE_FIXTURE_EXEC task=verifyFixture'
+        if (failFixture) throw new GradleException('Deliberate fixture assertion failure')
+        def output = new ByteArrayOutputStream()
+        execOperations.exec {
+            commandLine new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                '-cp', classesDirectory.absolutePath, 'example.Hello'
+            standardOutput = output
+        }
+        def greeting = output.toString('UTF-8').trim()
+        if (greeting != expectedGreeting) throw new GradleException('Compiled greeting did not match the declared expectation')
+        resultFile.parentFile.mkdirs()
+        resultFile.text = greeting + '\n' + fixtureLabel + '\n'
+    }
+}
+
+tasks.register('verifyFixture', VerifyFixture) {
+    dependsOn tasks.named('compileJava')
+    classesDirectory = layout.buildDirectory.dir('classes/java/main').get().asFile
+    expectedGreeting = providers.environmentVariable('GRADLE_FIXTURE_EXPECTED').orElse('hello baseline').get()
+    failFixture = providers.environmentVariable('GRADLE_FIXTURE_FAIL').orElse('0').get() == '1'
+    fixtureLabel = providers.environmentVariable('GRADLE_FIXTURE_LABEL').orElse('baseline').get()
+    runtimeIdentity = ['java.runtime.version', 'java.vendor', 'os.name', 'os.arch']
+        .collect { System.getProperty(it) }.join('/')
+    resultFile = layout.buildDirectory.file('verification/result.txt').get().asFile
+}
