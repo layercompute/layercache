@@ -1,8 +1,8 @@
 // Actions transports only Go's private compiler cache; Go still executes tests.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -15,6 +15,7 @@ const root = mkdtempSync(join(tmpdir(), 'layercache-go-dogfood-'));
 chmodSync(root, 0o700);
 const started = performance.now();
 const binary = process.env.LAYERCACHE_BIN;
+const receiptPath = process.env.GO_DOGFOOD_QA_RECEIPT ? resolve(process.env.GO_DOGFOOD_QA_RECEIPT) : undefined;
 const client = process.env.ACTIONS_CACHE_MODULE ?? join(repo, 'action/cache/node_modules/@actions/cache/lib/cache.js');
 const processes = [];
 const cancellation = new AbortController();
@@ -126,6 +127,8 @@ async function start(config, address) {
 }
 
 try {
+  // A failed attempt must not leave a previous run's successful result.
+  if (receiptPath) rmSync(receiptPath, { force: true });
   assert.equal(process.platform, 'linux', 'this bounded qualification uses Linux');
   assert.equal(process.arch, 'x64', 'this qualification varies GOAMD64 on amd64');
   assert.ok(binary && isAbsolute(binary) && existsSync(binary), 'LAYERCACHE_BIN must name an existing absolute candidate binary');
@@ -229,6 +232,14 @@ assert.equal(value, undefined); console.log('profile-miss');\n`, { mode: 0o600 }
 }
 receipt.totalWallMs = Math.round(performance.now() - started);
 receipt.cleanup = { processesStopped: true, privateStateRemoved: process.env.KEEP_GO_DOGFOOD_QA !== '1' };
-if (process.env.GO_DOGFOOD_QA_RECEIPT) writeFileSync(resolve(process.env.GO_DOGFOOD_QA_RECEIPT), JSON.stringify(receipt, null, 2) + '\n', { mode: 0o600 });
+if (receiptPath) {
+  const temporary = join(dirname(receiptPath), `.layercache-go-receipt-${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, JSON.stringify(receipt, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    renameSync(temporary, receiptPath);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
 if (process.env.KEEP_GO_DOGFOOD_QA === '1') console.log(`Private QA state: ${root}`);
 console.log(JSON.stringify(receipt, null, 2));

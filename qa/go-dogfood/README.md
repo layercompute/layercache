@@ -43,8 +43,10 @@ while reusing standard library outputs; the receipt records compiled package
 names and complete subprocess wall times. Native `go test` result replay is
 never used as evidence of fresh execution.
 
-The receipt contains no URLs, headers, credentials, absolute workspace paths
-or subprocess logs. Each command has a 120-second timeout and an 8 MiB output
+The output receipt path is invalidated before work begins; a new success receipt
+is published atomically only after qualification and cleanup succeed. The receipt
+contains no URLs, headers, credentials, absolute workspace paths or subprocess
+logs. Each command has a 120-second timeout and an 8 MiB output
 budget; owned process groups are stopped and temporary state removed on
 completion or failure. `KEEP_GO_DOGFOOD_QA=1` retains a private mode-0700
 directory for diagnosis; remove it after inspection. Actions archive runs do
