@@ -12,6 +12,31 @@ hit counts alone.
 
 ## P0: reliable Phone reuse
 
+- [ ] **Keep LayerCache's own CI fast and exercise its OSS cache path.**
+  Owner: LayerCache. Use standard GitHub-hosted runners for this public OSS
+  repository. Keep main, manual qualification and relevant code-change gates
+  complete. Reduce unrelated work for conservatively classified prose-only PRs
+  without losing required check names; comparison failures and unknown files
+  run full checks. Reuse native Go compilation and dependency outputs while
+  keeping tests and race checks fresh. Preserve isolated cold protocol and
+  performance fixtures. Qualify bounded, account-free standalone dogfooding
+  through existing native clients before claiming local-to-CI reuse or adopting
+  an extra transport whose setup/transfer costs erase the saving.
+  Compare actual allocated job spans and full command time. The prior docs-only
+  #42 PR used 40m54s across its selected workflows and main used 36m52s, without
+  queue time or billing multipliers. Record cold/warm controls and hosted checks
+  before marking the delivered slice complete.
+
+- [ ] **Keep standalone OSS independent from managed cloud enrollment.**
+  Owner: LayerCache product and control plane. Standalone CLI/daemon use is
+  account-free on local storage or one self-hosted remote. Signup and scoped
+  tokens authorize Team collaboration, multiple managed cache hosts and hosted
+  storage. Accounts can bring their own hosts, choose hosted storage, or both.
+  Preserve Personal/Team/Public visibility and complete native input context.
+  Document the boundary now; qualify account enrollment, host registration,
+  project authorization, token revocation and storage routing before claiming a
+  deployed managed service. Existing private-cache fixtures are not that rollout.
+
 - [ ] **Qualify required file handoffs independently of evictable caches.**
   Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
   [Phone #299](https://github.com/ziahamza/phone-app/pull/299) repairs exact

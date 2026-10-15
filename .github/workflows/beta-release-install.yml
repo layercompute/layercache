@@ -4,11 +4,9 @@ on:
   pull_request:
     paths:
       - .github/workflows/beta-release-install.yml
-      - README.md
       - scripts/README.md
       - action/setup/README.md
       - action/turbo/README.md
-      - docs/launch-plan.md
   workflow_dispatch:
 
 permissions:

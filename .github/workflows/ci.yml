@@ -24,27 +24,40 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify CI changes
+        id: scope
+        uses: ./.github/actions/ci-scope
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        if: steps.scope.outputs.mode != 'docs'
         with:
           node-version: '24.13.0'
       - run: npm install --global pnpm@10.34.5
+        if: steps.scope.outputs.mode != 'docs'
       - run: pnpm install --frozen-lockfile
+        if: steps.scope.outputs.mode != 'docs'
       - run: pnpm check
+        if: steps.scope.outputs.mode != 'docs'
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        if: steps.scope.outputs.mode != 'docs'
         with:
           go-version: '1.25.13'
           cache: false
       - name: Test native client against the installed server
+        if: steps.scope.outputs.mode != 'docs'
         run: |
           go build -o "$RUNNER_TEMP/layercache-native-test" ./cmd/layercache
           LAYERCACHE_SETUP_BINARY="$RUNNER_TEMP/layercache-native-test" pnpm test
       - name: Gate candidate with real Nx native HTTP acceptance
+        if: steps.scope.outputs.mode != 'docs'
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-native-test
           NX_QA_OUTPUT: ${{ runner.temp }}/nx-native-evidence.json
         run: pnpm qa:nx-native
       - name: Preserve sanitized Nx evidence
-        if: always()
+        if: (steps.scope.outputs.mode != 'docs') && (always())
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nx-native-evidence-${{ matrix.os }}
@@ -52,7 +65,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Gate the native Gradle protocol on Linux
-        if: runner.os == 'Linux'
+        if: (steps.scope.outputs.mode != 'docs') && (runner.os == 'Linux')
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-native-test
           GRADLE_QA_OUTPUT: ${{ runner.temp }}/gradle-native-evidence.json
@@ -68,7 +81,7 @@ jobs:
           export GRADLE_BIN="$RUNNER_TEMP/gradle-native/gradle-9.3.1/bin/gradle"
           pnpm qa:gradle-native
       - name: Preserve sanitized Gradle evidence
-        if: always() && runner.os == 'Linux'
+        if: (steps.scope.outputs.mode != 'docs') && (always() && runner.os == 'Linux')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gradle-native-evidence-linux
@@ -76,6 +89,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Verify shipped JavaScript matches TypeScript
+        if: steps.scope.outputs.mode != 'docs'
         run: git diff --exit-code -- native/dist action/native/dist internal/dashboard/assets/app.js internal/portal/assets/app.js
 
   performance:
@@ -92,26 +106,41 @@ jobs:
         browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify CI changes
+        id: scope
+        uses: ./.github/actions/ci-scope
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        if: steps.scope.outputs.mode != 'docs'
         with:
           node-version: '24.13.0'
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        if: steps.scope.outputs.mode != 'docs'
         with:
           go-version: '1.25.13'
           cache: false
       - run: npm install --global pnpm@10.34.5
+        if: steps.scope.outputs.mode != 'docs'
       - run: pnpm install --frozen-lockfile
+        if: steps.scope.outputs.mode != 'docs'
       - run: pnpm exec playwright install --with-deps "${{ matrix.browser }}"
+        if: steps.scope.outputs.mode != 'docs'
       - run: pnpm typecheck && pnpm build
+        if: steps.scope.outputs.mode != 'docs'
       - name: Build dashboard candidate
+        if: steps.scope.outputs.mode != 'docs'
         run: go build -o "$RUNNER_TEMP/layercache-dashboard" ./cmd/layercache
       - name: Exercise real cache connections and browser failures
+        if: steps.scope.outputs.mode != 'docs'
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-dashboard
           DASHBOARD_BROWSER: ${{ matrix.browser }}
           QA_OUTPUT: ${{ runner.temp }}/dashboard-browser-results
         run: pnpm test:dashboard
       - name: Exercise self-serve cloud onboarding and team isolation
+        if: steps.scope.outputs.mode != 'docs'
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-dashboard
           DASHBOARD_BROWSER: ${{ matrix.browser }}
@@ -128,6 +157,8 @@ jobs:
         with:
           go-version: "1.25.13"
           cache: false
+      - name: Test conservative scope and Go cache profiles
+        run: node --test .github/actions/ci-scope/*.test.mjs .github/actions/go-cache-profile/*.test.mjs
       - name: Install pinned lint tools
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
@@ -164,29 +195,52 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify CI changes
+        id: scope
+        uses: ./.github/actions/ci-scope
+      - name: Scope native Go compilation cache
+        if: steps.scope.outputs.mode != 'docs'
+        id: go-cache
+        uses: ./.github/actions/go-cache-profile
       - name: Set up Go
+        if: steps.scope.outputs.mode != 'docs'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.25.13"
-          cache: false
+          cache: ${{ steps.go-cache.outputs.enabled == 'true' }}
+          cache-dependency-path: |
+            go.sum
+            .github/.go-cache-context
+
+      - name: Remove owned Go cache profile before source builds
+        if: always() && steps.go-cache.outputs.enabled == 'true'
+        run: rm -f -- .github/.go-cache-context
 
       - name: Require native x64 runner
+        if: steps.scope.outputs.mode != 'docs'
         run: test "$(uname -m)" = x86_64
 
       - name: Test
+        if: steps.scope.outputs.mode != 'docs'
         run: go test ./... -count=1
 
       - name: Race detector
+        if: steps.scope.outputs.mode != 'docs'
         run: go test -race ./... -count=1
 
       - name: Vet
+        if: steps.scope.outputs.mode != 'docs'
         run: go vet ./...
 
       - name: Build Linux binary
+        if: steps.scope.outputs.mode != 'docs'
         run: go build -trimpath -o /tmp/layercache ./cmd/layercache
 
       - name: Compile Linux arm64 binary
+        if: steps.scope.outputs.mode != 'docs'
         env:
           CGO_ENABLED: "0"
           GOARCH: arm64
@@ -200,26 +254,48 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify CI changes
+        id: scope
+        uses: ./.github/actions/ci-scope
+      - name: Scope native Go compilation cache
+        if: steps.scope.outputs.mode != 'docs'
+        id: go-cache
+        uses: ./.github/actions/go-cache-profile
       - name: Set up Go
+        if: steps.scope.outputs.mode != 'docs'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.25.13"
-          cache: false
+          cache: ${{ steps.go-cache.outputs.enabled == 'true' }}
+          cache-dependency-path: |
+            go.sum
+            .github/.go-cache-context
+
+      - name: Remove owned Go cache profile before source builds
+        if: always() && steps.go-cache.outputs.enabled == 'true'
+        run: rm -f -- .github/.go-cache-context
 
       - name: Require native arm64 runner
+        if: steps.scope.outputs.mode != 'docs'
         run: test "$(uname -m)" = aarch64
 
       - name: Test
+        if: steps.scope.outputs.mode != 'docs'
         run: go test ./... -count=1
 
       - name: Race detector
+        if: steps.scope.outputs.mode != 'docs'
         run: go test -race ./... -count=1
 
       - name: Vet
+        if: steps.scope.outputs.mode != 'docs'
         run: go vet ./...
 
       - name: Build Linux arm64 binary
+        if: steps.scope.outputs.mode != 'docs'
         run: go build -trimpath -o /tmp/layercache ./cmd/layercache
 
   macos-go:
@@ -229,23 +305,44 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify CI changes
+        id: scope
+        uses: ./.github/actions/ci-scope
+      - name: Scope native Go compilation cache
+        if: steps.scope.outputs.mode != 'docs'
+        id: go-cache
+        uses: ./.github/actions/go-cache-profile
       - name: Set up Go
+        if: steps.scope.outputs.mode != 'docs'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.25.13"
-          cache: false
+          cache: ${{ steps.go-cache.outputs.enabled == 'true' }}
+          cache-dependency-path: |
+            go.sum
+            .github/.go-cache-context
+
+      - name: Remove owned Go cache profile before source builds
+        if: always() && steps.go-cache.outputs.enabled == 'true'
+        run: rm -f -- .github/.go-cache-context
 
       - name: Require native arm64 runner
+        if: steps.scope.outputs.mode != 'docs'
         run: test "$(uname -m)" = arm64
 
       - name: Test on the selected macOS runner
+        if: steps.scope.outputs.mode != 'docs'
         run: go test ./... -count=1
 
       - name: Vet
+        if: steps.scope.outputs.mode != 'docs'
         run: go vet ./...
 
       - name: Build macOS binary
+        if: steps.scope.outputs.mode != 'docs'
         run: go build -trimpath -o /tmp/layercache ./cmd/layercache
 
   cache-action:
@@ -258,36 +355,49 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify CI changes
+        id: scope
+        uses: ./.github/actions/ci-scope
       - name: Set up Node.js
+        if: steps.scope.outputs.mode != 'docs'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24.13.0"
 
       - name: Install pinned pnpm
+        if: steps.scope.outputs.mode != 'docs'
         run: npm install --global pnpm@10.34.5
 
       - name: Install locked dependencies
+        if: steps.scope.outputs.mode != 'docs'
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck, test, and verify checked-in bundles
+        if: steps.scope.outputs.mode != 'docs'
         run: pnpm check
 
       - name: Require tracked, clean bundles
+        if: steps.scope.outputs.mode != 'docs'
         run: |
           git ls-files --error-unmatch dist/main/index.js dist/main/package.json dist/post/index.js dist/post/package.json
           git diff --exit-code -- dist
           test -z "$(git status --porcelain --untracked-files=all -- dist)"
 
       - name: Test installer and runner setup
+        if: steps.scope.outputs.mode != 'docs'
         working-directory: .
         run: node --test action/setup/setup.test.mjs scripts/install.test.mjs
       - name: Check native TypeScript Turbo action
+        if: steps.scope.outputs.mode != 'docs'
         working-directory: action/turbo
         run: |
           pnpm install --frozen-lockfile
           pnpm check
       - name: Check native TypeScript BuildKit action
+        if: steps.scope.outputs.mode != 'docs'
         working-directory: action/buildkit
         run: |
           pnpm install --frozen-lockfile

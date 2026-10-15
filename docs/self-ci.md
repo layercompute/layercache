@@ -1,0 +1,65 @@
+# LayerCache's own CI reuse
+
+LayerCache uses standard GitHub-hosted runners for this public MIT repository.
+[GitHub's billing contract](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+makes those runner minutes free. Reducing execution still lowers resource use
+and feedback time. Cache storage has a separate allowance; this change does not
+raise the repository's storage limit or enable paid runners.
+
+## Prose-only PRs
+
+The shared scope action compares the PR's exact base and head with native Git.
+It requires both commits and the expected synthetic merge checkout. Only
+regular, non-executable `README.md`, `TODOs.md` and Markdown under `docs/` qualify.
+Renames are inspected as deletions and additions. Unknown files, evidence JSON,
+policy files, executable bits, symlinks, unavailable history or malformed input
+run full qualification. The classifier uses no GitHub API or extra token.
+
+Matrix jobs and reusable performance checks retain their existing names. The
+prose lane skips their expensive steps and records its decision. Workflow,
+shell, whitespace and classifier checks remain fresh. PostgreSQL services may
+still start before their job's scope decision. Main pushes, manual dispatches
+and other events always execute full qualification.
+
+The immutable beta installer no longer reruns merely for root README or launch
+plan prose. Installer/workflow-specific documentation retains its existing
+triggers. Release acceptance remains independently fresh.
+
+## Native Go compilation reuse
+
+The ordinary Linux x64, Linux arm64 and macOS Go lanes use the pinned
+[`actions/setup-go` cache implementation](https://github.com/actions/setup-go/blob/b7ad1dad31e06c5925ef5d2fc7ad053ef454303e/src/cache-restore.ts).
+Its existing key includes Go version, OS/architecture and dependency-file
+hashes. An additional owner-only temporary profile includes runner image,
+job and effective build settings. Unknown runner identity disables caching.
+The profile is removed before source builds, while the action retains its
+restore key for post-job saving. Go retains source/compiler/flag invalidation.
+
+Tests still use `-count=1`; race detection and vet remain required. The
+[Go cache contract](https://pkg.go.dev/cmd/go@go1.25.13#hdr-Build_and_test_caching)
+separates compiler reuse from test-result replay. Native client, calibrated
+performance, release-installation and local-to-CI qualification jobs retain
+their independent cache setup. No fixture output is warmed by these caches.
+
+This uses GitHub's native cache transport. It does not establish LayerCache
+archive transport savings or live local-to-cloud Go reuse. A useful dogfood
+slice must use bounded repository-owned paths, the existing archive client and
+standalone daemon, and report transfer/setup alongside native compilation and
+fresh test execution. Cloud signup is not a prerequisite for that standalone
+qualification.
+
+## Baseline and acceptance
+
+The prose-only [PR #42](https://github.com/ziahamza/layercache/pull/42) changed
+only TODOs and launch-plan Markdown. Its selected PR workflows allocated
+40m54s across 17 jobs; main allocated 36m52s across 14 jobs. These are summed
+job spans, excluding queue time and billing multipliers. The primary
+[PR CI run](https://github.com/ziahamza/layercache/actions/runs/38733579628)
+and [main CI run](https://github.com/ziahamza/layercache/actions/runs/38734588412)
+account for 33m11s and 33m57s respectively; companion workflows make up the rest.
+
+Qualification requires a full implementation PR, then an actual prose-only PR
+with every required context present and only the intended steps skipped.
+Measure a later main run with native Go cache hits while tests execute fresh.
+Report observed job spans and cache bytes rather than inferred dollar savings.
+Outstanding work remains in [TODOs](../TODOs.md).

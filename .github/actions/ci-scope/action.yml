@@ -1,0 +1,8 @@
+name: Classify CI changes
+description: Select the prose-only PR lane; unknown inputs retain full qualification.
+outputs:
+  mode:
+    description: docs for a verified prose-only PR, otherwise full.
+runs:
+  using: node24
+  main: classify.mjs
