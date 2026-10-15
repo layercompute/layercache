@@ -1,0 +1,55 @@
+import org.gradle.caching.http.HttpBuildCache
+
+// Load explicitly with -I. Gradle still owns --build-cache/--no-build-cache,
+// task keys, execution and its separate filesystem cache.
+def layercacheUrl = System.getenv('LAYER_CACHE_GRADLE_URL')
+def layercacheToken = System.getenv('LAYER_CACHE_GRADLE_TOKEN')
+if (layercacheUrl || layercacheToken) {
+    if (!layercacheUrl || !layercacheToken) {
+        throw new GradleException('LayerCache requires both LAYER_CACHE_GRADLE_URL and LAYER_CACHE_GRADLE_TOKEN.')
+    }
+    URI layercacheEndpoint
+    try {
+        layercacheEndpoint = new URI(layercacheUrl)
+    } catch (Exception ignored) {
+        throw new GradleException('LAYER_CACHE_GRADLE_URL must be an HTTPS or loopback HTTP URL without credentials, query or fragment.')
+    }
+    def host = layercacheEndpoint.host?.toLowerCase(Locale.ROOT)
+    def loopback = host == 'localhost' || host == '[::1]' || host == '::1' ||
+        (host != null && host ==~ /127(?:\.(?:0|[1-9][0-9]{0,2})){3}/ &&
+            host.split(/\./).every { it.toInteger() <= 255 })
+    if (!host || layercacheEndpoint.rawUserInfo != null || layercacheEndpoint.rawQuery != null ||
+        layercacheEndpoint.rawFragment != null || layercacheEndpoint.port == 0 || layercacheEndpoint.port > 65535 ||
+        !(layercacheEndpoint.scheme == 'https' || (layercacheEndpoint.scheme == 'http' && loopback))) {
+        throw new GradleException('LAYER_CACHE_GRADLE_URL must be an HTTPS or loopback HTTP URL without credentials, query or fragment.')
+    }
+    def layercachePush = System.getenv('LAYER_CACHE_GRADLE_PUSH')
+    def layercacheLocalEnabled = System.getenv('LAYER_CACHE_GRADLE_LOCAL_ENABLED')
+    if (layercachePush && !(layercachePush in ['0', '1'])) {
+        throw new GradleException('LAYER_CACHE_GRADLE_PUSH must be 0 or 1.')
+    }
+    if (layercacheLocalEnabled && !(layercacheLocalEnabled in ['0', '1'])) {
+        throw new GradleException('LAYER_CACHE_GRADLE_LOCAL_ENABLED must be 0 or 1.')
+    }
+    // Gradle appends the native task hash to this directory URL.
+    def directoryUrl = layercacheUrl.endsWith('/') ? layercacheUrl : layercacheUrl + '/'
+    gradle.settingsEvaluated { settings ->
+        if (settings.buildCache.remote != null) {
+            throw new GradleException('LayerCache cannot replace an existing remote Gradle build cache. Configure only one remote cache before loading this init script.')
+        }
+        settings.buildCache {
+            if (layercacheLocalEnabled) {
+                local { enabled = layercacheLocalEnabled == '1' }
+            }
+            remote(HttpBuildCache) {
+                url = directoryUrl
+                allowInsecureProtocol = layercacheEndpoint.scheme == 'http'
+                credentials {
+                    username = 'layercache'
+                    password = layercacheToken
+                }
+                push = layercachePush == '1'
+            }
+        }
+    }
+}

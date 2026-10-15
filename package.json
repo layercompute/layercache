@@ -7,6 +7,7 @@
   "exports": {
     ".": "./native/dist/expo.cjs",
     "./client": "./native/dist/client.js",
+    "./gradle/init.gradle": "./native/gradle/init.gradle",
     "./llm": {
       "types": "./native/dist/types/llm.d.ts",
       "import": "./native/dist/llm.js"
@@ -17,6 +18,7 @@
   },
   "files": [
     "native/dist",
+    "native/gradle/init.gradle",
     "native/README.md",
     "native/LLM.md",
     "LICENSE"

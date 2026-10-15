@@ -22,7 +22,7 @@ import (
 
 const ownershipMarkerName = ".layercache-owned.json"
 
-var supportedAdapters = []string{"turbo", "actions", "buildkit", "nx"}
+var supportedAdapters = []string{"turbo", "actions", "buildkit", "nx", "gradle"}
 
 type diagnosticCheck struct {
 	OK     bool   `json:"ok"`
@@ -507,7 +507,7 @@ func runBypass(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	flags := flag.NewFlagSet("bypass", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", defaultPath, "configuration file")
-	adapter := flags.String("adapter", "", "adapter to bypass: turbo, actions, buildkit, nx, or all")
+	adapter := flags.String("adapter", "", "adapter to bypass: turbo, actions, buildkit, nx, gradle, or all")
 	clearBypass := flags.Bool("clear", false, "clear bypasses (all when --adapter is omitted)")
 	jsonOutput := flags.Bool("json", false, "print JSON")
 	if err := flags.Parse(args); err != nil {
@@ -517,7 +517,7 @@ func runBypass(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return errors.New("bypass does not accept positional arguments")
 	}
 	if *adapter == "" && !*clearBypass {
-		return errors.New("--adapter is required (turbo, actions, buildkit, nx, or all)")
+		return errors.New("--adapter is required (turbo, actions, buildkit, nx, gradle, or all)")
 	}
 	if *adapter != "" && *adapter != "all" && !isSupportedAdapter(*adapter) {
 		return fmt.Errorf("unknown adapter %q", *adapter)
