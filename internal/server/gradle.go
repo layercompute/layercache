@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -156,6 +157,11 @@ func (server *Server) putGradle(writer http.ResponseWriter, request *http.Reques
 	}
 	reader := &gradleUploadReader{ctx: request.Context(), body: io.LimitReader(request.Body, maximum+1), expected: request.ContentLength, maximum: maximum}
 	_, _, err = server.store.Put(request.Context(), key, artifact.Metadata{}, reader)
+	if reader.terminalErr != nil {
+		// Cloud error redaction may remove wrapping. The reader owns the
+		// canonical request failure, independently of backend error formatting.
+		err = reader.terminalErr
+	}
 	if errors.Is(err, artifact.ErrConflict) {
 		// Gradle archives include origin metadata, so equal task keys can have
 		// different bytes. Retain the committed first winner and acknowledge the
@@ -181,18 +187,33 @@ func (server *Server) putGradle(writer http.ResponseWriter, request *http.Reques
 // Check length and cancellation before Put sees EOF and commits. Unknown-length
 // native uploads are accepted, while every stream is limited to capacity + 1.
 type gradleUploadReader struct {
-	ctx      context.Context
-	body     io.Reader
-	expected int64
-	maximum  int64
-	received int64
+	ctx         context.Context
+	body        io.Reader
+	expected    int64
+	maximum     int64
+	received    int64
+	terminalErr error
 }
 
-func (reader *gradleUploadReader) Read(buffer []byte) (int, error) {
+func (reader *gradleUploadReader) Read(buffer []byte) (count int, err error) {
+	defer func() {
+		if err != nil && !errors.Is(err, io.EOF) {
+			if reader.terminalErr == nil {
+				reader.terminalErr = err
+			}
+			// The S3 SDK treats exact io.ErrUnexpectedEOF as a valid final
+			// multipart part. A distinct wrapper preserves rejection, including
+			// when io.ReadFull consumes a full buffer and discards this error.
+			err = fmt.Errorf("read Gradle upload: %w", reader.terminalErr)
+		}
+	}()
+	if reader.terminalErr != nil {
+		return 0, reader.terminalErr
+	}
 	if err := reader.ctx.Err(); err != nil {
 		return 0, err
 	}
-	count, err := reader.body.Read(buffer)
+	count, err = reader.body.Read(buffer)
 	reader.received += int64(count)
 	if reader.received > reader.maximum {
 		return count, artifact.ErrQuota
