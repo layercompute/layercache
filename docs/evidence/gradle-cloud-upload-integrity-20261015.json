@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "gradle-cloud-upload-integrity-v1",
+  "passed": true,
+  "sourceRevision": "3b9ded989140abadedb476cfc29fc100163c9597",
+  "baselineRuntimeRevision": "b46d198035175156cd7fca05d0f10cfe721ab718",
+  "backend": {
+    "metadata": "real PostgreSQL 16, isolated disposable schema",
+    "objectClient": "production minio-go/v7 v7.0.95",
+    "objectEndpoint": "disposable HTTP S3 multipart/copy fixture",
+    "liveProductionService": false
+  },
+  "regression": {
+    "baselineAppliedThroughGoOverlay": true,
+    "baselineShortDeclaredStream": {
+      "httpStatus": 200,
+      "committedBytes": 7
+    },
+    "baselineLongDeclaredStream": {
+      "httpStatus": 200,
+      "committedBytes": 5
+    },
+    "baselineUnderlyingUnexpectedEOF": {
+      "httpStatus": 200,
+      "committedBytes": 7
+    },
+    "baselineCancelledDuringRead": {
+      "httpStatus": 500
+    },
+    "cause": "The pinned SDK accepts exact io.ErrUnexpectedEOF as a valid final multipart chunk.",
+    "fix": "Wrap and retain terminal reader failures before SDK consumption; recover their canonical HTTP classification after backend redaction.",
+    "globalCloudErrorSanitizerChanged": false,
+    "originalQuotaDiagnosisReproduced": false
+  },
+  "controls": [
+    {
+      "case": "truncated declared stream",
+      "httpStatus": 400
+    },
+    {
+      "case": "overlong declared stream",
+      "httpStatus": 400
+    },
+    {
+      "case": "underlying io.ErrUnexpectedEOF",
+      "httpStatus": 400
+    },
+    {
+      "case": "cancelled during body read",
+      "httpStatus": 400
+    },
+    {
+      "case": "unknown-length stream exceeds capacity",
+      "httpStatus": 413
+    },
+    {
+      "case": "wrapped streaming pool exhaustion",
+      "httpStatus": 413
+    }
+  ],
+  "rejectionAssertions": {
+    "lookupEntries": 0,
+    "artifacts": 0,
+    "usageBytes": 0,
+    "uploadStagingRows": 0,
+    "s3ObjectWrites": 0,
+    "subsequentGetStatus": 404,
+    "requestBodyClosed": true
+  },
+  "fullBufferControl": "A simultaneous error discarded by io.ReadFull remains wrapped on later reads, without reading the body again.",
+  "validation": [
+    {
+      "kind": "baseline red regression",
+      "passed": false,
+      "expectedFailure": true,
+      "packageTestSeconds": 0.485,
+      "logSha256": "c16fc88d997e41dc2e39d27ca25b4e0e37a232d02994ba11c85e966250e99e11"
+    },
+    {
+      "kind": "all Gradle server controls",
+      "passed": true,
+      "packageTestSeconds": 2.536,
+      "logSha256": "c016f95bc286f1d7a6a7e9464f44fc20178a239cde06732506d88850f62e53f6"
+    },
+    {
+      "kind": "real backend and full-buffer race controls",
+      "passed": true,
+      "packageTestSeconds": 1.702,
+      "logSha256": "1c1cad16fc4e3af66035b001be344c5658a45e7d092177260dff6196d18dfffa"
+    }
+  ],
+  "disposableDatabaseRemoved": true,
+  "installationOrDeployment": false,
+  "qualificationBoundary": "Small rejected streams fail before any object bytes reach S3. This regression does not qualify cleanup after earlier multipart parts have uploaded."
+}

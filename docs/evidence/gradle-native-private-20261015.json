@@ -1,35 +1,35 @@
 {
   "schemaVersion": "gradle-native-v1",
   "passed": true,
-  "sourceRevision": "3fa8aa7e2e87ae34376b0c98ded5474aaa7cbf0b",
-  "binaryDigest": "sha256:432084759c5ca16b0acf5697792d622b955a5394a74a5093de3d292d23f5266f",
+  "sourceRevision": "3b9ded989140abadedb476cfc29fc100163c9597",
+  "binaryDigest": "sha256:07fc7c7082f489097270ec869fd67a9b6960caa6f8f62fbca1d264966a55f60e",
   "initScriptDigest": "sha256:b45b47190b38f9f439d2324a49fbc5bbfdb8bf3a8671b63900c11d64ef32eaf5",
   "gradleVersion": "9.3.1",
   "javaVersion": "17.0.20.1",
   "profile": "linux-x64-jdk17-cbb14dcffd94-gradle931-schema1",
-  "setupWallMs": 25490,
+  "setupWallMs": 25590,
   "hashes": {
     "compileJava": "4cf6941a9da9c1732c2f40815ce2dca2",
     "verifyFixture": "f62d70ecac7963a95bba27619ef63c91"
   },
   "localArchives": {
     "compileJava": {
-      "size": 1158,
-      "digest": "sha256:dd7ca4f9558afa46ebb8448e4c247c5628cfdf952473802f6b1bf1ebb4c839d2"
+      "size": 1168,
+      "digest": "sha256:fbfe82baf1b7a5a59e5039355c17457e593c19acdeed0d734ce940b081659228"
     },
     "verifyFixture": {
-      "size": 457,
-      "digest": "sha256:31309b28ea07b76bfa8db9203a32646d4be8c4a79d02191737db8fd3793a9511"
+      "size": 464,
+      "digest": "sha256:c9b19a4f0c09138f3407ad8fad6e8ccfaf7a4f64db2e742beff1e990355934ac"
     }
   },
   "teamArchives": {
     "compileJava": {
-      "size": 1162,
-      "digest": "sha256:aa3fbab49ae0ad5f89547af1389acd1bc402c59b76fd860e661c14a65f86d530"
+      "size": 1170,
+      "digest": "sha256:e2bba4e0e84dbc4171f41925d676fc3e9d8ea531786255d64d352941ae7f6c7a"
     },
     "verifyFixture": {
-      "size": 458,
-      "digest": "sha256:e75a360213cea230b29ad7728c5bb8435ca9ecdcdcb1858703257f1abc5d3117"
+      "size": 464,
+      "digest": "sha256:5a1a82675583f68434902d5078759e264161c53114dacbb0961be872202f2b1e"
     }
   },
   "outputDigests": {
@@ -40,7 +40,7 @@
     {
       "name": "local-cold",
       "status": 0,
-      "commandWallMs": 5350,
+      "commandWallMs": 5382,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -64,9 +64,9 @@
         {
           "method": "PUT",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
-          "uploadBytes": 1158,
+          "uploadBytes": 1168,
           "downloadBytes": 0,
-          "uploadDigest": "sha256:dd7ca4f9558afa46ebb8448e4c247c5628cfdf952473802f6b1bf1ebb4c839d2",
+          "uploadDigest": "sha256:fbfe82baf1b7a5a59e5039355c17457e593c19acdeed0d734ce940b081659228",
           "status": 200
         },
         {
@@ -79,9 +79,9 @@
         {
           "method": "PUT",
           "hash": "f62d70ecac7963a95bba27619ef63c91",
-          "uploadBytes": 457,
+          "uploadBytes": 464,
           "downloadBytes": 0,
-          "uploadDigest": "sha256:31309b28ea07b76bfa8db9203a32646d4be8c4a79d02191737db8fd3793a9511",
+          "uploadDigest": "sha256:c9b19a4f0c09138f3407ad8fad6e8ccfaf7a4f64db2e742beff1e990355934ac",
           "status": 200
         }
       ],
@@ -94,7 +94,7 @@
     {
       "name": "local-empty-consumer",
       "status": 0,
-      "commandWallMs": 4948,
+      "commandWallMs": 4789,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -112,14 +112,14 @@
           "method": "GET",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
           "uploadBytes": 0,
-          "downloadBytes": 1158,
+          "downloadBytes": 1168,
           "status": 200
         },
         {
           "method": "GET",
           "hash": "f62d70ecac7963a95bba27619ef63c91",
           "uploadBytes": 0,
-          "downloadBytes": 457,
+          "downloadBytes": 464,
           "status": 200
         }
       ],
@@ -132,7 +132,7 @@
     {
       "name": "local-restart-consumer",
       "status": 0,
-      "commandWallMs": 5041,
+      "commandWallMs": 4923,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -150,14 +150,14 @@
           "method": "GET",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
           "uploadBytes": 0,
-          "downloadBytes": 1158,
+          "downloadBytes": 1168,
           "status": 200
         },
         {
           "method": "GET",
           "hash": "f62d70ecac7963a95bba27619ef63c91",
           "uploadBytes": 0,
-          "downloadBytes": 457,
+          "downloadBytes": 464,
           "status": 200
         }
       ],
@@ -170,7 +170,7 @@
     {
       "name": "team-cold",
       "status": 0,
-      "commandWallMs": 5380,
+      "commandWallMs": 5510,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -194,9 +194,9 @@
         {
           "method": "PUT",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
-          "uploadBytes": 1162,
+          "uploadBytes": 1170,
           "downloadBytes": 0,
-          "uploadDigest": "sha256:aa3fbab49ae0ad5f89547af1389acd1bc402c59b76fd860e661c14a65f86d530",
+          "uploadDigest": "sha256:e2bba4e0e84dbc4171f41925d676fc3e9d8ea531786255d64d352941ae7f6c7a",
           "status": 200
         },
         {
@@ -209,9 +209,9 @@
         {
           "method": "PUT",
           "hash": "f62d70ecac7963a95bba27619ef63c91",
-          "uploadBytes": 458,
+          "uploadBytes": 464,
           "downloadBytes": 0,
-          "uploadDigest": "sha256:e75a360213cea230b29ad7728c5bb8435ca9ecdcdcb1858703257f1abc5d3117",
+          "uploadDigest": "sha256:5a1a82675583f68434902d5078759e264161c53114dacbb0961be872202f2b1e",
           "status": 200
         }
       ],
@@ -224,7 +224,7 @@
     {
       "name": "team-empty-reader",
       "status": 0,
-      "commandWallMs": 4979,
+      "commandWallMs": 5016,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -242,14 +242,14 @@
           "method": "GET",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
           "uploadBytes": 0,
-          "downloadBytes": 1162,
+          "downloadBytes": 1170,
           "status": 200
         },
         {
           "method": "GET",
           "hash": "f62d70ecac7963a95bba27619ef63c91",
           "uploadBytes": 0,
-          "downloadBytes": 458,
+          "downloadBytes": 464,
           "status": 200
         }
       ],
@@ -262,7 +262,7 @@
     {
       "name": "duplicate-first-winner",
       "status": 0,
-      "commandWallMs": 5847,
+      "commandWallMs": 5400,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -287,9 +287,9 @@
         {
           "method": "PUT",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
-          "uploadBytes": 1164,
+          "uploadBytes": 1168,
           "downloadBytes": 0,
-          "uploadDigest": "sha256:91a18fd2c26f96b67b4304f148e0a7e2bc5519e9cf795c39171df769ceb8a1a6",
+          "uploadDigest": "sha256:a29bf0249ea549e0149e4b9583d1bde51ac26272d44d2ad9b235f8c09df0a776",
           "status": 200
         },
         {
@@ -303,9 +303,9 @@
         {
           "method": "PUT",
           "hash": "f62d70ecac7963a95bba27619ef63c91",
-          "uploadBytes": 460,
+          "uploadBytes": 464,
           "downloadBytes": 0,
-          "uploadDigest": "sha256:27a0a8922c17ff93ccebd3e9b1f032af495d43176070718e1fdc7cd2597633b6",
+          "uploadDigest": "sha256:6e05a9d0b776843ed9d40fd687228a8191ed0515c47dbc6cf0e9880f2b06dca5",
           "status": 200
         }
       ],
@@ -318,7 +318,7 @@
     {
       "name": "declared-input-miss",
       "status": 0,
-      "commandWallMs": 5676,
+      "commandWallMs": 5316,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -336,7 +336,7 @@
           "method": "GET",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
           "uploadBytes": 0,
-          "downloadBytes": 1162,
+          "downloadBytes": 1170,
           "status": 200
         },
         {
@@ -356,7 +356,7 @@
     {
       "name": "changed-source-miss",
       "status": 0,
-      "commandWallMs": 6036,
+      "commandWallMs": 5208,
       "tasks": {
         "compileJava": {
           "hash": "cd072a8f666fe6656fff596100dbb262",
@@ -394,7 +394,7 @@
     {
       "name": "compiler-option-miss",
       "status": 0,
-      "commandWallMs": 5782,
+      "commandWallMs": 5315,
       "tasks": {
         "compileJava": {
           "hash": "dd54c5ba289f0256ef1132af776dc47a",
@@ -432,7 +432,7 @@
     {
       "name": "profile-isolation-miss",
       "status": 0,
-      "commandWallMs": 5564,
+      "commandWallMs": 5525,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -470,7 +470,7 @@
     {
       "name": "failed-task-rerun-1",
       "status": 1,
-      "commandWallMs": 5360,
+      "commandWallMs": 4987,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -488,7 +488,7 @@
           "method": "GET",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
           "uploadBytes": 0,
-          "downloadBytes": 1162,
+          "downloadBytes": 1170,
           "status": 200
         },
         {
@@ -504,7 +504,7 @@
     {
       "name": "failed-task-rerun-2",
       "status": 1,
-      "commandWallMs": 4624,
+      "commandWallMs": 4103,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -522,7 +522,7 @@
           "method": "GET",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
           "uploadBytes": 0,
-          "downloadBytes": 1162,
+          "downloadBytes": 1170,
           "status": 200
         },
         {
@@ -538,7 +538,7 @@
     {
       "name": "readonly-publication-rejected",
       "status": 0,
-      "commandWallMs": 6046,
+      "commandWallMs": 5248,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -562,9 +562,9 @@
         {
           "method": "PUT",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
-          "uploadBytes": 1158,
+          "uploadBytes": 1166,
           "downloadBytes": 31,
-          "uploadDigest": "sha256:1517461503d52348d82afca506da138e6f0515ad52a23975f56f1ec7c55209b8",
+          "uploadDigest": "sha256:915bcd8f48e5c5722612cf2de78c40be7dc8bd2b8fbc4a831082fa954af48464",
           "status": 403
         }
       ],
@@ -577,7 +577,7 @@
     {
       "name": "explicit-fresh-bypass",
       "status": 0,
-      "commandWallMs": 5657,
+      "commandWallMs": 5080,
       "tasks": {
         "compileJava": {
           "outcome": "EXECUTED",
@@ -598,7 +598,7 @@
     {
       "name": "existing-remote-rejected",
       "status": 1,
-      "commandWallMs": 3893,
+      "commandWallMs": 3667,
       "tasks": {
         "compileJava": {
           "outcome": "NOT-SCHEDULED",
@@ -615,7 +615,7 @@
     {
       "name": "unconfigured-script-preserves-remote",
       "status": 0,
-      "commandWallMs": 4877,
+      "commandWallMs": 4924,
       "tasks": {
         "compileJava": {
           "outcome": "EXECUTED",
@@ -636,7 +636,7 @@
     {
       "name": "partial-environment-rejected",
       "status": 1,
-      "commandWallMs": 3457,
+      "commandWallMs": 3564,
       "tasks": {
         "compileJava": {
           "outcome": "NOT-SCHEDULED",
@@ -653,7 +653,7 @@
     {
       "name": "unsafe-http-rejected",
       "status": 1,
-      "commandWallMs": 3496,
+      "commandWallMs": 3527,
       "tasks": {
         "compileJava": {
           "outcome": "NOT-SCHEDULED",
@@ -670,7 +670,7 @@
     {
       "name": "quota-pressure",
       "status": 0,
-      "commandWallMs": 5249,
+      "commandWallMs": 5197,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -694,9 +694,9 @@
         {
           "method": "PUT",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
-          "uploadBytes": 1159,
+          "uploadBytes": 1169,
           "downloadBytes": 31,
-          "uploadDigest": "sha256:f0d7cacd66661532a6ad0ad20bb6d4beebabc0f2d17fbe728ac487720f0ad8ed",
+          "uploadDigest": "sha256:03ec4a3ee0674dcf9f91e19511f04c9486ee25f4d413b7e923fcac66d7b29243",
           "status": 413
         }
       ],
@@ -709,7 +709,7 @@
     {
       "name": "private-endpoint-offline",
       "status": 0,
-      "commandWallMs": 5301,
+      "commandWallMs": 5427,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -740,7 +740,7 @@
     {
       "name": "private-restart-reader",
       "status": 0,
-      "commandWallMs": 4832,
+      "commandWallMs": 4853,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -758,14 +758,14 @@
           "method": "GET",
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
           "uploadBytes": 0,
-          "downloadBytes": 1162,
+          "downloadBytes": 1170,
           "status": 200
         },
         {
           "method": "GET",
           "hash": "f62d70ecac7963a95bba27619ef63c91",
           "uploadBytes": 0,
-          "downloadBytes": 458,
+          "downloadBytes": 464,
           "status": 200
         }
       ],
@@ -778,7 +778,7 @@
     {
       "name": "revoked-member",
       "status": 0,
-      "commandWallMs": 5327,
+      "commandWallMs": 5280,
       "tasks": {
         "compileJava": {
           "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
@@ -812,8 +812,8 @@
   "gradleFilesystemCacheBoundedByLayerCache": false,
   "localToPrivateForwardingImplemented": false,
   "nativeTransferBytes": {
-    "upload": 7176,
-    "download": 10316
+    "upload": 7233,
+    "download": 10402
   },
-  "qualificationWallMs": 139112
+  "qualificationWallMs": 134472
 }

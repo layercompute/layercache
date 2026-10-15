@@ -71,10 +71,12 @@ hit counts alone.
 
 - [ ] **Reuse trusted exact-commit Check results in manual release preparation.**
   Owner: Phone CI/release owner, with LayerCache reviewing context and invalidation.
-  Active implementation is [Phone #310](https://github.com/ziahamza/phone-app/pull/310),
+  [Phone #310](https://github.com/ziahamza/phone-app/pull/310) merged on October 15,
   including latest-attempt/race controls, two-worker fallback and native
-  fingerprint qualification. Keep application workflows with that owner;
-  verify the actual resulting scope and post-merge measurement before completion.
+  fingerprint qualification. The Phone owner is waiting for main Check before
+  measuring a signed build with TestFlight upload disabled. Keep application
+  workflows with that owner; post-merge reuse and allocation measurement remain
+  required before marking this milestone complete.
   [Production #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
   passed RunCloud-to-TestFlight with zero GitHub Mac jobs, but forced manual
   preparation took 28m18s, including 23m18s of repeated general validation and
@@ -84,8 +86,8 @@ hit counts alone.
   QA profile shared by Check and manual validation, then bind a small trusted
   proof to the literal source, workflow/recipe, latest run/attempt, full selected
   gates, actual runtime and complete relevant environment. Current release EAS
-  and feature flags differ from Check; current green results have no matching
-  context proof and must not be assumed equivalent. Missing, expired, ambiguous,
+  and feature flags differed from Check before #310. Qualify its resulting
+  context proof in the signed measurement. Missing, expired, ambiguous,
   changed, cancelled or uncertain proof runs fresh. Keep an explicit fresh
   validation option separate from forcing an archive. Preserve deployment-time,
   signing, package inspection and live-provider checks, and required artifact
@@ -136,9 +138,9 @@ hit counts alone.
   savings, installation and gateway rollout remain separate acceptance targets.
   Public Gradle publication remains disabled.
 
-  First protocol slice is source-qualified at `3fa8aa7e2e87ae34376b0c98ded5474aaa7cbf0b`.
+  First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
   The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
-  22 actual Gradle 9.3.1/JDK 17 commands in 139.112s, with empty independent
+  22 actual Gradle 9.3.1/JDK 17 commands in 134.472s, with empty independent
   Local/private consumers restoring exact compiled and verification outputs
   as `FROM-CACHE` with zero actions. It covers native duplicate winners,
   input/compiler/profile misses, failed-task reruns, read-only/revoked clients,
@@ -146,7 +148,9 @@ hit counts alone.
   [Personal policy controls](docs/evidence/gradle-personal-policy-20261015.json)
   reproduce and fix the missing managed-portal route, then pass actual isolation,
   restart, owner-only CI, PR-reader and former-owner revocation checks, including
-  race detection. The [contract](docs/gradle-cache.md) separates this Java
+  race detection. [Real PostgreSQL/S3 SDK controls](docs/evidence/gradle-cloud-upload-integrity-20261015.json)
+  also reproduce and repair incomplete-upload publication, with zero bytes or
+  metadata committed in the small malformed-upload cases. The [contract](docs/gradle-cache.md) separates this Java
   protocol proof from Phone Android adoption and measured build savings.
   Next: qualify an isolated Phone-native Gradle producer/fresh consumer, then
   coordinate an installed release and gateway upgrade before workflow adoption.
@@ -302,7 +306,7 @@ hit counts alone.
 ## Delivered baseline
 
 - [x] Source-qualified native Gradle HTTP over existing bounded artifact storage,
-  expiring process credentials and an opt-in init script, source `3fa8aa7`.
+  expiring process credentials and an opt-in init script, source `3b9ded9`.
   The [22-command real-client qualification](docs/evidence/gradle-native-private-20261015.json)
   and [managed Personal policy proof](docs/evidence/gradle-personal-policy-20261015.json)
   pass. The Linux native-client CI gate uses the pinned Gradle distribution and

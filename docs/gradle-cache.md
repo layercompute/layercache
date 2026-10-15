@@ -97,15 +97,15 @@ private Gradle homes.
 
 ## Qualification and scope
 
-Reviewed runtime source `3fa8aa7e2e87ae34376b0c98ded5474aaa7cbf0b` passes
+Reviewed runtime source `3b9ded989140abadedb476cfc29fc100163c9597` passes
 [22 real-client commands](evidence/gradle-native-private-20261015.json) with
-Gradle 9.3.1 and JDK 17.0.20.1. Total qualification time is 139.112s, including
-25.490s of setup. The cold Local command takes 5.350s and its empty consumer
-4.948s; direct private production takes 5.380s and its empty reader 4.979s.
+Gradle 9.3.1 and JDK 17.0.20.1. Total qualification time is 134.472s, including
+25.590s of setup. The cold Local command takes 5.382s and its empty consumer
+4.789s; direct private production takes 5.510s and its empty reader 5.016s.
 Both consumers restore exact compiled and verification outputs with zero task
 actions. Fresh Gradle initialization dominates this small Java fixture; these
-times are not Android savings. The receipt records 7,176 upload bytes and
-10,316 download bytes from native requests; independent archive verification
+times are not Android savings. The receipt records 7,233 upload bytes and
+10,402 download bytes from native requests; independent archive verification
 downloads are outside those counts.
 
 The [real-client runner](../qa/gradle-native/README.md) uses pinned Gradle 9.3.1
@@ -124,6 +124,16 @@ only the Personal owner's signed CI identity can obtain authority; PR access is
 read-only; and owner changes revoke previously issued credentials. These controls
 use the real portal, project gateway and artifact engine. The Java native-client
 fixture separately qualifies the archive protocol.
+
+[Real cloud upload controls](evidence/gradle-cloud-upload-integrity-20261015.json)
+use PostgreSQL 16 and the production S3 SDK against a disposable multipart/copy
+endpoint. They reproduced a malformed-upload publication bug: the SDK accepts
+an exact `io.ErrUnexpectedEOF` as a valid final part. The reader now wraps and
+retains terminal errors before storage consumes them. The tested small truncated, overlong and
+interrupted streams return HTTP 400 without committed bytes or metadata;
+capacity refusals retain HTTP 413. A full-buffer regression preserves the error
+even when `io.ReadFull` discards a simultaneous error. The global cloud error
+sanitizer is unchanged. These controls pass with race detection.
 
 This reuses the Apache-2.0 Gradle
 [native HTTP implementation](https://github.com/gradle/gradle/blob/v9.3.1/platforms/core-execution/build-cache-http/src/main/java/org/gradle/caching/http/internal/DefaultHttpBuildCacheServiceFactory.java).
