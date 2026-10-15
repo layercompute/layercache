@@ -28,8 +28,12 @@ hit counts alone.
   before marking the delivered slice complete.
   Source: [#43](https://github.com/ziahamza/layercache/pull/43) landed the
   conservative prose lane and native Go compilation reuse, with all 18 checks
-  green and independent Standards/Spec reviews. Hosted prose-lane and later
-  main cache-hit measurements remain acceptance work; standalone LayerCache
+  green and independent Standards/Spec reviews. The prose-only
+  [#44](https://github.com/ziahamza/layercache/pull/44) measurement preserved all
+  13 required contexts and reduced selected workflow allocation from 40m54s to
+  2m15s (94.5%); its active execution span was 27s versus 5m21s. Exact source
+  and runs are recorded in [self-CI evidence](docs/self-ci.md). Later main
+  cache-hit measurement remains acceptance work; standalone LayerCache
   transport adoption remains separately unqualified.
 
 - [ ] **Keep standalone OSS independent from managed cloud enrollment.**
