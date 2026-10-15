@@ -44,6 +44,32 @@ room for the emulator and operating system when they share a runner. Moving
 compilation into its own job can make the budget easier to control, but count
 artifact transfer and duplicate setup in the result.
 
+## Reuse Go compilation while executing tests fresh
+
+Go's native build cache can reuse compilation without replaying a successful
+test result. Preserve the project's normal test coverage and disable result
+replay when current test execution is required:
+
+```sh
+go test -count=1 ./...
+```
+
+Keep race checks and vet when they are part of the lane's contract. The
+[Go cache contract](https://pkg.go.dev/cmd/go@go1.25.13#hdr-Build_and_test_caching)
+describes the distinction. Use the pinned `actions/setup-go` cache integration
+before building another archive client. Its native key includes Go version,
+OS/architecture and dependency-file hashes. Add the actual runner image and
+effective build-settings profile when qualifying stricter compatibility;
+disable reuse if that profile cannot be established. Go still owns invalidation
+for source, compiler and flag changes.
+
+LayerCache's [routine hosted lanes](../self-ci.md#native-go-compilation-reuse)
+use GitHub's cache transport and execute tests with `-count=1`. The
+[opt-in standalone probe](../../qa/go-dogfood/README.md) separately exercises
+LayerCache archive storage over loopback. Its first use was slower, and it does
+not qualify a replacement for the routine hosted transport. Measure complete
+setup, restore, fresh execution and save costs before changing that choice.
+
 ## Use a remote task cache without replacing Gradle
 
 LayerCache's Gradle adapter accepts native HTTP archives. Gradle still owns
