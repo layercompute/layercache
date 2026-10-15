@@ -54,17 +54,20 @@ not currently produce a LayerCache task-time report, so transfer bytes come
 from the stock client's archive-size output and timings cover whole commands.
 
 Local [measurement](../../docs/evidence/go-dogfood-20261015.json) at source
-`ffaf5b66122e7103a1f21659aedf838687a9d581`: cold build plus fresh tests took
-4.548 seconds; restoring 13,078,040 archive bytes plus the relocated build and
-fresh tests took 0.801 seconds. Publication added 0.719 seconds. The consumer
+`32e3446ef914aa20233ea136a4253f96fb351b6c`: cold build plus fresh tests took
+4.623 seconds; restoring 13,076,823 archive bytes plus the relocated build and
+fresh tests took 0.755 seconds. Publication added 0.694 seconds. The consumer
 recompiled four package/test units versus 123 cold compiler invocations;
-standard library reuse accounts for the benefit. Setup took 0.027 seconds and
-daemon startup 0.138 seconds; the one-time candidate build took another 1.292
+standard library reuse accounts for the benefit. Setup took 0.036 seconds and
+daemon startup 0.185 seconds; the one-time candidate build took another 1.339
 seconds. First use was slower. All 20 qualification commands, including
-input/failure controls and cleanup, took 11.957 seconds. An
+input/failure controls and cleanup, took 11.987 seconds. An
 [actual-driver interruption control](../../docs/evidence/go-dogfood-forced-cleanup-20261015.json)
 also proved that a SIGTERM-ignoring child was stopped, failure remained visible,
 the default private directory was removed and no passed receipt was emitted.
+Preseeded success receipts were removed on interruption, invalid-binary and
+missing-temporary-directory failures; successful publication replaced the old
+receipt with a mode-0600 file and left no publishing temporary file.
 These are single-host loopback observations, not hosted CI, Phone, private Team or local-to-CI
 qualification. Measure setup and real network transfer before adopting this
 extra transport; existing GitHub Actions Go caching may be the simpler choice.
