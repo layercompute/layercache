@@ -42,11 +42,14 @@ performance, release-installation and local-to-CI qualification jobs retain
 their independent cache setup. No fixture output is warmed by these caches.
 
 This uses GitHub's native cache transport. It does not establish LayerCache
-archive transport savings or live local-to-cloud Go reuse. A useful dogfood
-slice must use bounded repository-owned paths, the existing archive client and
-standalone daemon, and report transfer/setup alongside native compilation and
-fresh test execution. Cloud signup is not a prerequisite for that standalone
-qualification.
+archive transport savings or live local-to-cloud Go reuse. The
+[opt-in standalone probe](../qa/go-dogfood/README.md) separately qualifies
+bounded repository-owned Go caches through the existing stock archive client
+and account-free daemon. It records loopback transfer/setup, native source and
+profile misses, fresh tests and forced-failure cleanup. Its first use is slower;
+the current native GitHub transport remains the routine CI choice. Measure
+real network/setup costs before adopting another transport. Cloud signup is
+not a prerequisite for this standalone qualification.
 
 ## Baseline and acceptance
 

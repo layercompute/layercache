@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "go-dogfood-forced-cleanup-v1",
+  "sourceRevision": "ffaf5b66122e7103a1f21659aedf838687a9d581",
+  "actualDriver": true,
+  "actualPinnedGoAndStockModule": true,
+  "fault": "Owned setup child ignores SIGTERM; controller sends SIGTERM only to driver.",
+  "driverExitStatus": 1,
+  "shutdownWallMs": 5222,
+  "assertions": {
+    "setupChildWasOwned": true,
+    "setupChildIgnoredTerm": true,
+    "driverExitedNonzero": true,
+    "noPassedReceiptFile": true,
+    "noPassedReceiptOnStdout": true,
+    "setupChildPidGone": true,
+    "driverPrivateDirectoryRemoved": true,
+    "forcedShutdownErrorObserved": true,
+    "shutdownUnder15Seconds": true
+  },
+  "passed": true,
+  "stdoutSha256": "28f6d5d89a040e5174697efd0020ef5fcf746a4ba1694dbf227624e0036fa6ea",
+  "stderrSha256": "c7b806aae7eb3e1c23f59b20b79e980d3c730606e27719b1b3489a6f92f2a481"
+}

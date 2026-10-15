@@ -51,15 +51,18 @@ directory for diagnosis; remove it after inspection. Actions archive runs do
 not currently produce a LayerCache task-time report, so transfer bytes come
 from the stock client's archive-size output and timings cover whole commands.
 
-Local measurement at source
-`0045810b3c69cf448633fd34a236b96d95d505f7`: cold build plus fresh tests took
-5.806 seconds; restoring 13,078,056 archive bytes plus the relocated build and
-fresh tests took 1.350 seconds. Publication added 0.965 seconds. The consumer
+Local [measurement](../../docs/evidence/go-dogfood-20261015.json) at source
+`ffaf5b66122e7103a1f21659aedf838687a9d581`: cold build plus fresh tests took
+4.548 seconds; restoring 13,078,040 archive bytes plus the relocated build and
+fresh tests took 0.801 seconds. Publication added 0.719 seconds. The consumer
 recompiled four package/test units versus 123 cold compiler invocations;
-standard library reuse accounts for the benefit. The one-time candidate build
-took another 5.53 seconds, making first use slower. All 20 qualification
-commands, including input/failure controls and cleanup, took 16.395 seconds.
-These are single-host
-loopback observations, not hosted CI, Phone, private Team or local-to-CI
+standard library reuse accounts for the benefit. Setup took 0.027 seconds and
+daemon startup 0.138 seconds; the one-time candidate build took another 1.292
+seconds. First use was slower. All 20 qualification commands, including
+input/failure controls and cleanup, took 11.957 seconds. An
+[actual-driver interruption control](../../docs/evidence/go-dogfood-forced-cleanup-20261015.json)
+also proved that a SIGTERM-ignoring child was stopped, failure remained visible,
+the default private directory was removed and no passed receipt was emitted.
+These are single-host loopback observations, not hosted CI, Phone, private Team or local-to-CI
 qualification. Measure setup and real network transfer before adopting this
 extra transport; existing GitHub Actions Go caching may be the simpler choice.
