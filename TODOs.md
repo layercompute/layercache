@@ -1,6 +1,6 @@
 # LayerCache TODOs
 
-Last strategic review: 2026-10-15. This file owns outstanding work. Checkboxes
+Last strategic review: 2026-10-16. This file owns outstanding work. Checkboxes
 mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
@@ -11,6 +11,20 @@ build/test/model clients. Prefer fewer expensive executions over higher cache
 hit counts alone.
 
 ## P0: reliable Phone reuse
+
+- [ ] **Publish reusable CI optimization lessons and qualify native step overlap.**
+  Owner: LayerCache documentation and application CI owners. Collect the
+  measured workflow, task, native-build, handoff, release-proof and inference
+  lessons into [public recipes](docs/ci-optimization/README.md). Keep application
+  names, private repository/run links, source identities, hosts and credentials
+  out of the public guide. Distinguish measured examples from proposed upstream
+  capabilities and preserve their coverage and timing limits. Include native
+  GitHub parallel steps, with dependency joins, bounded workers and parser/runner
+  compatibility. Qualify independent command overlap in the application through
+  a same-resource comparison and real hosted checks, retaining every command
+  and the required failure behavior. Record exact source and evidence before
+  closing the delivered slice; broader setup, cache and provider work stays
+  prioritized by whole-job savings.
 
 - [ ] **Keep LayerCache's own CI fast and exercise its OSS cache path.**
   Owner: LayerCache. Use standard GitHub-hosted runners for this public OSS
