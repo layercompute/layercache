@@ -67,8 +67,9 @@ hit counts alone.
   [Production #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
   passed RunCloud-to-TestFlight with zero GitHub Mac jobs, but forced manual
   preparation took 28m18s, including 23m18s of repeated general validation and
-  17.9m of browser QA. Extract the existing strict `checkedMainRun` lookup rather
-  than accepting any historical check named `check`. Define one deterministic
+  17.9m of browser QA. Extract the strict latest-main Check lookup used by
+  `scripts/android/signed-benchmark.mjs`, rather than accepting any historical
+  successful check. Define one deterministic
   QA profile shared by Check and manual validation, then bind a small trusted
   proof to the literal source, workflow/recipe, latest run/attempt, full selected
   gates, actual runtime and complete relevant environment. Current release EAS
