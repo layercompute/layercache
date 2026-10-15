@@ -12,19 +12,32 @@ hit counts alone.
 
 ## P0: reliable Phone reuse
 
-- [ ] **Publish reusable CI optimization lessons and qualify native step overlap.**
-  Owner: LayerCache documentation and application CI owners. Collect the
-  measured workflow, task, native-build, handoff, release-proof and inference
-  lessons into [public recipes](docs/ci-optimization/README.md). Keep application
-  names, private repository/run links, source identities, hosts and credentials
-  out of the public guide. Distinguish measured examples from proposed upstream
-  capabilities and preserve their coverage and timing limits. Include native
-  GitHub parallel steps, with dependency joins, bounded workers and parser/runner
-  compatibility. Qualify independent command overlap in the application through
-  a same-resource comparison and real hosted checks, retaining every command
-  and the required failure behavior. Record exact source and evidence before
-  closing the delivered slice; broader setup, cache and provider work stays
-  prioritized by whole-job savings.
+- [x] **Publish reusable CI optimization lessons.**
+  Owner: LayerCache documentation. [#46](https://github.com/ziahamza/layercache/pull/46)
+  merged as `a1d944efc22f34fd9b291f9ab92cc0272f98d9f7` after all fourteen
+  hosted PR jobs, the external review and independent Standards/Spec reviews
+  passed. The eight [public recipes](docs/ci-optimization/README.md) cover
+  workflow selection, task reuse, native builds, handoffs, trusted release
+  validation, inference, storage and measurement. Examples omit application
+  names, private repository/run links, source identities, hosts and credentials.
+  Measured examples retain their coverage and timing limits. The upstream
+  recipe includes native GitHub parallel steps with dependency joins, bounded
+  workers and parser/runner compatibility.
+  Full main [CI](https://github.com/ziahamza/layercache/actions/runs/38822434257),
+  [PostgreSQL](https://github.com/ziahamza/layercache/actions/runs/38822434141)
+  and [local-to-CI](https://github.com/ziahamza/layercache/actions/runs/38822434236)
+  validation passed all fourteen jobs at that merged source.
+
+- [ ] **Complete representative native step-overlap qualification.**
+  Owner: application CI owners. The first hosted two-vCPU execution overlaps
+  both complete tooling command families and joins them before workspace tasks.
+  Its [anonymous observation](docs/ci-optimization/measurement.md#observed-examples-and-their-limits)
+  records a 56-second group versus 85 seconds in an earlier sequential stage.
+  Retain the actual producing source and run evidence in the consumer repository.
+  Collect paired same-resource samples with equivalent toolchains and cache
+  warmth, including failure/cancellation behavior and complete job allocation,
+  before claiming a controlled whole-job or cost improvement. Broader setup,
+  cache and provider work remains prioritized by whole-job savings.
 
 - [ ] **Keep LayerCache's own CI fast and exercise its OSS cache path.**
   Owner: LayerCache. Use standard GitHub-hosted runners for this public OSS
