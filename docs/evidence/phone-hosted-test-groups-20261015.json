@@ -1,0 +1,158 @@
+{
+  "schemaVersion": "phone-hosted-test-reuse-v1",
+  "headSource": "b7279389b24ca8f6d813451910dce8f2b50efd20",
+  "checkedMergeSource": "9407e02c5590a2b3e9264bbbef5389a8a7ed1790",
+  "checkedMergeParents": [
+    "d194ea69299c0ac95c177586a8d62c669bbfe407",
+    "b7279389b24ca8f6d813451910dce8f2b50efd20"
+  ],
+  "run": 38712658472,
+  "job": 116347965939,
+  "url": "https://github.com/ziahamza/phone-app/actions/runs/38712658472/job/116347965939",
+  "unitConclusion": "success",
+  "checkRunStatus": "completed",
+  "checkRunConclusion": "success",
+  "unitAllocationMs": 433000,
+  "nativeWorkspaceMs": 218324,
+  "nativeTasks": 27,
+  "nativeCachedTasks": 16,
+  "attributedGatewayHits": 11,
+  "eligibleTasks": 22,
+  "misses": 11,
+  "remotePolicy": "read-only",
+  "matchingPublishedTasks": [
+    {
+      "taskId": "@phone-app/core#typecheck",
+      "hash": "f11e8aad790566f2",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:unit",
+      "hash": "c08621ffc1c4f56f",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:auth",
+      "hash": "db417d7c47b58348",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:cache-contacts",
+      "hash": "cebed25706650f54",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:fixtures",
+      "hash": "96f12d95f3c8a598",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:http",
+      "hash": "73ec371d97124269",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:native",
+      "hash": "d89d39fb8f26e394",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:numbers",
+      "hash": "586316e6a09a8b0f",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:personal",
+      "hash": "07025343a51cd2d7",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:settings",
+      "hash": "c5c47f592b801d76",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#test:workflow:shared",
+      "hash": "8b63305b5b2ee37d",
+      "nativeStatus": "HIT"
+    },
+    {
+      "taskId": "@phone-app/mobile#typecheck",
+      "hash": "a19e3a79469e3786",
+      "nativeStatus": "HIT"
+    }
+  ],
+  "matchingPublishedTaskCount": 12,
+  "matchingPublishedTasksNativeHits": 12,
+  "attribution": {
+    "gatewayScope": "Aggregate of all eligible workspace tasks; per-task remote attribution is unavailable in this log.",
+    "nativeHitScope": "All twelve historical published hashes match and report native HIT. Native HIT can include the restored GitHub Actions Turbo snapshot.",
+    "githubActionsTurboSnapshotRestored": true,
+    "allTwelveMatchingTasksRemotelyAttributed": false,
+    "sourceDistinction": "The sixteen native hits and eleven gateway-attributed hits are separate observations; this receipt does not assign a remote source to individual matching tasks."
+  },
+  "steps": [
+    {
+      "name": "Set up job",
+      "conclusion": "success",
+      "durationMs": 1000
+    },
+    {
+      "name": "Set up runner",
+      "conclusion": "success",
+      "durationMs": 0
+    },
+    {
+      "name": "Run actions/checkout@v7",
+      "conclusion": "success",
+      "durationMs": 4000
+    },
+    {
+      "name": "Run ./.github/actions/setup",
+      "conclusion": "success",
+      "durationMs": 78000
+    },
+    {
+      "name": "Check native release tooling without signing credentials",
+      "conclusion": "success",
+      "durationMs": 79000
+    },
+    {
+      "name": "Check native resource gates and audio verification",
+      "conclusion": "success",
+      "durationMs": 37000
+    },
+    {
+      "name": "Check workspace tasks with bounded CPU concurrency",
+      "conclusion": "success",
+      "durationMs": 219000
+    },
+    {
+      "name": "Check documentation formatting",
+      "conclusion": "skipped",
+      "durationMs": 0
+    },
+    {
+      "name": "Post Run ./.github/actions/setup",
+      "conclusion": "success",
+      "durationMs": 9000
+    },
+    {
+      "name": "Post Run actions/checkout@v7",
+      "conclusion": "success",
+      "durationMs": 0
+    },
+    {
+      "name": "Complete runner",
+      "conclusion": "success",
+      "durationMs": 0
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success",
+      "durationMs": 0
+    }
+  ],
+  "logSha256": "a6092b4a87d9d56f28832647bec23ce9138d58c9313e6d3b29bea5e9c1a093fa",
+  "scope": "One observed hosted job on the final reviewed head and its PR merge tree; no monthly-cost or controlled-before/after claim."
+}
