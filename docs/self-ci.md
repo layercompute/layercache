@@ -73,12 +73,15 @@ All 14 GitHub jobs passed. Its
 [local-to-CI](https://github.com/ziahamza/layercache/actions/runs/38741889396)
 workflows allocated **2m15s**, down from 40m54s in the prior prose-only PR
 (94.5% less runner time). Their first-job-start to last-job-completion span
-fell from 5m21s to 27s. These spans exclude queue time and external review;
-they do not establish dollar savings for free public runners.
+fell from 5m21s to 27s. Job allocation excludes queue time; the active span
+starts with the first job and may include scheduling gaps. External review is
+excluded. These measurements do not establish dollar savings for free public
+runners.
 
-The Go setup/build/test steps and native, browser, protocol and performance
-work were skipped as intended. Workflow/shell checks and all 16 classifier and
-profile controls executed. Main continues to run full qualification.
+The ordinary Go lanes' setup/build/test steps and native, browser, protocol and
+performance work were skipped as intended. Workflow/shell checks and all 16
+classifier and profile controls executed. Main continues to run full
+qualification.
 
 Measure a later main run with native Go cache hits while tests execute fresh.
 Report observed job spans and cache bytes rather than inferred dollar savings.
