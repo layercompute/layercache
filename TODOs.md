@@ -25,6 +25,21 @@ hit counts alone.
   policy does not establish this handoff. Preserve the held stack's unrelated
   acceptance requirements.
 
+- [ ] **Roll out shared cloud rejection of failed input streams.**
+  Owner: LayerCache storage and gateway rollout. The October 15 native Gradle
+  qualification exposed a shared S3 SDK edge case. A failed `io.Reader` ending
+  in `io.ErrUnexpectedEOF` could publish a partial artifact under an Nx or Turbo
+  key. Source `3d5e2df8aa9530dc1b80aaa1f87ea77233f3f2bd` guards the shared staging
+  boundary with wrapped, retained input failures and a final publication fence.
+  [Evidence](docs/evidence/cloud-stream-integrity-20261015.json) covers actual
+  PostgreSQL and the production SDK, including failure after an observed part
+  upload, zero remaining metadata/objects/parts with a working endpoint, valid
+  complete multipart bytes/digests and unchanged quota refusal. Preserve the
+  global error sanitizer. This does not explain the separate historical Actions
+  lookup miss or qualify cleanup during an object-endpoint outage. Next: qualify
+  the existing private gateway upgrade and installed release independently;
+  no operator configuration or deployed service changes in this source fix.
+
 - [ ] **Explain acknowledged Actions uploads that miss before consumption.**
   Owner: LayerCache; investigation in progress. Migrated from
   [issue #34](https://github.com/ziahamza/layercache/issues/34).
@@ -305,6 +320,11 @@ hit counts alone.
 
 ## Delivered baseline
 
+- [x] Source-qualified rejection of failed streams at the shared S3 boundary,
+  source `3d5e2df`. Real SDK and PostgreSQL controls cover multipart cleanup and
+  publication fences. [Contract](docs/retention.md#upload-completion) and
+  [evidence](docs/evidence/cloud-stream-integrity-20261015.json). Gateway rollout
+  remains open above.
 - [x] Source-qualified native Gradle HTTP over existing bounded artifact storage,
   expiring process credentials and an opt-in init script, source `3b9ded9`.
   The [22-command real-client qualification](docs/evidence/gradle-native-private-20261015.json)

@@ -92,7 +92,8 @@ func (storage *s3BlobStore) Stage(
 	}
 	defer stagingBuffers.Release(weight)
 	hasher := sha256.New()
-	limited := &io.LimitedReader{R: body, N: maximum + 1}
+	input := &stagingInput{body: body}
+	limited := &io.LimitedReader{R: input, N: maximum + 1}
 	reader := io.TeeReader(limited, hasher)
 	info, err := storage.client.PutObject(ctx, storage.bucket, key, reader, -1, minio.PutObjectOptions{
 		ContentType: mediaType,
@@ -102,6 +103,12 @@ func (storage *s3BlobStore) Stage(
 			"layercache-state":     "staged",
 		},
 	})
+	if input.terminalErr != nil {
+		if err == nil {
+			_ = storage.Delete(context.WithoutCancel(ctx), key)
+		}
+		return stagedBlob{}, input.terminalErr
+	}
 	if err != nil {
 		return stagedBlob{}, err
 	}
@@ -112,6 +119,26 @@ func (storage *s3BlobStore) Stage(
 	return stagedBlob{
 		Key: key, Digest: hex.EncodeToString(hasher.Sum(nil)), Size: info.Size, MediaType: mediaType,
 	}, nil
+}
+
+// The SDK accepts exact io.ErrUnexpectedEOF as a normal final multipart part.
+// Wrap actual input failures and keep them across reads: io.ReadFull can discard
+// an error returned alongside enough bytes to fill its buffer.
+type stagingInput struct {
+	body        io.Reader
+	terminalErr error
+}
+
+func (input *stagingInput) Read(buffer []byte) (int, error) {
+	if input.terminalErr != nil {
+		return 0, input.terminalErr
+	}
+	count, err := input.body.Read(buffer)
+	if err != nil && err != io.EOF {
+		input.terminalErr = fmt.Errorf("read cloud staged input: %w", err)
+		err = input.terminalErr
+	}
+	return count, err
 }
 
 func (storage *s3BlobStore) Commit(ctx context.Context, staged stagedBlob, destination string) error {

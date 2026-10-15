@@ -14,6 +14,25 @@ metadata visibility transactionally; S3 removes unreferenced objects after
 the existing reader-lease and grace rules. Its logical quota is not a limit
 on instantaneous S3 billing during that grace period.
 
+## Upload completion
+
+A failed source read cannot publish a completed cloud artifact. The S3 staging
+reader wraps actual input errors and retains them across subsequent reads.
+This matters because the production SDK treats exact `io.ErrUnexpectedEOF` as
+a valid final multipart part, and `io.ReadFull` can discard an error returned
+with a full buffer. Staging checks the retained error again before returning
+success. Normal EOF, full-byte hashing and existing quota refusal still apply.
+
+[The source qualification](evidence/cloud-stream-integrity-20261015.json) uses
+real PostgreSQL 16 and the production S3 SDK with a disposable HTTP endpoint.
+It rejects small failed streams, full-buffer failures and failures after an
+observed 16 MiB part upload. With the endpoint available, these cases leave no
+lookup, artifact accounting, staging rows, completed objects or multipart parts.
+Valid empty, small and multipart inputs retain exact bytes and SHA-256 digests.
+This does not qualify cleanup while the object endpoint itself is unavailable,
+or identify the cause of the historical Actions lookup HTTP 204 incident.
+Gateway rollout remains separate from this source qualification.
+
 ## How impact eviction chooses
 
 For blob capacity, `impact` considers each unique immutable blob with all of

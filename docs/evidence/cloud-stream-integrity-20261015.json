@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "cloud-stream-integrity-v1",
+  "passed": true,
+  "sourceRevision": "3d5e2df8aa9530dc1b80aaa1f87ea77233f3f2bd",
+  "baselineRuntimeRevision": "e24d3994ab49e7d9406c98a89caf4657150cb5e7",
+  "runtimeSourceSha256": "900e2b4aa8add07fab2b0c008663f3fb001047122d60193b4965e7d17ccf5a4f",
+  "backend": {
+    "metadata": "real PostgreSQL 16 with isolated disposable schemas",
+    "objectClient": "production minio-go/v7 v7.0.95",
+    "objectEndpoint": "existing disposable HTTP S3 multipart/copy fixture",
+    "productionService": false
+  },
+  "regression": {
+    "baselineAcceptedFailedInput": true,
+    "smallCommittedBytes": 7,
+    "fullBufferCommittedBytes": 16777216,
+    "afterObservedPartCommittedBytes": 16777216,
+    "nativeKeyTypesWithActualMetadataPublication": [
+      "nx",
+      "turbo"
+    ],
+    "cause": "Exact io.ErrUnexpectedEOF is accepted by the SDK as a valid final multipart part; io.ReadFull can also discard a simultaneous error when its buffer fills.",
+    "fix": "Wrap and retain actual source-reader failures at shared S3 staging, then fence the SDK success result before returning a staged artifact.",
+    "globalCloudErrorSanitizerChanged": false,
+    "historicalActionsLookup204CauseEstablished": false
+  },
+  "failedStreamControls": [
+    "small input then unexpected EOF",
+    "simultaneous full-buffer failure followed by ordinary EOF",
+    "failure after observing an earlier uploaded 16 MiB part"
+  ],
+  "rejectionAssertions": {
+    "lookupEntries": 0,
+    "artifacts": 0,
+    "usageBytes": 0,
+    "stagingRows": 0,
+    "completedObjects": 0,
+    "multipartUploads": 0
+  },
+  "positiveControls": {
+    "completeInputBytes": [
+      0,
+      7,
+      16777223
+    ],
+    "exactObjectBytes": true,
+    "exactSha256": true,
+    "normalEOF": true,
+    "oversizeStillErrQuota": true
+  },
+  "validation": [
+    {
+      "command": "go test ./internal/cloud -run '^TestS3Stage(RejectsFailedStreams|PreservesCompleteStreamsAndQuota)$' -count=1 -v",
+      "passed": false,
+      "expectedRegressionFailure": true,
+      "packageTestSeconds": 0.289,
+      "logSha256": "7b2cb475986d1d180001a17c377d8f918ad952e6ba5f78d514bca2e58b1fe1c3"
+    },
+    {
+      "command": "go test ./internal/cloud -run '^TestCloudFailedStreamsNeverPublish$' -count=1 -v",
+      "passed": false,
+      "expectedRegressionFailure": true,
+      "packageTestSeconds": 1.427,
+      "logSha256": "02105128999e1c381e4ba2f2255a5a105c14f88e45c3cf7915a623ab683f65f8"
+    },
+    {
+      "command": "go test ./internal/cloud -run '^(TestS3Stage|TestCloudFailedStreamsNeverPublish)' -count=1 -v",
+      "passed": true,
+      "packageTestSeconds": 1.5,
+      "logSha256": "b2608b62855838b08029d561ca70111fa5a726124f5be60ccab4f697726b2d91"
+    },
+    {
+      "command": "go test -race ./internal/cloud -count=1",
+      "passed": true,
+      "packageTestSeconds": 25.635,
+      "logSha256": "66ee97b9b9249b86074c958b593200f5a4d6ed406e005c6be68fdeebb7567842"
+    },
+    {
+      "command": "go test ./... -count=1",
+      "passed": true,
+      "umask": "0022",
+      "logSha256": "1018dc82f52bb5e0816f26bf6188c28a13dd32a1270dc698caa57547e2d1deb1"
+    },
+    {
+      "command": "go vet ./...",
+      "passed": true,
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "qualificationBoundary": {
+    "actualNativeCLIClients": false,
+    "httpGatewayAuthenticationChanged": false,
+    "objectEndpointAvailableThroughout": true,
+    "cleanupDuringObjectEndpointOutageQualified": false,
+    "installationOrDeployment": false
+  },
+  "disposablePostgresRemoved": true
+}
