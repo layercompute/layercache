@@ -4,6 +4,12 @@ Outstanding work and priorities live in [TODOs.md](TODOs.md). The
 [roadmap review](docs/roadmap-review.md) keeps new requests tied to measured
 local/CI/inference savings and explicit acceptance targets.
 
+For practical workflow recipes, start with [faster, cheaper CI](docs/ci-optimization/README.md).
+It covers conservative check selection, native parallel steps, local-to-CI task
+reuse, native builds, required artifact handoffs, trusted release validation and
+whole-job measurement. Examples omit private application identities and keep
+measured results separate from proposed improvements.
+
 Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache and speaks native cache protocols. Cache visibility has three tiers: Personal Cache, Team Cache and verified Public Cache.
 
 The CLI and daemon are open source. Standalone use needs no Layer Cache account:
