@@ -369,6 +369,8 @@ func auditRoute(request *http.Request) string {
 		return "route:turbo.artifact"
 	case strings.HasPrefix(path, "/v1/cache/"):
 		return "route:nx.cache"
+	case strings.HasPrefix(path, gradleCachePrefix):
+		return "route:gradle.cache"
 	case strings.HasPrefix(path, "/_apis/artifactcache/"), strings.HasPrefix(path, "/_layercache/compatibility/"):
 		return "route:actions.cache"
 	case strings.HasPrefix(path, "/v1/public-build"):

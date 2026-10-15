@@ -45,3 +45,18 @@ func TestCapabilityTokenRejectsTamperingAndExpiry(t *testing.T) {
 		t.Fatalf("expired token error = %v", err)
 	}
 }
+
+func TestGradleCapabilityPreservesIntegrationAndProfile(t *testing.T) {
+	now := time.Now().UTC()
+	token, err := access.MintCapabilityToken("secret", access.Claims{
+		Subject: "github:42", Project: "private-project", Integration: "gradle", Compatibility: "linux-amd64-jdk21-schema1",
+		Capabilities: []access.Capability{access.CapabilityRead}, ExpiresAt: now.Add(time.Minute),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := access.ParseCapabilityToken("secret", token, now)
+	if err != nil || claims.Integration != "gradle" || claims.Compatibility != "linux-amd64-jdk21-schema1" || claims.Allows(access.CapabilityWrite) {
+		t.Fatalf("Gradle authority changed: %+v, %v", claims, err)
+	}
+}

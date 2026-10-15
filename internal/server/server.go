@@ -363,6 +363,7 @@ func (server *Server) routes() {
 	server.mux.Handle("POST /v8/artifacts/events", server.requireToken(http.HandlerFunc(server.turboEvents)))
 	server.mux.Handle("/v8/artifacts/{hash}", server.requireToken(http.HandlerFunc(server.turboArtifact)))
 	server.mux.Handle("/v1/cache/{hash}", server.requireNxToken(http.HandlerFunc(server.nxArtifact)))
+	server.mux.Handle("/v1/gradle-cache/{hash}", server.requireGradleToken(http.HandlerFunc(server.gradleArtifact)))
 	server.publicRoutes()
 	server.publicBuildRoutes()
 	if server.actionsHandler != nil {

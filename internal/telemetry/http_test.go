@@ -8,11 +8,15 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+
+	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestOTLPExportUsesStaticRouteAndExcludesRequestSecrets(t *testing.T) {
 	var mu sync.Mutex
 	var exported bytes.Buffer
+	gradleAttributed := false
 	collector := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
 		if err != nil {
@@ -22,6 +26,25 @@ func TestOTLPExportUsesStaticRouteAndExcludesRequestSecrets(t *testing.T) {
 		}
 		mu.Lock()
 		_, _ = exported.Write(body)
+		if request.URL.Path == "/v1/traces" {
+			var traces collectortrace.ExportTraceServiceRequest
+			if err := proto.Unmarshal(body, &traces); err != nil {
+				t.Errorf("decode OTLP traces: %v", err)
+			}
+			for _, resource := range traces.ResourceSpans {
+				for _, scope := range resource.ScopeSpans {
+					for _, span := range scope.Spans {
+						if span.Name == "GET /v1/gradle-cache/{hash}" {
+							for _, attribute := range span.Attributes {
+								if attribute.Key == "layercache.integration" && attribute.Value.GetStringValue() == "gradle" {
+									gradleAttributed = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		mu.Unlock()
 		writer.Header().Set("Content-Type", "application/x-protobuf")
 		writer.WriteHeader(http.StatusOK)
@@ -46,6 +69,9 @@ func TestOTLPExportUsesStaticRouteAndExcludesRequestSecrets(t *testing.T) {
 	mux.HandleFunc("GET /v1/items/{id}", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("/v1/gradle-cache/{hash}", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	})
 	const targetSecret = "cache-key-that-must-not-be-exported"
 	const headerSecret = "bearer-that-must-not-be-exported"
 	request := httptest.NewRequest(http.MethodGet, "/v1/items/"+targetSecret+"?token="+targetSecret, nil)
@@ -55,6 +81,9 @@ func TestOTLPExportUsesStaticRouteAndExcludesRequestSecrets(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("response status = %d", response.Code)
 	}
+	gradleRequest := httptest.NewRequest(http.MethodGet, "/v1/gradle-cache/"+targetSecret, nil)
+	gradleRequest.SetBasicAuth("layercache", headerSecret)
+	runtime.Handler(mux).ServeHTTP(httptest.NewRecorder(), gradleRequest)
 	if err := runtime.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
@@ -70,5 +99,8 @@ func TestOTLPExportUsesStaticRouteAndExcludesRequestSecrets(t *testing.T) {
 	}
 	if !bytes.Contains(document, []byte("GET /v1/items/{id}")) {
 		t.Fatal("OTLP export did not contain the static route pattern")
+	}
+	if !gradleAttributed {
+		t.Fatal("Gradle HTTP activity did not retain its own static integration identity")
 	}
 }

@@ -114,7 +114,7 @@ func normalizeClaims(claims Claims, now time.Time) (Claims, error) {
 	if claims.Subject == "" || claims.Project == "" || claims.ExpiresAt.IsZero() || !claims.ExpiresAt.After(now) {
 		return Claims{}, ErrInvalidToken
 	}
-	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" {
+	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" {
 		return Claims{}, ErrInvalidToken
 	}
 	for _, identity := range []string{claims.RunID, claims.WorkspaceID} {

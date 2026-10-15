@@ -153,6 +153,8 @@ func routeIntegration(route string) string {
 		return "turbo"
 	case strings.Contains(route, "/v1/cache/"):
 		return "nx"
+	case strings.Contains(route, "/v1/gradle-cache/"):
+		return "gradle"
 	case strings.Contains(route, "/_apis/artifactcache/") || strings.Contains(route, "/_layercache/compatibility/"):
 		return "actions"
 	case strings.Contains(route, "/v1/buildkit/"):
