@@ -90,13 +90,15 @@ hit counts alone.
   The 2026-10-15 installed Phone profile confirms 28/28 results in Team Cache.
   The first warm replay restores 25 results from Local in 13.714s. Its three
   analysis misses come from generated native evidence entering broad root
-  lint/format/Fallow inputs. [Phone #309](https://github.com/ziahamza/phone-app/pull/309)
-  fixes those three inputs at reviewed source `913e03fe`, merged as `716c8442`.
-  Real Turbo controls preserve hashes across generated evidence changes and
-  invalidate for genuine source/configuration edits; all 28 local tasks and
-  [hosted Check](https://github.com/ziahamza/phone-app/actions/runs/38717692698) pass. The subsequent stable replay restores all 28 from Local
-  with zero executions in an 807ms native stage, confirming 28/28 Team results. Exclude only the declared generated output directory
-  and prove real source/configuration changes still invalidate those checks.
+  lint/format/Fallow inputs. On the same `b7279389` source, after generated
+  outputs stabilize, the second replay restores all 28 from Local with zero
+  executions in an 807ms native stage and confirms 28/28 Team results.
+  [Phone #309](https://github.com/ziahamza/phone-app/pull/309) then fixes those
+  three inputs at reviewed source `913e03fe`, merged as `716c8442`. It excludes
+  only the declared generated output directory. Real Turbo controls preserve
+  hashes across generated evidence changes and invalidate for genuine source
+  and configuration edits; all 28 local tasks and
+  [hosted Check](https://github.com/ziahamza/phone-app/actions/runs/38717692698) pass.
   The package-input fix changes no native or workflow source. Qualify Git-base
   changes separately for cached local Git-dependent analysis; required CI Fallow
   still executes fresh. Setup, tooling contracts and image work remain open.
