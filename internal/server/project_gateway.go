@@ -204,6 +204,10 @@ func (gateway *ProjectGateway) ServeHTTP(w http.ResponseWriter, r *http.Request)
 				http.Error(w, "cache capacity unavailable", http.StatusForbidden)
 				return
 			}
+			if r.Method == http.MethodPut && gradleArtifactPath(r.URL.Path) {
+				http.Error(w, "cache capacity unavailable", http.StatusRequestEntityTooLarge)
+				return
+			}
 			writeJSON(w, http.StatusInsufficientStorage, map[string]string{"error": "storage pool has insufficient headroom"})
 			return
 		}
@@ -251,7 +255,15 @@ func (gateway *ProjectGateway) routeProject(w http.ResponseWriter, r *http.Reque
 		selected = value
 		return true
 	}
-	deny := func() (*Server, bool) { http.NotFound(w, r); return nil, false }
+	deny := func() (*Server, bool) {
+		if gradleArtifactPath(r.URL.Path) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Layer Cache"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		} else {
+			http.NotFound(w, r)
+		}
+		return nil, false
+	}
 	for _, key := range []string{"teamId", "teamSlug", "team", "slug"} {
 		if values, present := r.URL.Query()[key]; present && (len(values) != 1 || !selectProject(values[0])) {
 			return deny()
@@ -263,9 +275,18 @@ func (gateway *ProjectGateway) routeProject(w http.ResponseWriter, r *http.Reque
 	if len(r.Header.Values("Authorization")) > 1 {
 		return deny()
 	}
-	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer lc2.") {
-		parts := strings.Split(strings.TrimPrefix(auth, "Bearer "), ".")
-		if len(parts) != 3 || len(auth) > 32<<10 {
+	token := ""
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		token = strings.TrimPrefix(auth, "Bearer ")
+	}
+	if gradleArtifactPath(r.URL.Path) {
+		if nativeToken, ok := gradleCapability(r); ok {
+			token = nativeToken
+		}
+	}
+	if strings.HasPrefix(token, "lc2.") {
+		parts := strings.Split(token, ".")
+		if len(parts) != 3 || len(token) > 32<<10 {
 			return deny()
 		}
 		value, err := routingProject(parts[1])

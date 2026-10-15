@@ -62,7 +62,7 @@ func TestConfigValidatesBypassAdaptersAndPublicBuildRepositories(t *testing.T) {
 		{
 			name: "supported bypass and GitHub repository",
 			configure: func(cfg *config.Config) {
-				cfg.BypassAdapters = []string{"turbo", "actions", "buildkit"}
+				cfg.BypassAdapters = []string{"turbo", "actions", "buildkit", "nx", "gradle"}
 				cfg.PublicBuildRepositories = []string{"https://github.com/acme/project"}
 				cfg.PublicBuildApprovedRefs = []string{"refs/heads/main"}
 				cfg.PublicBuildRecipeDigests = []string{"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}

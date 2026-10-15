@@ -95,14 +95,11 @@ func TestPersonalCacheAPIAndSameRepositoryArtifactsRemainPrivate(t *testing.T) {
 	requireStatus(t, q.request("POST", "/api/teams/"+personal.ID+"/invitations", `{"login":"bob","role":"reader"}`, alice, nil), 403)
 	privateToken := q.capability(privateProject, "alice")
 	sharedToken := q.capability(sharedProject, "bob")
-	headers := func(token string) map[string]string {
-		return map[string]string{"Authorization": "Bearer " + token}
-	}
-	paths := []string{"/v8/artifacts/full-context", "/v1/cache/full-context"}
+	paths := []string{"/v8/artifacts/full-context", "/v1/cache/full-context", "/v1/gradle-cache/full-context"}
 	for _, path := range paths {
-		requireStatus(t, q.request("PUT", path, "private-output", nil, headers(privateToken)), 200)
-		requireStatus(t, q.request("GET", path, "", nil, headers(sharedToken)), 404)
-		requireStatus(t, q.request("PUT", path, "shared-output", nil, headers(sharedToken)), 200)
+		requireStatus(t, q.request("PUT", path, "private-output", nil, personalNativeCacheHeaders(path, privateToken)), 200)
+		requireStatus(t, q.request("GET", path, "", nil, personalNativeCacheHeaders(path, sharedToken)), 404)
+		requireStatus(t, q.request("PUT", path, "shared-output", nil, personalNativeCacheHeaders(path, sharedToken)), 200)
 	}
 	if err := q.p.Close(); err != nil {
 		t.Fatal(err)
@@ -114,7 +111,7 @@ func TestPersonalCacheAPIAndSameRepositoryArtifactsRemainPrivate(t *testing.T) {
 	}
 	for _, path := range paths {
 		for _, tc := range []struct{ token, expected string }{{privateToken, "private-output"}, {sharedToken, "shared-output"}} {
-			response := q.request("GET", path, "", nil, headers(tc.token))
+			response := q.request("GET", path, "", nil, personalNativeCacheHeaders(path, tc.token))
 			requireStatus(t, response, 200)
 			if response.Body.String() != tc.expected {
 				t.Fatalf("%s artifact after restart = %q; want %q", path, response.Body.String(), tc.expected)
@@ -172,7 +169,7 @@ func TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy(t *testing.T) 
 	for _, protocol := range []struct {
 		integration, path       string
 		deniedRead, deniedWrite int
-	}{{"turbo", "/v8/artifacts/", 404, 401}, {"nx", "/v1/cache/", 401, 403}} {
+	}{{"turbo", "/v8/artifacts/", 404, 401}, {"nx", "/v1/cache/", 401, 403}, {"gradle", "/v1/gradle-cache/", 401, 403}} {
 		t.Run(protocol.integration, func(t *testing.T) {
 			for _, actor := range []string{"", "2", "invalid"} {
 				requireStatus(t, exchange(protocol.integration, actor, "push", "refs/heads/main"), 401)
@@ -182,7 +179,7 @@ func TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy(t *testing.T) 
 			writer := decodeQA[struct {
 				Token string `json:"token"`
 			}](t, response).Token
-			headers := map[string]string{"Authorization": "Bearer " + writer}
+			headers := personalNativeCacheHeaders(protocol.path, writer)
 			path := protocol.path + "owner-ci"
 			requireStatus(t, q.request("PUT", path, "owner-output", nil, headers), 200)
 			response = exchange(protocol.integration, "1", "pull_request", "refs/pull/1/merge")
@@ -190,7 +187,7 @@ func TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy(t *testing.T) 
 			reader := decodeQA[struct {
 				Token string `json:"token"`
 			}](t, response).Token
-			headers["Authorization"] = "Bearer " + reader
+			headers = personalNativeCacheHeaders(protocol.path, reader)
 			requireStatus(t, q.request("GET", path, "", nil, headers), 200)
 			requireStatus(t, q.request("PUT", protocol.path+"owner-pr", "forbidden", nil, headers), protocol.deniedWrite)
 			for _, token := range []string{writer, reader} {
@@ -203,11 +200,19 @@ func TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy(t *testing.T) 
 		t.Fatal(err)
 	}
 	for _, capability := range issued {
-		requireStatus(t, q.request("GET", capability.path, "", nil, map[string]string{"Authorization": "Bearer " + capability.token}), capability.deniedRead)
+		requireStatus(t, q.request("GET", capability.path, "", nil, personalNativeCacheHeaders(capability.path, capability.token)), capability.deniedRead)
 	}
 	if _, err := q.p.store.GitHubActionsRole(context.Background(), project.ID, "1"); !errors.Is(err, ErrDenied) {
 		t.Fatalf("former owner CI = %v", err)
 	}
+}
+
+func personalNativeCacheHeaders(path, token string) map[string]string {
+	authorization := "Bearer " + token
+	if strings.HasPrefix(path, "/v1/gradle-cache/") {
+		authorization = "Basic " + base64.StdEncoding.EncodeToString([]byte("layercache:"+token))
+	}
+	return map[string]string{"Authorization": authorization}
 }
 
 func TestLegacyTeamKindMigrationPreservesMembershipAndRestart(t *testing.T) {

@@ -36,7 +36,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	syncTeam := flags.Bool("sync-team", false, "confirm successful Turbo task results are available to CI in Team Cache")
 	syncTimeout := flags.Duration("sync-timeout", 30*time.Second, "Team Cache confirmation timeout, from 1ms to 60s")
 	var transientBypasses stringList
-	flags.Var(&transientBypasses, "bypass", "bypass turbo, actions, buildkit, nx, or all for this command (repeatable)")
+	flags.Var(&transientBypasses, "bypass", "bypass turbo, actions, buildkit, nx, gradle, or all for this command (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -134,6 +134,12 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err != nil {
 		return err
 	}
+	gradleAuthority := authority
+	gradleAuthority.Integration = "gradle"
+	gradleToken, err := access.MintCapabilityToken(cfg.LocalToken, gradleAuthority, now)
+	if err != nil {
+		return err
+	}
 	command := exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
@@ -159,6 +165,8 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		"ACTIONS_CACHE_SERVICE_V2":                 "",
 		"NX_SELF_HOSTED_REMOTE_CACHE_SERVER":       localRuntimeURL(cfg.Listen),
 		"NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN": nxToken,
+		"LAYER_CACHE_GRADLE_URL":                   localRuntimeURL(cfg.Listen) + "/v1/gradle-cache/",
+		"LAYER_CACHE_GRADLE_TOKEN":                 gradleToken,
 		measurementCapabilityEnvironment:           buildkitToken,
 	}
 	if summaryEnabled {
@@ -185,6 +193,11 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if isAdapterBypassed(cfg, "nx") {
 		injected["NX_SELF_HOSTED_REMOTE_CACHE_SERVER"] = ""
 		injected["NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN"] = ""
+	}
+	if isAdapterBypassed(cfg, "gradle") {
+		command.Env = withoutGradleCacheEnvironment(command.Env)
+		injected["LAYER_CACHE_GRADLE_URL"] = ""
+		injected["LAYER_CACHE_GRADLE_TOKEN"] = ""
 	}
 	for key, value := range injected {
 		command.Env = replaceEnvironment(command.Env, key, value)
@@ -223,7 +236,7 @@ func runCommandWithoutCache(ctx context.Context, commandArgs []string, stdout, s
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
-	command.Env = withoutTurboSyncPolicy(os.Environ())
+	command.Env = withoutGradleCacheEnvironment(withoutTurboSyncPolicy(os.Environ()))
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("command failed while Layer Cache was unavailable: %w", err)
 	}
@@ -245,6 +258,7 @@ func runCommandWithScopeBypass(ctx context.Context, commandArgs []string, stdout
 		"ACTIONS_CACHE_URL", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_CACHE_SERVICE_V2",
 		"ACTIONS_RESULTS_URL", "LOCAL_CI_ACTIONS_CACHE_URL", "LOCAL_CI_ACTIONS_RUNTIME_TOKEN",
 		"NX_SELF_HOSTED_REMOTE_CACHE_SERVER", "NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN",
+		"LAYER_CACHE_GRADLE_URL", "LAYER_CACHE_GRADLE_TOKEN", "LAYER_CACHE_GRADLE_PUSH", "LAYER_CACHE_GRADLE_LOCAL_ENABLED",
 	} {
 		command.Env = replaceEnvironment(command.Env, key, "")
 	}
@@ -253,6 +267,13 @@ func runCommandWithScopeBypass(ctx context.Context, commandArgs []string, stdout
 		return fmt.Errorf("command failed while Layer Cache was bypassed: %w", err)
 	}
 	return nil
+}
+
+func withoutGradleCacheEnvironment(environment []string) []string {
+	for _, key := range []string{"LAYER_CACHE_GRADLE_URL", "LAYER_CACHE_GRADLE_TOKEN", "LAYER_CACHE_GRADLE_PUSH", "LAYER_CACHE_GRADLE_LOCAL_ENABLED"} {
+		environment = replaceEnvironment(environment, key, "")
+	}
+	return environment
 }
 
 func turboSummaryRoots(configuredRoot, discoveredRoot string) []string {

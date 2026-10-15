@@ -1,0 +1,819 @@
+{
+  "schemaVersion": "gradle-native-v1",
+  "passed": true,
+  "sourceRevision": "3b9ded989140abadedb476cfc29fc100163c9597",
+  "binaryDigest": "sha256:07fc7c7082f489097270ec869fd67a9b6960caa6f8f62fbca1d264966a55f60e",
+  "initScriptDigest": "sha256:b45b47190b38f9f439d2324a49fbc5bbfdb8bf3a8671b63900c11d64ef32eaf5",
+  "gradleVersion": "9.3.1",
+  "javaVersion": "17.0.20.1",
+  "profile": "linux-x64-jdk17-cbb14dcffd94-gradle931-schema1",
+  "setupWallMs": 25590,
+  "hashes": {
+    "compileJava": "4cf6941a9da9c1732c2f40815ce2dca2",
+    "verifyFixture": "f62d70ecac7963a95bba27619ef63c91"
+  },
+  "localArchives": {
+    "compileJava": {
+      "size": 1168,
+      "digest": "sha256:fbfe82baf1b7a5a59e5039355c17457e593c19acdeed0d734ce940b081659228"
+    },
+    "verifyFixture": {
+      "size": 464,
+      "digest": "sha256:c9b19a4f0c09138f3407ad8fad6e8ccfaf7a4f64db2e742beff1e990355934ac"
+    }
+  },
+  "teamArchives": {
+    "compileJava": {
+      "size": 1170,
+      "digest": "sha256:e2bba4e0e84dbc4171f41925d676fc3e9d8ea531786255d64d352941ae7f6c7a"
+    },
+    "verifyFixture": {
+      "size": 464,
+      "digest": "sha256:5a1a82675583f68434902d5078759e264161c53114dacbb0961be872202f2b1e"
+    }
+  },
+  "outputDigests": {
+    "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+    "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+  },
+  "stages": [
+    {
+      "name": "local-cold",
+      "status": 0,
+      "commandWallMs": 5382,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "PUT",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 1168,
+          "downloadBytes": 0,
+          "uploadDigest": "sha256:fbfe82baf1b7a5a59e5039355c17457e593c19acdeed0d734ce940b081659228",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "PUT",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 464,
+          "downloadBytes": 0,
+          "uploadDigest": "sha256:c9b19a4f0c09138f3407ad8fad6e8ccfaf7a4f64db2e742beff1e990355934ac",
+          "status": 200
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "local-empty-consumer",
+      "status": 0,
+      "commandWallMs": 4789,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 1168,
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 464,
+          "status": 200
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "local-restart-consumer",
+      "status": 0,
+      "commandWallMs": 4923,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 1168,
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 464,
+          "status": 200
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "team-cold",
+      "status": 0,
+      "commandWallMs": 5510,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "PUT",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 1170,
+          "downloadBytes": 0,
+          "uploadDigest": "sha256:e2bba4e0e84dbc4171f41925d676fc3e9d8ea531786255d64d352941ae7f6c7a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "PUT",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 464,
+          "downloadBytes": 0,
+          "uploadDigest": "sha256:5a1a82675583f68434902d5078759e264161c53114dacbb0961be872202f2b1e",
+          "status": 200
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "team-empty-reader",
+      "status": 0,
+      "commandWallMs": 5016,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 1170,
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 464,
+          "status": 200
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "duplicate-first-winner",
+      "status": 0,
+      "commandWallMs": 5400,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "status": 404,
+          "forcedMiss": true
+        },
+        {
+          "method": "PUT",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 1168,
+          "downloadBytes": 0,
+          "uploadDigest": "sha256:a29bf0249ea549e0149e4b9583d1bde51ac26272d44d2ad9b235f8c09df0a776",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "status": 404,
+          "forcedMiss": true
+        },
+        {
+          "method": "PUT",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 464,
+          "downloadBytes": 0,
+          "uploadDigest": "sha256:6e05a9d0b776843ed9d40fd687228a8191ed0515c47dbc6cf0e9880f2b06dca5",
+          "status": 200
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "declared-input-miss",
+      "status": 0,
+      "commandWallMs": 5316,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "hash": "6de6e578528e4c9b153c9d0b6136a97e",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 1170,
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "6de6e578528e4c9b153c9d0b6136a97e",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:614a4a7fad59e13f79168df101a0c295090126eeccdd26ce84502c4883f7ad9b"
+      }
+    },
+    {
+      "name": "changed-source-miss",
+      "status": 0,
+      "commandWallMs": 5208,
+      "tasks": {
+        "compileJava": {
+          "hash": "cd072a8f666fe6656fff596100dbb262",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "08f50e07c6f603bc0da28c4c55c6df6b",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "cd072a8f666fe6656fff596100dbb262",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "hash": "08f50e07c6f603bc0da28c4c55c6df6b",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:6100eaee00691f01f3f11cbf3077a59b4b1ae1a8ec5f154c4196c78f620c5ded",
+        "verification/result.txt": "sha256:fdcaae85cecd4f66d19f4654f2f835ce716060c9318e2bd1e9360ec973158d82"
+      }
+    },
+    {
+      "name": "compiler-option-miss",
+      "status": 0,
+      "commandWallMs": 5315,
+      "tasks": {
+        "compileJava": {
+          "hash": "dd54c5ba289f0256ef1132af776dc47a",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "164306c54e90f1b34c6e1f84069ad3b9",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "dd54c5ba289f0256ef1132af776dc47a",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "hash": "164306c54e90f1b34c6e1f84069ad3b9",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:4993a62bccc34d67ca76d9633e8213f49adf94d05beba8d06d52cda24d5a7bb0",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "profile-isolation-miss",
+      "status": 0,
+      "commandWallMs": 5525,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "failed-task-rerun-1",
+      "status": 1,
+      "commandWallMs": 4987,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "hash": "9b5b68fe6c8f486548d4a9e46a4b774e",
+          "outcome": "FAILED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 1170,
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "9b5b68fe6c8f486548d4a9e46a4b774e",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        }
+      ],
+      "remoteDisabled": false
+    },
+    {
+      "name": "failed-task-rerun-2",
+      "status": 1,
+      "commandWallMs": 4103,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "hash": "9b5b68fe6c8f486548d4a9e46a4b774e",
+          "outcome": "FAILED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 1170,
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "9b5b68fe6c8f486548d4a9e46a4b774e",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        }
+      ],
+      "remoteDisabled": false
+    },
+    {
+      "name": "readonly-publication-rejected",
+      "status": 0,
+      "commandWallMs": 5248,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "PUT",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 1166,
+          "downloadBytes": 31,
+          "uploadDigest": "sha256:915bcd8f48e5c5722612cf2de78c40be7dc8bd2b8fbc4a831082fa954af48464",
+          "status": 403
+        }
+      ],
+      "remoteDisabled": true,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "explicit-fresh-bypass",
+      "status": 0,
+      "commandWallMs": 5080,
+      "tasks": {
+        "compileJava": {
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "existing-remote-rejected",
+      "status": 1,
+      "commandWallMs": 3667,
+      "tasks": {
+        "compileJava": {
+          "outcome": "NOT-SCHEDULED",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "outcome": "NOT-SCHEDULED",
+          "executions": 0
+        }
+      },
+      "requests": [],
+      "remoteDisabled": false
+    },
+    {
+      "name": "unconfigured-script-preserves-remote",
+      "status": 0,
+      "commandWallMs": 4924,
+      "tasks": {
+        "compileJava": {
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "partial-environment-rejected",
+      "status": 1,
+      "commandWallMs": 3564,
+      "tasks": {
+        "compileJava": {
+          "outcome": "NOT-SCHEDULED",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "outcome": "NOT-SCHEDULED",
+          "executions": 0
+        }
+      },
+      "requests": [],
+      "remoteDisabled": false
+    },
+    {
+      "name": "unsafe-http-rejected",
+      "status": 1,
+      "commandWallMs": 3527,
+      "tasks": {
+        "compileJava": {
+          "outcome": "NOT-SCHEDULED",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "outcome": "NOT-SCHEDULED",
+          "executions": 0
+        }
+      },
+      "requests": [],
+      "remoteDisabled": false
+    },
+    {
+      "name": "quota-pressure",
+      "status": 0,
+      "commandWallMs": 5197,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 19,
+          "status": 404
+        },
+        {
+          "method": "PUT",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 1169,
+          "downloadBytes": 31,
+          "uploadDigest": "sha256:03ec4a3ee0674dcf9f91e19511f04c9486ee25f4d413b7e923fcac66d7b29243",
+          "status": 413
+        }
+      ],
+      "remoteDisabled": true,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "private-endpoint-offline",
+      "status": 0,
+      "commandWallMs": 5427,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 0,
+          "status": 503
+        }
+      ],
+      "remoteDisabled": true,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "private-restart-reader",
+      "status": 0,
+      "commandWallMs": 4853,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "FROM-CACHE",
+          "executions": 0
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 1170,
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "uploadBytes": 0,
+          "downloadBytes": 464,
+          "status": 200
+        }
+      ],
+      "remoteDisabled": false,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    },
+    {
+      "name": "revoked-member",
+      "status": 0,
+      "commandWallMs": 5280,
+      "tasks": {
+        "compileJava": {
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "outcome": "EXECUTED",
+          "executions": 1
+        },
+        "verifyFixture": {
+          "hash": "f62d70ecac7963a95bba27619ef63c91",
+          "outcome": "EXECUTED",
+          "executions": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "hash": "4cf6941a9da9c1732c2f40815ce2dca2",
+          "uploadBytes": 0,
+          "downloadBytes": 13,
+          "status": 401
+        }
+      ],
+      "remoteDisabled": true,
+      "outputDigests": {
+        "classes/java/main/example/Hello.class": "sha256:94b8057240bf8801c8f0338b83def906e3aa6361fb7e22d5ee1a33cf77d0f8aa",
+        "verification/result.txt": "sha256:83b3d76671e10acdc65ad4665bf39956b1f77b696d23a008d29cecc01fac30ee"
+      }
+    }
+  ],
+  "actualDifferentJdkQualified": false,
+  "phoneAndroidBuildQualified": false,
+  "gradleFilesystemCacheBoundedByLayerCache": false,
+  "localToPrivateForwardingImplemented": false,
+  "nativeTransferBytes": {
+    "upload": 7233,
+    "download": 10402
+  },
+  "qualificationWallMs": 134472
+}

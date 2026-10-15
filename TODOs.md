@@ -62,8 +62,21 @@ hit counts alone.
   Separate vendor queue/execution from Actions allocation and use actual billing
   evidence before publishing a monthly-dollar comparison.
 
+  The first post-merge main observation at `716c8442`,
+  [Check 38718878987](https://github.com/ziahamza/phone-app/actions/runs/38718878987),
+  passes all selected gates. Its unit job takes 6m15s, including a 2m02.667s
+  Turbo stage with 20 of 27 tasks cached. A prior runner snapshot restores;
+  the direct Team report has zero hits among seven eligible tasks. Keep those
+  native hits separate from the earlier directly attributed Team qualification.
+
 - [ ] **Reuse trusted exact-commit Check results in manual release preparation.**
   Owner: Phone CI/release owner, with LayerCache reviewing context and invalidation.
+  [Phone #310](https://github.com/ziahamza/phone-app/pull/310) merged on October 15,
+  including latest-attempt/race controls, two-worker fallback and native
+  fingerprint qualification. The Phone owner is waiting for main Check before
+  measuring a signed build with TestFlight upload disabled. Keep application
+  workflows with that owner; post-merge reuse and allocation measurement remain
+  required before marking this milestone complete.
   [Production #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
   passed RunCloud-to-TestFlight with zero GitHub Mac jobs, but forced manual
   preparation took 28m18s, including 23m18s of repeated general validation and
@@ -73,8 +86,8 @@ hit counts alone.
   QA profile shared by Check and manual validation, then bind a small trusted
   proof to the literal source, workflow/recipe, latest run/attempt, full selected
   gates, actual runtime and complete relevant environment. Current release EAS
-  and feature flags differ from Check; current green results have no matching
-  context proof and must not be assumed equivalent. Missing, expired, ambiguous,
+  and feature flags differed from Check before #310. Qualify its resulting
+  context proof in the signed measurement. Missing, expired, ambiguous,
   changed, cancelled or uncertain proof runs fresh. Keep an explicit fresh
   validation option separate from forcing an archive. Preserve deployment-time,
   signing, package inspection and live-provider checks, and required artifact
@@ -106,6 +119,41 @@ hit counts alone.
 
 
 ## P1: LLM and native outputs across machines
+
+- [ ] **Add Gradle's native HTTP task cache for Phone Android.**
+  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
+  Current next implementation, while the Phone owner handles release reuse.
+  The October 15 Android acceptance spent 16m11s in the build step inside a
+  21m02s compile job. Current Phone source already enables Gradle build caching
+  and ccache. The avoidable fraction and transfer overhead remain unmeasured.
+  Keep Gradle's native keys, executor and archives. Add scoped GET/PUT over the
+  existing bounded artifact engine and an opt-in credential-free init script.
+  Qualify Local standalone and direct Personal/Team endpoints with the actual
+  pinned Gradle client: trusted producer, empty compatible consumer, exact
+  outputs, input/profile misses, failed-task reruns, read-only PRs, revocation,
+  outages, cancellation, duplicates and quota pressure. Preserve source/profile
+  identity and report native outcomes, transfer bytes and complete command time.
+  A Local acknowledgement does not establish private publication. Automatic
+  Local-to-private forwarding, Phone workflow adoption, whole Android build
+  savings, installation and gateway rollout remain separate acceptance targets.
+  Public Gradle publication remains disabled.
+
+  First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
+  The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
+  22 actual Gradle 9.3.1/JDK 17 commands in 134.472s, with empty independent
+  Local/private consumers restoring exact compiled and verification outputs
+  as `FROM-CACHE` with zero actions. It covers native duplicate winners,
+  input/compiler/profile misses, failed-task reruns, read-only/revoked clients,
+  explicit fresh bypass, init conflicts, quota and service outage behavior.
+  [Personal policy controls](docs/evidence/gradle-personal-policy-20261015.json)
+  reproduce and fix the missing managed-portal route, then pass actual isolation,
+  restart, owner-only CI, PR-reader and former-owner revocation checks, including
+  race detection. [Real PostgreSQL/S3 SDK controls](docs/evidence/gradle-cloud-upload-integrity-20261015.json)
+  also reproduce and repair incomplete-upload publication, with zero bytes or
+  metadata committed in the small malformed-upload cases. The [contract](docs/gradle-cache.md) separates this Java
+  protocol proof from Phone Android adoption and measured build savings.
+  Next: qualify an isolated Phone-native Gradle producer/fresh consumer, then
+  coordinate an installed release and gateway upgrade before workflow adoption.
 
 - [ ] **Deliver exact LLM response replay through existing model interfaces.**
   Owner: LayerCache; first slice merged, application adoption pending.
@@ -190,14 +238,6 @@ hit counts alone.
   and current Metro JS. Debug clients and bundled Release QA apps have distinct
   identities; physical iOS devices and EAS Build retain their own contracts.
 
-- [ ] **Add Gradle's native HTTP task cache for Phone Android.**
-  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
-  Keep Gradle's keys and executor and retain ccache for C++. Implement bounded
-  scoped GET/PUT and its native authentication/error semantics. Prove a trusted
-  producer, empty compatible local/CI consumers, exact outputs, toolchain/input
-  misses, read-only PRs, revocation, outages and quota pressure. Measure actual
-  whole builds before broadening rollout.
-
 - [ ] **Measure residual iOS work before extending shared LLVM transport.**
   Owner: Phone native owner. Two recent RunCloud samples already hit all 1,725
   cacheable compiler tasks but occupied Macs for 16m44s/18m28s. Time setup,
@@ -265,6 +305,13 @@ hit counts alone.
 
 ## Delivered baseline
 
+- [x] Source-qualified native Gradle HTTP over existing bounded artifact storage,
+  expiring process credentials and an opt-in init script, source `3b9ded9`.
+  The [22-command real-client qualification](docs/evidence/gradle-native-private-20261015.json)
+  and [managed Personal policy proof](docs/evidence/gradle-personal-policy-20261015.json)
+  pass. The Linux native-client CI gate uses the pinned Gradle distribution and
+  candidate binary. Installation, gateway rollout, Local forwarding and Phone
+  whole-build savings remain open above.
 - [x] Phone's ten independent mobile test groups, all thirty isolated workflow
   processes and mandatory typechecking, reviewed source `b7279389` merged in
   [Phone #298](https://github.com/ziahamza/phone-app/pull/298) as
