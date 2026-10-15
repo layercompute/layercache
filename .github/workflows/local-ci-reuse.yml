@@ -20,26 +20,36 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify CI changes
+        id: scope
+        uses: ./.github/actions/ci-scope
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        if: steps.scope.outputs.mode != 'docs'
         with:
           go-version: "1.25.13"
           cache: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: steps.scope.outputs.mode != 'docs'
         with:
           node-version: "24.13.0"
       - name: Install the pinned Turbo client and build candidate
+        if: steps.scope.outputs.mode != 'docs'
         run: |
           npm install --global pnpm@10.34.5
           pnpm --dir qa/fixtures/local-ci-reuse install --frozen-lockfile
           go build -trimpath -buildvcs=true -o "$RUNNER_TEMP/layercache-local-ci-reuse" ./cmd/layercache
       - name: Prove successful local tasks restore in a fresh CI checkout
+        if: steps.scope.outputs.mode != 'docs'
         run: |
           python3 qa/local-ci-reuse/run.py \
             --binary "$RUNNER_TEMP/layercache-local-ci-reuse" \
             --turbo "$GITHUB_WORKSPACE/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
             --output "$RUNNER_TEMP/local-ci-reuse.json"
       - name: Preserve the execution and restore evidence
-        if: always()
+        if: (steps.scope.outputs.mode != 'docs') && (always())
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: local-ci-reuse-${{ github.sha }}

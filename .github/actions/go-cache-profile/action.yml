@@ -1,0 +1,8 @@
+name: Scope native Go compilation reuse
+description: Bind the native Go cache to this job, runner image and effective build settings.
+outputs:
+  enabled:
+    description: true only when a complete runner profile was written.
+runs:
+  using: node24
+  main: profile.mjs

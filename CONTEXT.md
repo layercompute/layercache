@@ -7,6 +7,22 @@ under complete input identities, while current runtime checks remain distinct.
 
 ## Language
 
+**Standalone cache**:
+An open-source cache operated without a Layer Cache account, on a local machine or one user-managed remote host.
+_Avoid_: Free Team Cache, account-required Local Cache
+
+**Cloud account**:
+A signed-up identity that authorizes managed collaboration, cache-host coordination and hosted storage through scoped credentials.
+_Avoid_: Local daemon identity, storage tier
+
+**Cache host**:
+A machine supplying cache storage. Managed cache hosts are enrolled under a Cloud account and retain their projects' access boundaries.
+_Avoid_: Team when describing a machine, build runner when describing storage
+
+**Hosted storage**:
+Cache capacity operated by Layer Cache for an authorized Cloud account. Hosting is separate from Personal, Team and Public visibility.
+_Avoid_: Cloud visibility tier, Public Cache when describing hosting
+
 **Local Cache**:
 A bounded cache on one machine that stores reusable artifacts from authorized visibility tiers.
 _Avoid_: Local Store, local tier

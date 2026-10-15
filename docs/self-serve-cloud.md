@@ -2,6 +2,24 @@
 
 The hosted beta lets an approved GitHub user create a team, invite teammates, add repository projects, inspect cache storage and activity, and connect an existing CLI. Other signed-in users can accept invitations and use their teams. Projects reuse the existing Team Cache protocols and isolate artifacts with distinct project identities and signing keys.
 
+## Standalone and managed service
+
+The open-source CLI and daemon work without a Layer Cache account, with local
+storage or one user-managed remote cache host. Remote access still needs the
+operator's authentication and network controls.
+
+The managed service requires signup and a scoped token for Team collaboration,
+multiple enrolled cache hosts and Layer Cache-hosted storage. An account can
+bring its own hosts, choose hosted storage, or combine them. Personal, Team and
+trusted-publisher Public visibility remain separate from the hosting choice.
+The CLI connects to the cloud service with that authority; the account controls
+which enrolled hosts or hosted capacity supply its projects' cache storage.
+
+Existing standalone private-cache APIs and development fixtures do not establish
+a deployed signup service or managed host enrollment. The workflow below is the
+managed service's intended and locally tested onboarding path; live deployment
+and multi-host coordination retain their separate qualification gates.
+
 ## Engineer workflow
 
 1. Open the service origin and continue with GitHub.
