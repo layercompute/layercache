@@ -84,30 +84,22 @@ hit counts alone.
   the direct Team report has zero hits among seven eligible tasks. Keep those
   native hits separate from the earlier directly attributed Team qualification.
 
-- [ ] **Reuse trusted exact-commit Check results in manual release preparation.**
-  Owner: Phone CI/release owner, with LayerCache reviewing context and invalidation.
-  [Phone #310](https://github.com/ziahamza/phone-app/pull/310) merged on October 15,
-  including latest-attempt/race controls, two-worker fallback and native
-  fingerprint qualification. The Phone owner is waiting for main Check before
-  measuring a signed build with TestFlight upload disabled. Keep application
-  workflows with that owner; post-merge reuse and allocation measurement remain
-  required before marking this milestone complete.
-  [Production #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
-  passed RunCloud-to-TestFlight with zero GitHub Mac jobs, but forced manual
-  preparation took 28m18s, including 23m18s of repeated general validation and
-  17.9m of browser QA. Extract the strict latest-main Check lookup used by
-  `scripts/android/signed-benchmark.mjs`, rather than accepting any historical
-  successful check. Define one deterministic
-  QA profile shared by Check and manual validation, then bind a small trusted
-  proof to the literal source, workflow/recipe, latest run/attempt, full selected
-  gates, actual runtime and complete relevant environment. Current release EAS
-  and feature flags differed from Check before #310. Qualify its resulting
-  context proof in the signed measurement. Missing, expired, ambiguous,
-  changed, cancelled or uncertain proof runs fresh. Keep an explicit fresh
-  validation option separate from forcing an archive. Preserve deployment-time,
-  signing, package inspection and live-provider checks, and required artifact
-  availability. Prove reuse and invalidation with native GitHub API fixtures and
-  a real producer/consumer decision before claiming avoided job allocation.
+- [x] **Reuse trusted exact-commit Check results in manual release preparation.**
+  Owner: Phone CI/release owner. [Phone #310](https://github.com/ziahamza/phone-app/pull/310)
+  merged as `9f38e36db94d1161e5cfd561293cc0a1ba214ca8`.
+  [Main Check 38727776394](https://github.com/ziahamza/phone-app/actions/runs/38727776394)
+  and the exact-source [signed canary 38730000568](https://github.com/ziahamza/phone-app/actions/runs/38730000568)
+  pass. Preparation takes 3m16s versus 28m18s in prior signed run 38629591949;
+  a two-second trusted proof lookup removes the 23m18s repeated-validation block.
+  RunCloud's signed controller takes 10m17s and Linux IPA inspection 37s.
+  All allocated Actions jobs use Ubicloud two-core runners, with zero GitHub Mac
+  jobs. The separate matching native-QA reuse run takes 2m12s versus 19m46s fresh.
+  Preserve latest-run/current-attempt checks, exact source/context binding,
+  fresh fallback and explicit fresh validation. Signing, package inspection,
+  publication and live-provider gates remain required. The canary is build-only:
+  it skips TestFlight upload and deployed smoke, whose qualification remains
+  separate. Provider/cache variation prevents attributing other stage changes
+  or comparing whole workflow totals to the earlier full publishing run.
 
 - [ ] **Reduce repeated Phone setup and deterministic tooling checks.**
   Owner: Phone CI owner. The same sample has 4m07s median outside Turbo.
@@ -137,7 +129,9 @@ hit counts alone.
 
 - [ ] **Add Gradle's native HTTP task cache for Phone Android.**
   Owner: LayerCache protocol/client integration, coordinated with Phone CI.
-  Current next implementation, while the Phone owner handles release reuse.
+  Next implementable adoption after the qualified protocol slice below; the
+  Phone owner has completed release-validation reuse. Remote Mac dependency
+  integration remains gated on supported provider hooks.
   The October 15 Android acceptance spent 16m11s in the build step inside a
   21m02s compile job. Current Phone source already enables Gradle build caching
   and ccache. The avoidable fraction and transfer overhead remain unmeasured.
@@ -169,6 +163,26 @@ hit counts alone.
   protocol proof from Phone Android adoption and measured build savings.
   Next: qualify an isolated Phone-native Gradle producer/fresh consumer, then
   coordinate an installed release and gateway upgrade before workflow adoption.
+
+- [ ] **Qualify dependency reuse on RunCloud through supported provider hooks.**
+  Owner: LayerCache cache integration, coordinated with the Phone CI owner.
+  Prior signed worker 38629591949 spent 2m13s in pnpm and 6m25s in CocoaPods,
+  totaling 8m38s. Its provider log reports dependency storage disabled by operator
+  policy. [Phone #310](https://github.com/ziahamza/phone-app/pull/310) records the
+  evidence and [published API boundaries](https://docs.run.cloud/ios/build-with-xcode#intentional-differences).
+  The published [Xcode SDK](https://docs.run.cloud/sdk/latest#xcodebuildsclient)
+  and [CLI](https://docs.run.cloud/cli/latest#xcode-builds) expose no dependency
+  cache toggle or restore/save hook. Native-shell rebundling is a separate
+  simulator Release path, not a signed-device dependency cache. The prior
+  timings are an opportunity, not current or avoidable work. First establish a
+  supported dependency-cache setting or restore/save
+  hooks on the remote Mac. Do not recreate the removed worker bypass.
+  Capture current per-phase timings and provider cache-hit/miss evidence before
+  comparing a paired cold/warm build. A LayerCache integration must preserve
+  private project authority, complete toolchain/lockfile context, bounded bytes,
+  exact restored data, failure/input controls and fresh native/runtime checks.
+  Include restore/save transfer and allocated controller time in the result.
+  Phone-native Gradle qualification can proceed independently of this gate.
 
 - [ ] **Deliver exact LLM response replay through existing model interfaces.**
   Owner: LayerCache; first slice merged, application adoption pending.
