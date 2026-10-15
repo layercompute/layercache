@@ -106,6 +106,13 @@ revocation, concurrent duplicates, interrupted uploads, integrity and quota
 pressure. Source qualification is separate from CLI installation, application
 adoption and gateway deployment.
 
+The managed portal's Personal controls also exercise the Gradle route: Personal
+and Team projects for the same repository retain different bytes across restart;
+only the Personal owner's signed CI identity can obtain authority; PR access is
+read-only; and owner changes revoke previously issued credentials. These controls
+use the real portal, project gateway and artifact engine. The Java native-client
+fixture separately qualifies the archive protocol.
+
 This reuses the Apache-2.0 Gradle
 [native HTTP implementation](https://github.com/gradle/gradle/blob/v9.3.1/platforms/core-execution/build-cache-http/src/main/java/org/gradle/caching/http/internal/DefaultHttpBuildCacheServiceFactory.java).
 No custom task hasher, build executor or Gradle plugin is added. Phone keeps its
