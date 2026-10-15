@@ -196,7 +196,8 @@ async function run(name, work, runtime, token, options = {}) {
   const tasks = {};
   for (const task of ['compileJava', 'verifyFixture']) {
     const hash = result.text.match(new RegExp(`Build cache key for task ':${task}' is ([a-f0-9]+)`))?.[1];
-    const outcome = result.text.match(new RegExp(`> Task :${task}(?: ([A-Z-]+))?(?:\\r?\\n|$)`))?.[1] ?? 'EXECUTED';
+    const taskLine = result.text.match(new RegExp(`> Task :${task}(?: ([A-Z-]+))?(?:\\r?\\n|$)`));
+    const outcome = taskLine ? taskLine[1] ?? 'EXECUTED' : 'NOT-SCHEDULED';
     tasks[task] = { ...(hash ? { hash } : {}), outcome, executions: counts(work)[task] - before[task] };
   }
   const stage = { name, status: result.status, commandWallMs: result.commandWallMs, tasks,
@@ -325,15 +326,18 @@ try {
   const conflict = await run('existing-remote-rejected', existing, team, teamReader, { expectFailure: true });
   assert.match(conflict.text, /cannot replace an existing remote Gradle build cache/);
   assert.deepEqual(conflict.stage.requests, []);
+  for (const row of Object.values(conflict.stage.tasks)) { assert.equal(row.outcome, 'NOT-SCHEDULED'); assert.equal(row.executions, 0); }
   const untouched = await run('unconfigured-script-preserves-remote', existing, undefined, undefined, { bypass: true });
   for (const row of Object.values(untouched.stage.tasks)) assert.equal(row.executions, 1);
 
   const partial = await run('partial-environment-rejected', workspace('partial-environment'), undefined, undefined,
     { env: { LAYER_CACHE_GRADLE_TOKEN: teamReader }, expectFailure: true });
   assert.match(partial.text, /requires both LAYER_CACHE_GRADLE_URL and LAYER_CACHE_GRADLE_TOKEN/);
+  for (const row of Object.values(partial.stage.tasks)) { assert.equal(row.outcome, 'NOT-SCHEDULED'); assert.equal(row.executions, 0); }
   const unsafe = await run('unsafe-http-rejected', workspace('unsafe-http'), undefined, undefined,
     { env: { LAYER_CACHE_GRADLE_URL: 'http://cache.example.invalid/', LAYER_CACHE_GRADLE_TOKEN: teamReader }, expectFailure: true });
   assert.match(unsafe.text, /must be an HTTPS or loopback HTTP URL/);
+  for (const row of Object.values(unsafe.stage.tasks)) { assert.equal(row.outcome, 'NOT-SCHEDULED'); assert.equal(row.executions, 0); }
 
   const quota = await setup('quota', 'team', 128);
   const quotaToken = await mint(quota, 'write');
