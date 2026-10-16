@@ -18,9 +18,12 @@ hit counts alone.
   Android producer/independent empty consumer pair are qualified through a direct
   private endpoint. Immutable beta.5 publication, installed-binary qualification,
   host installation and the existing shared gateway upgrade are complete.
-  The Phone CI owner is preparing workflow adoption. First qualify a trusted
-  producer through the existing release build, then implement automatic local
-  publication. The receipt
+  The Phone CI owner opened [#317](https://github.com/ziahamza/phone-app/pull/317)
+  at `17b6fa7c64fbfad433a7991dd647bb659c2b76c4` for reviewed workflow adoption.
+  Local preparation passes all 28 workspace tasks and 45 focused contracts;
+  hosted Check and Android QA are pending. First qualify its narrow trusted
+  main-push producer and an independent full reader, then implement automatic
+  local publication. The receipt
   records source/toolchain identity, native outcomes, exact restored outputs,
   transfers, separate ccache contribution and command time. Preserve fresh runtime
   acceptance with the application owner. Remote Mac dependency integration
@@ -49,20 +52,37 @@ hit counts alone.
   records the independently completed operational rollout.
   Public Gradle publication remains disabled.
 
-  The existing signed Android release uses `workflow_run`, which the current
-  action and server intentionally keep read-only. The [producer-boundary research](docs/research/trusted-ci-producer-20261016.md)
-  records the primary contracts and qualification limits. Owner: LayerCache for a
-  narrowly authorized writer, with the application owner for the complete build
-  job. Do not add a duplicate native build merely to populate cache. Qualify an
-  immutable reusable producer workflow that owns upstream validation, checkout
-  and the native build. Bind its signed caller/callee identity, project and
-  integration, and verify successful same-repository default-branch push source
-  before running checkout code. Caller-selected upstream IDs or default-branch
-  claims alone are insufficient. Deny fork/PR sources, changed workflow pins,
-  failed/cancelled upstream runs, arbitrary commands and token handoff to caller
-  code. Keep the present read-only policy until this boundary and its native
-  producer/fresh-consumer controls pass. Whole-job and cache transfer evidence
-  must establish benefit through the existing build before broader rollout.
+  The #317 candidate preserves the current strict writer policy. A path-filtered
+  actual main push seeds only `:app:compileDebugKotlin` and
+  `:app:compileDebugJavaWithJavac` on two vCPUs. Its inspected seed graph has 462
+  tasks across 25 Android projects, with 305 potentially cacheable tasks, not
+  measured cache hits. A tested graph guard excludes C++ and APK packaging;
+  the inspected seed graph uses no signing. The job also retains its separate
+  Kotlin JVM tests. Same-repository
+  PR, manual and signed `workflow_run` jobs remain readers; full APK inspection
+  and fresh emulator assertions remain. Connected QA disables the filesystem
+  task cache for native HTTP attribution while retaining dependency and ccache
+  snapshots. The selected-model profile represents both actual NDKs; matching
+  Debug consumers share that profile, while Release/ARM remains distinct.
+  Actual Gradle 9.3.1 local fixtures cover authorization denial, server errors,
+  timeout, failed publication, a zero-PUT reader, corrupt archive failure and
+  repeated compile failures without publication. This is local qualification,
+  not hosted adoption, durable Team publication or a measured saving.
+  The application owner retains landing, trusted writer/fresh full-reader
+  measurement and current runtime acceptance. Include added writer compute,
+  setup, transfer, publication and complete job time when assessing net benefit.
+  Do not duplicate a full C++/APK build merely to populate cache.
+
+  Existing signed `workflow_run` jobs intentionally retain read-only access.
+  The [producer-boundary research](docs/research/trusted-ci-producer-20261016.md)
+  describes a conditional future alternative if full release publication becomes
+  necessary. It is not a prerequisite for #317's actual main-push writer.
+  LayerCache would own any new narrowly authorized policy, with the application
+  owner for the complete immutable reusable build job. Bind signed caller/callee
+  identity and verify the successful same-repository default-branch push source
+  before checkout code. Caller-selected upstream IDs alone are insufficient;
+  token handoff to caller code remains disallowed. Keep current reader policy
+  until separate source, deployment and producer/consumer qualification passes.
 
   First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
   The [native receipt](docs/evidence/gradle-native-private-20261015.json) records

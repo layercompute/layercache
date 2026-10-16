@@ -1,7 +1,17 @@
 # Trusted release producer boundary
 
-Checked 2026-10-16. This is a proposed qualification boundary, not implemented
-writer authorization. Current release-triggered jobs retain read-only access.
+Checked 2026-10-16. This is a proposed alternative for release-triggered writers,
+not implemented writer authorization. Current release-triggered jobs retain
+read-only access.
+
+The active [Phone #317](https://github.com/ziahamza/phone-app/pull/317) candidate
+at `17b6fa7c64fbfad433a7991dd647bb659c2b76c4` avoids a policy expansion. It adds
+a path-filtered actual main-push Kotlin/Java producer on two vCPUs, with a graph
+guard against C++ compilation and APK packaging. PR, manual and `workflow_run` jobs remain
+readers. Local qualification has passed; hosted checks and a writer/fresh-reader
+pair are pending. Include the added writer's compute in net cost measurement.
+The alternative below is needed only if full release publication becomes a
+requirement. It must not block qualifying the existing push-write policy.
 
 A release workflow triggered by `workflow_run` may use the default branch's
 workflow definition while checking out a different source revision. Its default
@@ -9,8 +19,8 @@ ref and OIDC identity do not establish that the checked-out source is trusted.
 GitHub warns that untrusted code under this trigger can poison caches.
 [Event contract](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
 
-The next writer-policy slice should authorize one immutable reusable build job
-per project and native integration. Match the exact caller workflow/default ref,
+Any future release writer-policy slice should authorize one immutable reusable
+build job per project and native integration. Match the exact caller workflow/default ref,
 `job_workflow_ref` and `job_workflow_sha`; retain current repository, membership,
 profile and expiry checks. GitHub signs the called workflow's identity separately
 from caller claims.
@@ -34,4 +44,5 @@ Qualification must cover mismatched workflow/source/attempt, PR and fork inputs,
 revocation, outages and token export attempts, then one existing producer and an
 independent empty consumer with exact outputs. This policy remains planned;
 source and deployment proof and the application owner's workflow adoption are
-required. Reuse the existing build rather than adding a build to populate cache.
+required. Reuse the existing full build rather than duplicating C++ compilation
+and packaging merely to populate cache.
