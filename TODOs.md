@@ -12,6 +12,51 @@ hit counts alone.
 
 ## P0: reliable Phone reuse
 
+- [ ] **Adopt native Gradle task reuse on Phone's Android build.**
+  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
+  Active next milestone on 2026-10-16. The protocol is source-qualified; now
+  prove an actual compatible Linux Android producer and independent empty
+  consumer through the direct private endpoint. Record complete toolchain and
+  source identity, native task outcomes, exact restored outputs, transfer costs,
+  separate ccache contribution and complete build time. Preserve fresh runtime
+  acceptance with the application owner. Remote Mac dependency integration
+  remains gated on supported provider hooks.
+  The October 15 Android acceptance spent 16m11s in the build step inside a
+  21m02s compile job. Current Phone source already enables Gradle build caching
+  and ccache. The avoidable fraction and transfer overhead remain unmeasured.
+  Keep Gradle's native keys, executor and archives through the existing scoped
+  GET/PUT adapter, bounded artifact engine and credential-free init script.
+  Qualify Local standalone and direct Personal/Team endpoints with the actual
+  pinned Gradle client: trusted producer, empty compatible consumer, exact
+  outputs, input/profile misses, failed-task reruns, read-only PRs, revocation,
+  outages, cancellation, duplicates and quota pressure. Preserve source/profile
+  identity and report native outcomes, transfer bytes and complete command time.
+  A Local acknowledgement does not establish private publication. Automatic
+  Local-to-private forwarding, Phone workflow adoption, whole Android build
+  savings, installation and gateway rollout remain separate acceptance targets.
+  Public Gradle publication remains disabled.
+
+  First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
+  The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
+  22 actual Gradle 9.3.1/JDK 17 commands in 134.472s, with empty independent
+  Local/private consumers restoring exact compiled and verification outputs
+  as `FROM-CACHE` with zero actions. It covers native duplicate winners,
+  input/compiler/profile misses, failed-task reruns, read-only/revoked clients,
+  explicit fresh bypass, init conflicts, quota and service outage behavior.
+  [Personal policy controls](docs/evidence/gradle-personal-policy-20261015.json)
+  reproduce and fix the missing managed-portal route, then pass actual isolation,
+  restart, owner-only CI, PR-reader and former-owner revocation checks, including
+  race detection. [Real PostgreSQL/S3 SDK controls](docs/evidence/gradle-cloud-upload-integrity-20261015.json)
+  also reproduce and repair incomplete-upload publication, with zero bytes or
+  metadata committed in the small malformed-upload cases. The [contract](docs/gradle-cache.md) separates this Java
+  protocol proof from Phone Android adoption and measured build savings.
+  Next: qualify the actual Android producer/fresh consumer and changed-input,
+  profile, repeated-failure and fresh controls. Add real Gradle acceptance to
+  the release candidate and installed-binary gates. Qualify the shared gateway
+  upgrade with the incomplete-stream fix, preserved authentication, retained
+  data and storage bounds before application workflow adoption. Installed
+  beta.4 and the existing gateway are not upgraded by source qualification.
+
 - [x] **Publish reusable CI optimization lessons.**
   Owner: LayerCache documentation. [#46](https://github.com/ziahamza/layercache/pull/46)
   merged as `a1d944efc22f34fd9b291f9ab92cc0272f98d9f7` after all fourteen
@@ -199,43 +244,6 @@ hit counts alone.
 
 
 ## P1: LLM and native outputs across machines
-
-- [ ] **Add Gradle's native HTTP task cache for Phone Android.**
-  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
-  Next implementable adoption after the qualified protocol slice below; the
-  Phone owner has completed release-validation reuse. Remote Mac dependency
-  integration remains gated on supported provider hooks.
-  The October 15 Android acceptance spent 16m11s in the build step inside a
-  21m02s compile job. Current Phone source already enables Gradle build caching
-  and ccache. The avoidable fraction and transfer overhead remain unmeasured.
-  Keep Gradle's native keys, executor and archives. Add scoped GET/PUT over the
-  existing bounded artifact engine and an opt-in credential-free init script.
-  Qualify Local standalone and direct Personal/Team endpoints with the actual
-  pinned Gradle client: trusted producer, empty compatible consumer, exact
-  outputs, input/profile misses, failed-task reruns, read-only PRs, revocation,
-  outages, cancellation, duplicates and quota pressure. Preserve source/profile
-  identity and report native outcomes, transfer bytes and complete command time.
-  A Local acknowledgement does not establish private publication. Automatic
-  Local-to-private forwarding, Phone workflow adoption, whole Android build
-  savings, installation and gateway rollout remain separate acceptance targets.
-  Public Gradle publication remains disabled.
-
-  First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
-  The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
-  22 actual Gradle 9.3.1/JDK 17 commands in 134.472s, with empty independent
-  Local/private consumers restoring exact compiled and verification outputs
-  as `FROM-CACHE` with zero actions. It covers native duplicate winners,
-  input/compiler/profile misses, failed-task reruns, read-only/revoked clients,
-  explicit fresh bypass, init conflicts, quota and service outage behavior.
-  [Personal policy controls](docs/evidence/gradle-personal-policy-20261015.json)
-  reproduce and fix the missing managed-portal route, then pass actual isolation,
-  restart, owner-only CI, PR-reader and former-owner revocation checks, including
-  race detection. [Real PostgreSQL/S3 SDK controls](docs/evidence/gradle-cloud-upload-integrity-20261015.json)
-  also reproduce and repair incomplete-upload publication, with zero bytes or
-  metadata committed in the small malformed-upload cases. The [contract](docs/gradle-cache.md) separates this Java
-  protocol proof from Phone Android adoption and measured build savings.
-  Next: qualify an isolated Phone-native Gradle producer/fresh consumer, then
-  coordinate an installed release and gateway upgrade before workflow adoption.
 
 - [ ] **Qualify dependency reuse on RunCloud through supported provider hooks.**
   Owner: LayerCache cache integration, coordinated with the Phone CI owner.

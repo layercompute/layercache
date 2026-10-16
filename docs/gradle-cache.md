@@ -145,3 +145,12 @@ The Linux native-client CI job downloads the pinned Gradle 9.3.1 distribution,
 verifies its published SHA-256, and runs the same acceptance against the
 candidate binary. It retains only the sanitized receipt. macOS and installed
 release qualification for this adapter remain separate.
+
+The Linux x64 release job also runs all 22 real-client commands against the
+binary it packages. Publication requires a successful receipt for that exact
+source, binary and init script. The receipt is retained for 30 days and includes
+only the sanitized protocol and timing evidence described above. A release
+candidate passing this gate does not qualify an installed published release,
+Linux arm64 or macOS Gradle use, an existing gateway upgrade, or Android reuse.
+The CLI package contains the binary; consumers obtain the credential-free init
+script from the same pinned source separately.
