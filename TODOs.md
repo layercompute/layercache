@@ -18,8 +18,9 @@ hit counts alone.
   Android producer/independent empty consumer pair are qualified through a direct
   private endpoint. Immutable beta.5 publication, installed-binary qualification,
   host installation and the existing shared gateway upgrade are complete.
-  The Phone CI owner is preparing workflow adoption; automatic local publication
-  remains the next LayerCache implementation target. The receipt
+  The Phone CI owner is preparing workflow adoption. First qualify a trusted
+  producer through the existing release build, then implement automatic local
+  publication. The receipt
   records source/toolchain identity, native outcomes, exact restored outputs,
   transfers, separate ccache contribution and command time. Preserve fresh runtime
   acceptance with the application owner. Remote Mac dependency integration
@@ -47,6 +48,21 @@ hit counts alone.
   [Gateway and installed-client evidence](docs/evidence/gateway-beta5-rollout-20261016.json)
   records the independently completed operational rollout.
   Public Gradle publication remains disabled.
+
+  The existing signed Android release uses `workflow_run`, which the current
+  action and server intentionally keep read-only. The [producer-boundary research](docs/research/trusted-ci-producer-20261016.md)
+  records the primary contracts and qualification limits. Owner: LayerCache for a
+  narrowly authorized writer, with the application owner for the complete build
+  job. Do not add a duplicate native build merely to populate cache. Qualify an
+  immutable reusable producer workflow that owns upstream validation, checkout
+  and the native build. Bind its signed caller/callee identity, project and
+  integration, and verify successful same-repository default-branch push source
+  before running checkout code. Caller-selected upstream IDs or default-branch
+  claims alone are insufficient. Deny fork/PR sources, changed workflow pins,
+  failed/cancelled upstream runs, arbitrary commands and token handoff to caller
+  code. Keep the present read-only policy until this boundary and its native
+  producer/fresh-consumer controls pass. Whole-job and cache transfer evidence
+  must establish benefit through the existing build before broader rollout.
 
   First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
   The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
