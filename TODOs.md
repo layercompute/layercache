@@ -16,8 +16,11 @@ hit counts alone.
   Owner: LayerCache protocol/client integration, coordinated with Phone CI.
   Active milestone on 2026-10-16. The protocol and an actual compatible Linux
   Android producer/independent empty consumer pair are qualified through a direct
-  private endpoint. Complete release/installation and shared gateway acceptance,
-  then coordinate workflow adoption and automatic local publication. The receipt
+  private endpoint. Immutable beta.5 publication, installed-binary qualification,
+  host installation and the existing shared gateway upgrade are complete.
+  The Phone CI owner is preparing workflow adoption. First qualify a trusted
+  producer through the existing release build, then implement automatic local
+  publication. The receipt
   records source/toolchain identity, native outcomes, exact restored outputs,
   transfers, separate ccache contribution and command time. Preserve fresh runtime
   acceptance with the application owner. Remote Mac dependency integration
@@ -38,10 +41,28 @@ hit counts alone.
   outputs, input/profile misses, failed-task reruns, read-only PRs, revocation,
   outages, cancellation, duplicates and quota pressure. Preserve source/profile
   identity and report native outcomes, transfer bytes and complete command time.
-  A Local acknowledgement does not establish private publication. Automatic
-  Local-to-private forwarding, Phone workflow adoption, whole Android build
-  savings, installation and gateway rollout remain separate acceptance targets.
+  A Local acknowledgement does not establish private publication. LayerCache
+  still owns automatic Local-to-private forwarding. Phone workflow adoption,
+  whole Android job measurement and fresh runtime acceptance remain with the
+  application owner.
+  [Gateway and installed-client evidence](docs/evidence/gateway-beta5-rollout-20261016.json)
+  records the independently completed operational rollout.
   Public Gradle publication remains disabled.
+
+  The existing signed Android release uses `workflow_run`, which the current
+  action and server intentionally keep read-only. The [producer-boundary research](docs/research/trusted-ci-producer-20261016.md)
+  records the primary contracts and qualification limits. Owner: LayerCache for a
+  narrowly authorized writer, with the application owner for the complete build
+  job. Do not add a duplicate native build merely to populate cache. Qualify an
+  immutable reusable producer workflow that owns upstream validation, checkout
+  and the native build. Bind its signed caller/callee identity, project and
+  integration, and verify successful same-repository default-branch push source
+  before running checkout code. Caller-selected upstream IDs or default-branch
+  claims alone are insufficient. Deny fork/PR sources, changed workflow pins,
+  failed/cancelled upstream runs, arbitrary commands and token handoff to caller
+  code. Keep the present read-only policy until this boundary and its native
+  producer/fresh-consumer controls pass. Whole-job and cache transfer evidence
+  must establish benefit through the existing build before broader rollout.
 
   First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
   The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
@@ -61,11 +82,19 @@ hit counts alone.
   the protocol fixture separately qualifies explicit fresh bypass. The Linux x64 release-candidate
   gate passed all 22 commands in the [immutable beta.5 release](https://github.com/ziahamza/layercache/actions/runs/38893572601)
   at `53ec27443a406a508b7e8faeab3f46292e0ba07b`. Published-binary installer
-  qualification adds Linux x64 Gradle acceptance; its hosted result is pending.
-  Qualify the shared gateway
-  upgrade with the incomplete-stream fix, preserved authentication, retained
-  data and storage bounds before application workflow adoption. Installed
-  beta.4 and the existing gateway are not upgraded by source qualification.
+  qualification [passed all three architectures](https://github.com/ziahamza/layercache/actions/runs/38895127715),
+  including Linux x64 Gradle acceptance and matching binary/source/init digests.
+  [#49](https://github.com/ziahamza/layercache/pull/49) merged as
+  `bb4447f56c4268b0fd648858e2ee6fdd4fe34bbe`; all fourteen
+  post-merge checks pass across [CI](https://github.com/ziahamza/layercache/actions/runs/38895848461),
+  [persistence](https://github.com/ziahamza/layercache/actions/runs/38895848207)
+  and [reuse](https://github.com/ziahamza/layercache/actions/runs/38895848378).
+  The [existing gateway rollout](docs/evidence/gateway-beta5-rollout-20261016.json)
+  passed a complete cold-copy recovery rehearsal with 170 checks across five
+  phases, then live HTTPS Gradle/legacy/restart checks across all five projects.
+  The host CLI and five Local daemons now run the attested beta.5 binary.
+  Source, published installation, actual Android builds and deployment retain
+  separate evidence; the application owner owns fresh hosted adoption.
 
 - [x] **Publish reusable CI optimization lessons.**
   Owner: LayerCache documentation. [#46](https://github.com/ziahamza/layercache/pull/46)
@@ -153,7 +182,7 @@ hit counts alone.
   policy does not establish this handoff. Preserve the held stack's unrelated
   acceptance requirements.
 
-- [ ] **Roll out shared cloud rejection of failed input streams.**
+- [x] **Roll out shared cloud rejection of failed input streams.**
   Owner: LayerCache storage and gateway rollout. The October 15 native Gradle
   qualification exposed a shared S3 SDK edge case. A failed `io.Reader` ending
   in `io.ErrUnexpectedEOF` could publish a partial artifact under an Nx or Turbo
@@ -164,9 +193,11 @@ hit counts alone.
   upload, zero remaining metadata/objects/parts with a working endpoint, valid
   complete multipart bytes/digests and unchanged quota refusal. Preserve the
   global error sanitizer. This does not explain the separate historical Actions
-  lookup miss or qualify cleanup during an object-endpoint outage. Next: qualify
-  the existing private gateway upgrade and installed release independently;
-  no operator configuration or deployed service changes in this source fix.
+  lookup miss or qualify cleanup during an object-endpoint outage. The fix is
+  included in the immutable beta.5 release, verified installed binaries and the
+  [qualified existing gateway upgrade](docs/evidence/gateway-beta5-rollout-20261016.json).
+  Only the gateway image pin changed; configuration, authority and storage bounds
+  were preserved. Malformed-stream regressions ran against disposable backends.
 
 - [ ] **Explain acknowledged Actions uploads that miss before consumption.**
   Owner: LayerCache; investigation in progress. Migrated from
@@ -193,7 +224,8 @@ hit counts alone.
   reports only this lookup's observations, not a durable removal history.
   The historical cause remains unproven; no backend bug was reproduced.
   Next: obtain exact request identity and authoritative removal/commit evidence
-  for the reported incident. Gateway rollout remains separate and pending.
+  for the reported incident. The [existing gateway rollout](docs/evidence/gateway-beta5-rollout-20261016.json)
+  is complete without establishing that historical cause.
 
 - [ ] **Measure representative Phone reuse and whole-job allocation after landing.**
   Owner: LayerCache with the Phone CI owner. Phone #298 is merged and its
@@ -378,7 +410,7 @@ hit counts alone.
 - [ ] **Measure residual iOS work before extending shared LLVM transport.**
   Owner: Phone native owner. Two recent RunCloud samples already hit all 1,725
   cacheable compiler tasks but occupied Macs for 16m44s/18m28s. Time setup,
-  packaging, runtime acceptance and receipt misses separately. Qualify beta.4
+  packaging, runtime acceptance and receipt misses separately. Qualify released
   graph retention on Phone's exact toolchain/scale before expanded use. Swift
   replay and signed-build cost remain separate evidence targets.
 
@@ -408,12 +440,15 @@ hit counts alone.
   Preserve per-project/profile isolation;
   an instance-name label alone is not an access boundary. Reuse permissively
   licensed engines and native clients. Follow [the OSS plan](docs/oss-integration-plan.md).
-- [ ] **Qualify the existing operator gateway upgrade.**
-  Owner: LayerCache/operator. Next: build an exact-source candidate and test a
-  disposable recovery copy before changing the gateway. Preserve current
-  project configs/backends/routes and unrelated deployment edits. Build an
-  exact-source image, test an isolated recovery copy and authenticated restores,
-  then update only the gateway. Record rollback compatibility for issued tokens.
+- [x] **Qualify the existing operator gateway upgrade.**
+  Owner: LayerCache/operator. Exact source `53ec27443a406a508b7e8faeab3f46292e0ba07b`
+  passed the 91-check hardened image rehearsal, then 170 checks against a full
+  cold recovery copy through old, new, restart, old rollback and forward phases.
+  The same scoped credentials and exact legacy bytes survived the transitions.
+  [Live acceptance](docs/evidence/gateway-beta5-rollout-20261016.json) preserves
+  all five project configurations, backend images, authority, routes and storage
+  limits while changing only the gateway image pin. Existing user deployment
+  edits remain untouched; rollback image and protected recovery copies are retained.
 - [ ] **Deploy limited self-serve only after live inputs are configured.**
   Owner: LayerCache/operator. Next: configure the approved cohort and real OAuth.
   Real OAuth, numeric cohort, isolated bounded storage and two-user upload,
@@ -445,15 +480,16 @@ hit counts alone.
 - [x] Source-qualified rejection of failed streams at the shared S3 boundary,
   source `3d5e2df`. Real SDK and PostgreSQL controls cover multipart cleanup and
   publication fences. [Contract](docs/retention.md#upload-completion) and
-  [evidence](docs/evidence/cloud-stream-integrity-20261015.json). Gateway rollout
-  remains open above.
+  [evidence](docs/evidence/cloud-stream-integrity-20261015.json). The beta.5
+  gateway rollout is qualified above.
 - [x] Source-qualified native Gradle HTTP over existing bounded artifact storage,
   expiring process credentials and an opt-in init script, source `3b9ded9`.
   The [22-command real-client qualification](docs/evidence/gradle-native-private-20261015.json)
   and [managed Personal policy proof](docs/evidence/gradle-personal-policy-20261015.json)
   pass. The Linux native-client CI gate uses the pinned Gradle distribution and
-  candidate binary. Installation, gateway rollout, Local forwarding and Phone
-  whole-build savings remain open above.
+  candidate binary. Beta.5 installation and the existing gateway rollout are
+  qualified above; Local forwarding, Phone adoption and whole-job measurement
+  remain open.
 - [x] Phone's ten independent mobile test groups, all thirty isolated workflow
   processes and mandatory typechecking, reviewed source `b7279389` merged in
   [Phone #298](https://github.com/ziahamza/phone-app/pull/298) as

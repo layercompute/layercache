@@ -64,9 +64,10 @@ policies are in beta.3. Xcode LLVM replay is implemented with local snapshot
 transport; complete streamed graph retention merged in #30 for
 [#25](https://github.com/ziahamza/layercache/issues/25). Nx's native Local and
 direct private endpoints merged in #31. The current
-[Gradle HTTP candidate](gradle-cache.md) adds Local standalone and direct private
-endpoints through the native client. It is separate from the installed beta.4
-and gateway rollout. Bazel and sccache remain future work. Neither Nx nor Gradle
+[Gradle HTTP integration](gradle-cache.md) adds Local standalone and direct private
+endpoints through the native client. Beta.5 installation and the existing gateway
+rollout have [separate qualification](evidence/gateway-beta5-rollout-20261016.json);
+application adoption remains pending. Bazel and sccache remain future work. Neither Nx nor Gradle
 currently forwards Local writes or misses to a private endpoint; those bridges
 need their own durable publication and confirmation qualification.
 
