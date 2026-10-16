@@ -37,8 +37,8 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.1.0-beta.4
-      SOURCE_SHA: ca3d5889a52815bce9565d3825b081839ac7077b
+      RELEASE_TAG: v0.1.0-beta.5
+      SOURCE_SHA: 53ec27443a406a508b7e8faeab3f46292e0ba07b
       RELEASE_REPOSITORY: ziahamza/layercache
     steps:
       # The workflow is reviewed on this PR; the script comes from the exact
@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ziahamza/layercache
-          ref: ca3d5889a52815bce9565d3825b081839ac7077b
+          ref: 53ec27443a406a508b7e8faeab3f46292e0ba07b
           persist-credentials: false
 
       - name: Check published release and exact source commit
@@ -126,25 +126,62 @@ jobs:
           python3 qa/local-ci-reuse/run.py \
             --binary "$RUNNER_TEMP/layercache-beta-install/layercache" \
             --turbo "$GITHUB_WORKSPACE/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
-            --output "$RUNNER_TEMP/beta4-local-ci-reuse.json"
+            --output "$RUNNER_TEMP/beta5-local-ci-reuse.json"
           jq -e '
             .schemaVersion == "local-ci-reuse-v1" and .passed == true and
             (.scenarios | length) == 17
-          ' "$RUNNER_TEMP/beta4-local-ci-reuse.json" >/dev/null
+          ' "$RUNNER_TEMP/beta5-local-ci-reuse.json" >/dev/null
 
       - name: Prove native Nx replay using the published binary
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
-          NX_QA_OUTPUT: ${{ runner.temp }}/beta4-nx-native.json
+          NX_QA_OUTPUT: ${{ runner.temp }}/beta5-nx-native.json
         run: node qa/nx-native/run.mjs
+
+      - name: Qualify native Gradle HTTP caching using the published binary
+        id: gradle-native
+        if: matrix.system == 'Linux/x86_64'
+        env:
+          LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
+          GRADLE_QA_OUTPUT: ${{ runner.temp }}/beta5-gradle-native.json
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 2 \
+            --connect-timeout 10 --max-time 120 \
+            https://services.gradle.org/distributions/gradle-9.3.1-bin.zip \
+            --output "$RUNNER_TEMP/gradle-native.zip"
+          echo "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06  $RUNNER_TEMP/gradle-native.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/gradle-native.zip" -d "$RUNNER_TEMP/gradle-native"
+          export JAVA_HOME="${JAVA_HOME_17_X64:?The native fixture requires JDK 17}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          export GRADLE_BIN="$RUNNER_TEMP/gradle-native/gradle-9.3.1/bin/gradle"
+          node qa/gradle-native/run.mjs
+          binary_digest="sha256:$(sha256sum "$LAYERCACHE_BIN" | cut -d ' ' -f 1)"
+          init_digest="sha256:$(sha256sum native/gradle/init.gradle | cut -d ' ' -f 1)"
+          jq -e --arg source "$SOURCE_SHA" \
+            --arg binary "$binary_digest" --arg init "$init_digest" '
+            .schemaVersion == "gradle-native-v1" and .passed == true and
+            .sourceRevision == $source and .binaryDigest == $binary and
+            .initScriptDigest == $init and .gradleVersion == "9.3.1" and
+            (.stages | length) == 22
+          ' "$GRADLE_QA_OUTPUT" >/dev/null
+
+      - name: Preserve installed Gradle qualification evidence
+        if: always() && steps.gradle-native.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: beta5-installed-gradle-${{ matrix.name }}
+          path: ${{ runner.temp }}/beta5-gradle-native.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Preserve installed-binary reuse evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: beta4-installed-reuse-${{ matrix.name }}
+          name: beta5-installed-reuse-${{ matrix.name }}
           path: |
-            ${{ runner.temp }}/beta4-local-ci-reuse.json
-            ${{ runner.temp }}/beta4-nx-native.json
+            ${{ runner.temp }}/beta5-local-ci-reuse.json
+            ${{ runner.temp }}/beta5-nx-native.json
           if-no-files-found: warn
           retention-days: 30

@@ -163,3 +163,28 @@ candidate passing this gate does not qualify an installed published release,
 Linux arm64 or macOS Gradle use, an existing gateway upgrade, or Android reuse.
 The CLI package contains the binary; consumers obtain the credential-free init
 script from the same pinned source separately.
+
+## Reference Android build
+
+The [Android qualification receipt](evidence/gradle-android-private-20261016.json)
+records one Linux x64 Debug producer and a relocated read-only consumer with
+separate empty Gradle homes, filesystem build caching disabled and unchanged
+native keys. Full Gradle command time fell from 880.213s to 524.971s, 40.36% in
+this one local pair. It restored 318 tasks and downloaded 148,112,872 bytes with
+zero uploads. The 2,063 HTTP hits include artifact transforms and repeated keys.
+
+The fixture verified 290 compiled-output files and 13 selected APK entries,
+including all DEX entries, manifests/resources and build provenance. It also
+required changed-source execution, repeated compiler failures without publication,
+reader-write denial and an incompatible-profile miss. Setup/prebuild is outside
+the command times; host load and OS file caches were uncontrolled. The profiler's
+CPU counters cover a shared host cgroup, so no isolated CPU or billing saving is
+claimed. Device/runtime acceptance and signed releases remain separate.
+
+The copied warm ccache seed delivered zero hits. Its 206 PCH refusals and 94
+cacheable misses are separate from Gradle reuse; see the
+[compiler investigation](research/android-compiler-cache-20261016.md). Both NDKs
+selected during the build are recorded. The initial profile named only the root
+NDK and stayed fixed within this disposable pair. It is an experimental namespace,
+not a production compatibility generator. Local-to-private forwarding and
+workflow adoption remain pending.

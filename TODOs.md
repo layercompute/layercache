@@ -14,16 +14,23 @@ hit counts alone.
 
 - [ ] **Adopt native Gradle task reuse on Phone's Android build.**
   Owner: LayerCache protocol/client integration, coordinated with Phone CI.
-  Active next milestone on 2026-10-16. The protocol is source-qualified; now
-  prove an actual compatible Linux Android producer and independent empty
-  consumer through the direct private endpoint. Record complete toolchain and
-  source identity, native task outcomes, exact restored outputs, transfer costs,
-  separate ccache contribution and complete build time. Preserve fresh runtime
+  Active milestone on 2026-10-16. The protocol and an actual compatible Linux
+  Android producer/independent empty consumer pair are qualified through a direct
+  private endpoint. Complete release/installation and shared gateway acceptance,
+  then coordinate workflow adoption and automatic local publication. The receipt
+  records source/toolchain identity, native outcomes, exact restored outputs,
+  transfers, separate ccache contribution and command time. Preserve fresh runtime
   acceptance with the application owner. Remote Mac dependency integration
   remains gated on supported provider hooks.
   The October 15 Android acceptance spent 16m11s in the build step inside a
-  21m02s compile job. Current Phone source already enables Gradle build caching
-  and ccache. The avoidable fraction and transfer overhead remain unmeasured.
+  21m02s compile job. The [October 16 native Android proof](docs/evidence/gradle-android-private-20261016.json)
+  measures 880.213s cold versus 524.971s in an independent read-only checkout,
+  with 318 native task restorations and 148,112,872 downloaded bytes. Exact 290
+  compiled-output files and 13 selected APK entries match. Changed source,
+  repeated failures, reader publication denial and incompatible profiles pass.
+  This one same-host compile pair does not measure complete CI or billing savings.
+  Both toolchains remain fully represented in native keys; the initial disposable
+  profile named only the root NDK, so its generator is not a production profile.
   Keep Gradle's native keys, executor and archives through the existing scoped
   GET/PUT adapter, bounded artifact engine and credential-free init script.
   Qualify Local standalone and direct Personal/Team endpoints with the actual
@@ -50,11 +57,12 @@ hit counts alone.
   also reproduce and repair incomplete-upload publication, with zero bytes or
   metadata committed in the small malformed-upload cases. The [contract](docs/gradle-cache.md) separates this Java
   protocol proof from Phone Android adoption and measured build savings.
-  Next: qualify the actual Android producer/fresh consumer and changed-input,
-  profile, repeated-failure and fresh controls. The Linux x64 release-candidate
-  gate now requires real Gradle acceptance and passed all 22 commands locally;
-  the next publication must execute it. Installed-release Gradle acceptance
-  remains to be added. Qualify the shared gateway
+  The Android pair passes changed-input/profile controls and repeated failures;
+  the protocol fixture separately qualifies explicit fresh bypass. The Linux x64 release-candidate
+  gate passed all 22 commands in the [immutable beta.5 release](https://github.com/ziahamza/layercache/actions/runs/38893572601)
+  at `53ec27443a406a508b7e8faeab3f46292e0ba07b`. Published-binary installer
+  qualification adds Linux x64 Gradle acceptance; its hosted result is pending.
+  Qualify the shared gateway
   upgrade with the incomplete-stream fix, preserved authentication, retained
   data and storage bounds before application workflow adoption. Installed
   beta.4 and the existing gateway are not upgraded by source qualification.
@@ -246,6 +254,23 @@ hit counts alone.
 
 
 ## P1: LLM and native outputs across machines
+
+- [ ] **Make Android compiler reuse portable across Workspaces.**
+  Owner: LayerCache native integration, coordinated with the application CI owner.
+  The [real Android pair](docs/evidence/gradle-android-private-20261016.json)
+  restored 318 Gradle tasks, but its separately copied warm ccache seed restored
+  zero of 94 cacheable compiler calls. Each build also declined 206 PCH calls;
+  five link calls account for the remaining uncacheable calls. The
+  [primary-source investigation](docs/research/android-compiler-cache-20261016.md)
+  identifies differing Debug CWD and external Gradle-home include paths as
+  testable causes. First prove a same-root hit and cross-root input difference
+  with one actual non-PCH translation unit. Qualify explicit debug path mapping
+  or stable logical roots against uncached consumer outputs and dependency paths.
+  Test PCH changes, transitive headers, macros and time separately before changing
+  engines or transport. Preserve native hashing and complete declared context;
+  do not suppress path/macro/header inputs to manufacture hits. Repeat the whole
+  Android pair only after the small compiler qualification passes. Keep task,
+  compiler, transfer, full-job and billing measures separate.
 
 - [ ] **Qualify dependency reuse on RunCloud through supported provider hooks.**
   Owner: LayerCache cache integration, coordinated with the Phone CI owner.

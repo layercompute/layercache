@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: ziahamza/layercache/action/setup@ca3d5889a52815bce9565d3825b081839ac7077b
+  - uses: ziahamza/layercache/action/setup@53ec27443a406a508b7e8faeab3f46292e0ba07b
     id: layercache
     with:
       repository: ziahamza/layercache
-      version: v0.1.0-beta.4
+      version: v0.1.0-beta.5
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: ziahamza/layercache/action/cache@ca3d5889a52815bce9565d3825b081839ac7077b
+  - uses: ziahamza/layercache/action/cache@53ec27443a406a508b7e8faeab3f46292e0ba07b
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,7 +30,7 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The action and release are pinned to CLI beta.4. It includes confirmed Turbo
+The action and release are pinned to CLI beta.5. It includes confirmed Turbo
 publication, permanent-conflict pin retirement, owner-only Personal projects,
 native Nx Local/direct private endpoints, and complete Xcode graph retention
 qualified under quota pressure. Nx Local-to-private forwarding remains future

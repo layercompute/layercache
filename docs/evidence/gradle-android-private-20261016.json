@@ -1,0 +1,250 @@
+{
+  "schemaVersion": "android-gradle-native-private-v1",
+  "passed": true,
+  "applicationSourceIdentitySha256": "d562b6a8825479aec7ca780b955dd80e7b19f287d2272871b841af637683726c",
+  "layercacheRuntimeSource": "fe4e62538f9d8d0c293f0b7cbc80143b2ef374e6",
+  "layercacheBinarySha256": "014bdc08cc367bb372349035592cf58ae0a7145ca20245e2dee6e380f427629f",
+  "layercacheInitSha256": "b45b47190b38f9f439d2324a49fbc5bbfdb8bf3a8671b63900c11d64ef32eaf5",
+  "applicationInitDigests": {
+    "nativeCompilerInitSha256": "21660b27d8e5f8e1955c91c2ac908f6ebf82664a043f11d8e25a37badf826143",
+    "nativeDslContractSha256": "7dd6001e3ebd7a62cb1aaf810b487151697a7589bfb8c1592f2a43797b14e30f",
+    "networkInitSha256": "298de2f2e5b147629e579c872829ad8b4f421f2d01b0795c61a60ca3c4eca317"
+  },
+  "toolchain": {
+    "os": "linux",
+    "architecture": "x64",
+    "javaRuntime": "17.0.20.1+1-1-24.04-Ubuntu",
+    "javaVendor": "Ubuntu OpenJDK",
+    "node": "v24.21.0",
+    "gradle": "9.3.1",
+    "gradleDistributionSha256": "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06",
+    "seededGradleDistributionFilesVerified": 314,
+    "wrapperEnforcesDistributionChecksum": false,
+    "wrapperPropertiesSha256": "a180163249c7252412ddaee1c7adcf59f6494b1183136f690fbd9a3b8aaed00e",
+    "wrapperJarSha256": "b3a875ddc1f044746e1b1a55f645584505f4a10438c1afea9f15e92a7c42ec13",
+    "androidGradlePlugin": "8.12.0",
+    "kotlin": "2.1.20",
+    "sdkCompile": 36,
+    "sdkTarget": 36,
+    "buildTools": "36.0.0",
+    "nativeDevelopmentKits": [
+      {
+        "version": "27.0.12077973",
+        "sourcePropertiesSha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515",
+        "clangSha256": "d198ba068aba6f32168c53538f2f4b81553d005f58d58bb3d01afc771c1d4db9"
+      },
+      {
+        "version": "27.1.12297006",
+        "sourcePropertiesSha256": "e9b907b9c90bc2f0aaa87049580cc0c3ee0bb6aff50b58e4d1a8876ba3aeb026",
+        "clangSha256": "0e14b158c3e11fc5da5e585d01e8a586aa14b6e57f544f9db737745b18201a79"
+      }
+    ],
+    "cmake": "3.22.1",
+    "abi": "x86_64",
+    "newArchitecture": true,
+    "hermes": true,
+    "ccache": "4.9.1"
+  },
+  "context": {
+    "nativeGradleKeysPreserved": true,
+    "initialProfileNdkInventory": [
+      "27.1.12297006"
+    ],
+    "observedNdkInventory": [
+      "27.0.12077973",
+      "27.1.12297006"
+    ],
+    "initialProfileInventoryLimitation": "The initial experiment manifest named the root NDK only. Resolved native tasks also selected a second NDK. The namespace stayed fixed for the pair; Gradle retained all declared native inputs in its keys.",
+    "profileIsExperimentNamespace": true,
+    "profileGenerationIsNotProductionRecommendation": true,
+    "privateProjectNamespaceConfigured": true,
+    "compatibilityProfileIsolationProved": true
+  },
+  "controls": {
+    "gradleFilesystemBuildCacheDisabled": true,
+    "configurationCacheDisabled": true,
+    "distinctWorkspaces": true,
+    "distinctGradleUserHomes": true,
+    "distinctCompilerCacheDirectories": true,
+    "gradleWorkerLimit": 2,
+    "nativeCompilerWorkerLimit": 1,
+    "cpuAffinityCount": 2,
+    "gradleHeapMiB": 3072,
+    "gradleMetaspaceMiB": 1024,
+    "kotlinHeapMiB": 1024,
+    "kotlinMetaspaceMiB": 512,
+    "serverConfiguredMaxBytes": 10737418240,
+    "ephemeralIntegrationScopedWriterAndReader": true,
+    "credentialSigner": "disposable fixture capability signer",
+    "storage": "disposable filesystem-backed private Team endpoint",
+    "realGitHubOidcExercised": false
+  },
+  "setup": {
+    "frozenOfflineDependencyInstallProducerSeconds": 12.7,
+    "dependencyAndWrapperSeedSecondsForBothHomes": 6.074,
+    "dependencySeedContainsOnlyWrapperAndDependencyCache": true,
+    "projectOutputsAndGradleVersionTransformsExcludedFromSeed": true,
+    "compilerSeedCopiedFromProducerToSeparateConsumer": true,
+    "compilerSeedCopySeconds": 0.057,
+    "bootstrapNotIncludedInCompileCommandTimes": true
+  },
+  "producer": {
+    "wallSeconds": 880.213,
+    "exitCode": 0,
+    "taskOutcomes": {
+      "SKIPPED": 35,
+      "executed": 516,
+      "NO-SOURCE": 64,
+      "UP-TO-DATE": 53,
+      "FROM-CACHE": 126
+    },
+    "loggedCacheableTaskKeys": 320,
+    "httpRequestStatuses": {
+      "GET:404": 1939,
+      "PUT:200": 1939,
+      "GET:200": 126
+    },
+    "nativeUploadBytes": 148070185,
+    "nativeDownloadBytes": 96787,
+    "peakBuildProcessRssBytes": 7548407808
+  },
+  "freshReadOnlyConsumer": {
+    "wallSeconds": 524.971,
+    "exitCode": 0,
+    "taskOutcomes": {
+      "SKIPPED": 35,
+      "executed": 324,
+      "FROM-CACHE": 318,
+      "NO-SOURCE": 64,
+      "UP-TO-DATE": 53
+    },
+    "loggedCacheableTaskKeys": 320,
+    "httpRequestStatuses": {
+      "GET:200": 2063,
+      "GET:404": 2
+    },
+    "nativeUploadBytes": 0,
+    "nativeDownloadBytes": 148112872,
+    "peakBuildProcessRssBytes": 2800529408
+  },
+  "comparison": {
+    "compileCommandReductionSeconds": 355.242,
+    "compileCommandReductionPercent": 40.36,
+    "restoredTaskOutcomes": 318,
+    "loggedNativeTaskKeyCount": 320,
+    "changedResourceTaskKeys": 2,
+    "protocolGetHits": 2063,
+    "protocolGetMisses": 2,
+    "protocolHitsIncludeArtifactTransformsAndRepeatedKeys": true,
+    "producerSameBuildDuplicateKeyTaskHits": 126,
+    "consumerPublishedBytes": 0,
+    "producerConsumerControllerSeconds": 1409.755
+  },
+  "outputVerification": {
+    "exactOutputFileCount": 290,
+    "exactOutputTreeDigests": [
+      {
+        "fileCount": 288,
+        "manifestSha256": "cd3b41c1156005b1c2cf30a14865fb3c60378923b690ffb31f6997a8316a945f"
+      },
+      {
+        "fileCount": 1,
+        "manifestSha256": "1b62c6e1a227afe034c655983f9c1fdadf9e1270a2254ee97f532249d826483f"
+      },
+      {
+        "fileCount": 1,
+        "manifestSha256": "209f74cd5ca8332bfe32f3aef32de7c4005ee81e32b9b1afee1d34b34dfd9017"
+      }
+    ],
+    "exactApkEntryCount": 13,
+    "exactApkEntryDigestsSha256": [
+      "f1d17eee1cc1cb2c7d2f3e08e030fe73885656552e13c77a5874ec9c452786a4",
+      "7c9e639c8aef76b843445ad5103d7badf0c03eb9907a3cde38f7c95e5d3dac13",
+      "0b28c25eb028410ce8dc7d6b2abb81f3bf190af6e480c72df5c29563877bf1c1",
+      "aef68257f70c5aaf3e3cb9828204b5886117b5a095e1738ad4fb4e94abd9c33b",
+      "b675e5b45d156d2a25bfcaf2872e644cf1ca5f5120776008613c494222492d8c",
+      "804e1b514b6871038c0842c5be3b8a40432b015a8accef0069fce3e027b357d0",
+      "3bc2ffb94d8ff976ef4a62610deb3fc2c9d5f4a28d8d5761996b260c0e79c565",
+      "ba0fd150f49fa0da8cb6e1ecb871e91639a3f87cfdd8e0222367f2af75f9b25d",
+      "e04feac6627481c8e6e234816ebad2d953d46f4122d1d0ec3bf1447eb27d724c",
+      "ce343d46dd1b4003745be2f50cddf8006f65402cc5471481dd0135b0f9eb446f",
+      "c987ef88bf4fe2a246ae745043012f72df3ebb6dba51f6224e91e0aec759aca2",
+      "69541162c37bfe1f08a68b40283b0810c65e3aa6ba64fb3929a316c19e17b00e",
+      "1107a9ff1188bcfcdf9089c5b36bbf266265d69abc49d053f417c245f0c25bc9"
+    ],
+    "nativeBytecodeAndManifestTreesEqual": true,
+    "allDexAndApkManifestResourcesAndProvenanceEqual": true,
+    "abiAndExistingNativeEntryPointInspectionsPassed": true,
+    "bothApkCompileOnlyReceiptsPassed": true
+  },
+  "compilerCache": {
+    "cacheableCallsEachBuild": 94,
+    "hitsProducer": 0,
+    "hitsRelocatedConsumer": 0,
+    "missesEachBuild": 94,
+    "totalCallsEachBuild": 305,
+    "uncacheableCallsEachBuild": 211,
+    "precompiledHeaderRejectedCallsEachBuild": 206,
+    "configuredMaxBytes": 2000000000,
+    "compilerCacheIsOutsideLayercacheBudget": true,
+    "warmSeedDeliveredNoCompilerHits": true,
+    "missCauseBeyondHeaderRejectionsNotDiagnosed": true,
+    "nonCompileLinkCallsEachBuild": 5
+  },
+  "qualificationControls": {
+    "changedSource": {
+      "seconds": 28.99,
+      "outcome": "executed",
+      "newNativeKey": true,
+      "nativeGetStatus": 404,
+      "nativePutCount": 0
+    },
+    "failedSourceAttempts": [
+      {
+        "seconds": 25.052,
+        "exitCode": 1,
+        "outcome": "FAILED",
+        "nativeGetStatus": 404,
+        "nativePutCount": 0
+      },
+      {
+        "seconds": 34.618,
+        "exitCode": 1,
+        "outcome": "FAILED",
+        "nativeGetStatus": 404,
+        "nativePutCount": 0
+      }
+    ],
+    "failedAttemptsKeptSameNativeKey": true,
+    "readerPublicationStatus": 403,
+    "incompatibleProfileReadStatus": 404,
+    "totalControlControllerSeconds": 97.813
+  },
+  "cleanup": {
+    "modifiedSourceRestored": true,
+    "ownedBackgroundProcessesRemaining": 0,
+    "baselineKotlinRunfilesUsedDefaultUserDataDirectory": true,
+    "baselineKotlinCompilerClasspathsWerePrivateAndDistinct": true,
+    "focusedControlsPrivateKotlinRunfilesVerified": true,
+    "operatorLayercacheServicesActive": 5
+  },
+  "limits": {
+    "producerConsumerPairs": 1,
+    "measurementHost": "same Linux host with two CPU affinity",
+    "osFileCacheControlled": false,
+    "hardEightGiBVMLimitQualified": false,
+    "wholeCiJobSavingsQualified": false,
+    "billingSavingsMeasured": false,
+    "crossMachineTransportLatencyMeasured": false,
+    "compileOnly": true,
+    "deviceOrEmulatorRun": false,
+    "signedReleaseQualified": false,
+    "managedCloudDeployed": false,
+    "installedCliUpgraded": false,
+    "localToPrivateForwardingQualified": false,
+    "cpuUsageCounterScope": "shared host cgroup; not isolated build CPU usage",
+    "isolatedBuildCpuUsageMeasured": false,
+    "competingHostLoadControlled": false
+  },
+  "measurementDate": "2026-10-16"
+}
