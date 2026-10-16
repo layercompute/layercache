@@ -22,9 +22,11 @@ not activate the hosted self-serve service.
 
 [TODOs.md](../TODOs.md) owns the current order. Reliable Phone handoffs,
 independently reusable test groups and exact LLM result replay now precede
-broader protocol adoption. Qualify native Gradle HTTP for Phone Android, then
-an isolated pinned `bazel-remote` sidecar and sccache when a real workload needs
-them. Keep native clients responsible for task hashing, execution and packing.
+broader protocol adoption. Native Gradle's first hosted Android correctness
+gate now passes; qualify net benefit, retained handoffs and Local-to-private
+forwarding before adding protocols. An isolated pinned `bazel-remote` sidecar
+and sccache remain options when a real workload needs them. Keep native clients
+responsible for task hashing, execution and packing.
 
 The protocol research below began at repository baseline
 `1d7ebdffafb81fa00e81721113264122bbb0aa65` on 2026-10-14. Its pinned-source
@@ -67,7 +69,9 @@ direct private endpoints merged in #31. The current
 [Gradle HTTP integration](gradle-cache.md) adds Local standalone and direct private
 endpoints through the native client. Beta.5 installation and the existing gateway
 rollout have [separate qualification](evidence/gateway-beta5-rollout-20261016.json);
-application adoption remains pending. Bazel and sccache remain future work. Neither Nx nor Gradle
+the [first hosted Android producer/full-reader gate](evidence/gradle-android-hosted-20261016.md)
+now passes with fresh runtime assertions. Net economic acceptance remains open.
+Bazel and sccache remain future work. Neither Nx nor Gradle
 currently forwards Local writes or misses to a private endpoint; those bridges
 need their own durable publication and confirmation qualification.
 
@@ -154,7 +158,7 @@ separated writer authority. Use the native API rather than those plugins.
 
 | Integration | Reuse | Concrete next work |
 | --- | --- | --- |
-| Gradle, current candidate | Native task hashing and `HttpBuildCache`; Gradle is [Apache-2.0](https://github.com/gradle/gradle/blob/v9.3.1/LICENSE). | [Bounded GET/PUT and opt-in init script](gradle-cache.md) reuse scoped private credentials. Qualify real native producer/consumer behavior, then audited Phone Android tasks. Local forwarding and live runtime assertions remain separate. |
+| Gradle, private native path | Native task hashing and `HttpBuildCache`; Gradle is [Apache-2.0](https://github.com/gradle/gradle/blob/v9.3.1/LICENSE). | [Native protocol and first hosted Android qualification](gradle-cache.md) pass with fresh runtime assertions. Measure net benefit and add Local-to-private forwarding; signed/ARM and Public remain separate. |
 | Bazel, after protocol qualification | [bazel-remote, Apache-2.0](https://github.com/buchgr/bazel-remote/blob/1605e32b5921d05e373407b98b3c021e40c277da/LICENSE), pinned executable first. | Put an authorization gateway above isolated per-project/profile instances with explicit byte budgets. Add a real Bazel fixture before moving a repository. |
 | sccache | [Apache-2.0 compiler client](https://github.com/mozilla/sccache/blob/7bdb9bdcde435fd365e291715a6003f3ca28c2f9/LICENSE). | Add a separate bounded WebDAV namespace and use its bearer token, key prefix and READ_ONLY mode. Set `SCCACHE_WEBDAV_DISABLE_CREATE_DIR=true` when the gateway implements only object operations. |
 

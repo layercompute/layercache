@@ -11,8 +11,10 @@ Native Gradle support is included in immutable beta.5 at source
 `53ec27443a406a508b7e8faeab3f46292e0ba07b`. The
 [published installer qualification](evidence/beta5-installed-20261016.json) and
 [existing gateway/host rollout](evidence/gateway-beta5-rollout-20261016.json)
-passed independently. Phone workflow adoption and whole-job measurement still
-require qualification with the Phone CI owner.
+passed independently. The [first hosted Android producer/full-reader gate](evidence/gradle-android-hosted-20261016.md)
+also passes with fresh runtime acceptance. Net-benefit measurement,
+Local-to-private forwarding and signed/ARM qualification remain separate work
+with the Phone CI owner retaining application workflows.
 
 ## Local use
 
@@ -191,5 +193,7 @@ cacheable misses are separate from Gradle reuse; see the
 [compiler investigation](research/android-compiler-cache-20261016.md). Both NDKs
 selected during the build are recorded. The initial profile named only the root
 NDK and stayed fixed within this disposable pair. It is an experimental namespace,
-not a production compatibility generator. Local-to-private forwarding and
-workflow adoption remain pending.
+not a production compatibility generator. The later hosted adoption uses its
+actual selected-model profile; its [receipt](evidence/gradle-android-hosted-20261016.md)
+keeps native restores, compiler warmth and complete job times distinct.
+Local-to-private forwarding and net economic acceptance remain pending.

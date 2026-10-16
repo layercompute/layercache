@@ -479,8 +479,9 @@ hit counts alone.
   and [managed Personal policy proof](docs/evidence/gradle-personal-policy-20261015.json)
   pass. The Linux native-client CI gate uses the pinned Gradle distribution and
   candidate binary. Beta.5 installation and the existing gateway rollout are
-  qualified above; Local forwarding, Phone adoption and whole-job measurement
-  remain open.
+  qualified above, as is the first hosted Phone producer/full-reader gate.
+  Local forwarding, net-benefit measurement and signed/ARM qualification remain
+  open.
 - [x] Phone's ten independent mobile test groups, all thirty isolated workflow
   processes and mandatory typechecking, reviewed source `b7279389` merged in
   [Phone #298](https://github.com/ziahamza/phone-app/pull/298) as
