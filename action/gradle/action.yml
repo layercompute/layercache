@@ -1,0 +1,30 @@
+name: Connect Gradle to Layer Cache
+description: Configure Gradle's native HTTP cache with a scoped private GitHub OIDC capability.
+inputs:
+  team-url:
+    description: Explicit private project gateway URL. HTTPS is required outside loopback.
+    required: true
+  project:
+    description: Explicit private project identity authorized for this repository.
+    required: true
+  compatibility:
+    description: Full caller-declared toolchain and platform compatibility profile.
+    required: true
+  push:
+    description: Request publication on a server-authorized trusted default-branch event.
+    default: 'false'
+  ttl-minutes:
+    description: Credential lifetime from 1 to 60 minutes. Rerun this action before expiry.
+    default: '60'
+outputs:
+  configured:
+    description: Whether the private native HTTP connection is configured.
+  init-script:
+    description: Absolute path to the credential-free Gradle init script. Pass it with --init-script.
+  expires-at:
+    description: Scoped credential expiration time, or empty when unconfigured.
+runs:
+  using: node24
+  main: main.mjs
+  post: post.mjs
+  post-if: always()

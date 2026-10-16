@@ -58,6 +58,15 @@ access; Team projects retain current roles. OIDC exchanges accept
 read-only authority for PRs, other refs and unknown events. Public Gradle access
 is disabled.
 
+For GitHub jobs, the [native Gradle action](../action/gradle/README.md) obtains an
+ephemeral Gradle-scoped OIDC capability without installing the CLI. Supply an
+explicit endpoint, project and full compatibility profile, then pass its
+credential-free `init-script` output to Gradle. Publication is opt-in and remains
+subject to the server's default-branch event and membership policy. Authentication
+unavailability clears the connection and permits ordinary execution; invalid
+inputs and runner-file errors fail setup. The action does not change Gradle's
+cache flags, replace another remote or establish Android build savings.
+
 Gradle has one HTTP remote slot. A Local endpoint does not forward Gradle writes
 or read misses to Personal or Team Cache in this slice. A Local acknowledgement
 therefore establishes only Local admission. Use the direct shared private

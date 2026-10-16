@@ -190,7 +190,7 @@ jobs:
       - name: Test installer and setup with the native candidate
         env:
           LAYERCACHE_SETUP_BINARY: ${{ github.workspace }}/dist/${{ matrix.artifact }}
-        run: node --test action/setup/setup.test.mjs scripts/install.test.mjs
+        run: node --test action/setup/setup.test.mjs action/gradle/*.test.mjs scripts/install.test.mjs
 
       - name: Qualify the released Nx native client against the candidate
         env:
