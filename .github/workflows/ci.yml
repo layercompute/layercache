@@ -146,6 +146,16 @@ jobs:
           DASHBOARD_BROWSER: ${{ matrix.browser }}
           QA_OUTPUT: ${{ runner.temp }}/cloud-browser-results
         run: pnpm test:cloud
+      - name: Preserve browser failure evidence
+        if: failure() && steps.scope.outputs.mode != 'docs'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-${{ matrix.browser }}
+          path: |
+            ${{ runner.temp }}/dashboard-browser-results/
+            ${{ runner.temp }}/cloud-browser-results/
+          if-no-files-found: ignore
+          retention-days: 3
 
   lint:
     name: Workflow and shell checks
@@ -389,7 +399,7 @@ jobs:
       - name: Test installer and runner setup
         if: steps.scope.outputs.mode != 'docs'
         working-directory: .
-        run: node --test action/setup/setup.test.mjs scripts/install.test.mjs
+        run: node --test action/setup/setup.test.mjs action/gradle/*.test.mjs scripts/install.test.mjs
       - name: Check native TypeScript Turbo action
         if: steps.scope.outputs.mode != 'docs'
         working-directory: action/turbo

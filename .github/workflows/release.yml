@@ -190,7 +190,7 @@ jobs:
       - name: Test installer and setup with the native candidate
         env:
           LAYERCACHE_SETUP_BINARY: ${{ github.workspace }}/dist/${{ matrix.artifact }}
-        run: node --test action/setup/setup.test.mjs scripts/install.test.mjs
+        run: node --test action/setup/setup.test.mjs action/gradle/*.test.mjs scripts/install.test.mjs
 
       - name: Qualify the released Nx native client against the candidate
         env:
@@ -205,6 +205,43 @@ jobs:
           name: nx-native-release-evidence-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ runner.temp }}/nx-native-evidence.json
           if-no-files-found: warn
+          retention-days: 30
+
+      - name: Qualify native Gradle HTTP caching against the release candidate
+        id: gradle-native
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          LAYERCACHE_BIN: ${{ github.workspace }}/dist/${{ matrix.artifact }}
+          GRADLE_QA_OUTPUT: ${{ runner.temp }}/gradle-native-release-evidence.json
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 2 \
+            --connect-timeout 10 --max-time 120 \
+            https://services.gradle.org/distributions/gradle-9.3.1-bin.zip \
+            --output "$RUNNER_TEMP/gradle-native.zip"
+          echo "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06  $RUNNER_TEMP/gradle-native.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/gradle-native.zip" -d "$RUNNER_TEMP/gradle-native"
+          export JAVA_HOME="${JAVA_HOME_17_X64:?The native fixture requires JDK 17}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          export GRADLE_BIN="$RUNNER_TEMP/gradle-native/gradle-9.3.1/bin/gradle"
+          node qa/gradle-native/run.mjs
+          binary_digest="sha256:$(sha256sum "$LAYERCACHE_BIN" | cut -d ' ' -f 1)"
+          init_digest="sha256:$(sha256sum native/gradle/init.gradle | cut -d ' ' -f 1)"
+          jq -e --arg source "$GITHUB_SHA" \
+            --arg binary "$binary_digest" --arg init "$init_digest" '
+            .schemaVersion == "gradle-native-v1" and .passed == true and
+            .sourceRevision == $source and .binaryDigest == $binary and
+            .initScriptDigest == $init and .gradleVersion == "9.3.1" and
+            (.stages | length) == 22
+          ' "$GRADLE_QA_OUTPUT" >/dev/null
+
+      - name: Preserve native Gradle release qualification evidence
+        if: always() && steps.gradle-native.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gradle-native-release-evidence-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ runner.temp }}/gradle-native-release-evidence.json
+          if-no-files-found: error
           retention-days: 30
 
       - name: Exercise pinned Turbo and stock Actions cache clients

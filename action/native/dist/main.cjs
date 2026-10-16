@@ -3427,12 +3427,30 @@ var defaultLog = (value) => {
   process.stdout.write(value);
 };
 function fileCommand(path, name, value) {
-  if (!path || !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(name)) throw new Error("Invalid GitHub file command");
-  const delimiter = `layercache_${(0, import_node_crypto4.randomUUID)()}`;
-  (0, import_node_fs8.appendFileSync)(path, `${name}<<${delimiter}
+  fileCommands(path, { [name]: value });
+}
+function fileCommands(path, values, append = import_node_fs8.appendFileSync) {
+  if (!path) throw new Error("Invalid GitHub file command");
+  const records = Object.entries(values).map(([name, value]) => {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(name)) throw new Error("Invalid GitHub file command");
+    const delimiter = `layercache_${(0, import_node_crypto4.randomUUID)()}`;
+    return `${name}<<${delimiter}
 ${value}
 ${delimiter}
-`, { mode: 384 });
+`;
+  }).join("");
+  const descriptor = (0, import_node_fs8.openSync)(path, "a", 384);
+  try {
+    const previousSize = (0, import_node_fs8.fstatSync)(descriptor).size;
+    try {
+      append(descriptor, records);
+    } catch (error) {
+      (0, import_node_fs8.ftruncateSync)(descriptor, previousSize);
+      throw error;
+    }
+  } finally {
+    (0, import_node_fs8.closeSync)(descriptor);
+  }
 }
 function endpointURL(value) {
   const url = new URL(value);
@@ -3459,9 +3477,9 @@ async function exchangeCapability({ endpoint, project, compatibility, minutes, e
     redirect: "error",
     signal: AbortSignal.timeout(2e4)
   });
-  if (!exchanged.ok) throw new Error(`Turbo OIDC exchange returned HTTP ${exchanged.status}`);
+  if (!exchanged.ok) throw new Error(`${integration} OIDC exchange returned HTTP ${exchanged.status}`);
   const result = await exchanged.json();
-  if (typeof result.teamToken !== "string" || !result.teamToken || !Number.isFinite(Date.parse(result.expiresAt)) || Date.parse(result.expiresAt) < Date.now() + 3e4 || Date.parse(result.expiresAt) > Date.now() + 366e4) throw new Error("Turbo OIDC exchange returned invalid credentials");
+  if (typeof result.teamToken !== "string" || !result.teamToken || !Number.isFinite(Date.parse(result.expiresAt)) || Date.parse(result.expiresAt) < Date.now() + 3e4 || Date.parse(result.expiresAt) > Date.now() + 366e4) throw new Error(`${integration} OIDC exchange returned invalid credentials`);
   log(`::add-mask::${escape(result.teamToken)}
 `);
   return result;

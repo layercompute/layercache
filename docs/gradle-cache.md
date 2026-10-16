@@ -58,6 +58,15 @@ access; Team projects retain current roles. OIDC exchanges accept
 read-only authority for PRs, other refs and unknown events. Public Gradle access
 is disabled.
 
+For GitHub jobs, the [native Gradle action](../action/gradle/README.md) obtains an
+ephemeral Gradle-scoped OIDC capability without installing the CLI. Supply an
+explicit endpoint, project and full compatibility profile, then pass its
+credential-free `init-script` output to Gradle. Publication is opt-in and remains
+subject to the server's default-branch event and membership policy. Authentication
+unavailability clears the connection and permits ordinary execution; invalid
+inputs and runner-file errors fail setup. The action does not change Gradle's
+cache flags, replace another remote or establish Android build savings.
+
 Gradle has one HTTP remote slot. A Local endpoint does not forward Gradle writes
 or read misses to Personal or Team Cache in this slice. A Local acknowledgement
 therefore establishes only Local admission. Use the direct shared private
@@ -145,3 +154,12 @@ The Linux native-client CI job downloads the pinned Gradle 9.3.1 distribution,
 verifies its published SHA-256, and runs the same acceptance against the
 candidate binary. It retains only the sanitized receipt. macOS and installed
 release qualification for this adapter remain separate.
+
+The Linux x64 release job also runs all 22 real-client commands against the
+binary it packages. Publication requires a successful receipt for that exact
+source, binary and init script. The receipt is retained for 30 days and includes
+only the sanitized protocol and timing evidence described above. A release
+candidate passing this gate does not qualify an installed published release,
+Linux arm64 or macOS Gradle use, an existing gateway upgrade, or Android reuse.
+The CLI package contains the binary; consumers obtain the credential-free init
+script from the same pinned source separately.
