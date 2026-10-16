@@ -7,14 +7,17 @@ restore. LayerCache retains the opaque archive in its existing bounded artifact
 store, under the authenticated project, compatibility profile and `gradle`
 integration.
 
-This is a source implementation. The installed beta.4 CLI and existing gateway
-have not been upgraded by this work. Phone workflow adoption and whole Android
-build savings require separate qualification with the Phone CI owner.
+Native Gradle support is included in immutable beta.5 at source
+`53ec27443a406a508b7e8faeab3f46292e0ba07b`. The
+[published installer qualification](evidence/beta5-installed-20261016.json) and
+[existing gateway/host rollout](evidence/gateway-beta5-rollout-20261016.json)
+passed independently. Phone workflow adoption and whole-job measurement still
+require qualification with the Phone CI owner.
 
 ## Local use
 
 Use the credential-free [init script](../native/gradle/init.gradle) with a
-candidate CLI and its compatible Local daemon:
+published beta.5 CLI and its compatible Local daemon:
 
 ```sh
 LAYER_CACHE_GRADLE_PUSH=1 layercache run \
@@ -152,8 +155,10 @@ not a retained verdict that a current app or live provider still passes.
 
 The Linux native-client CI job downloads the pinned Gradle 9.3.1 distribution,
 verifies its published SHA-256, and runs the same acceptance against the
-candidate binary. It retains only the sanitized receipt. macOS and installed
-release qualification for this adapter remain separate.
+candidate binary. It retains only the sanitized receipt. The published beta.5
+binary independently passed the same 22-command acceptance on Linux x64, with
+matching binary/source/init digests. Gradle on Linux arm64 and macOS remains
+unqualified; installer acceptance for other native clients does not cover it.
 
 The Linux x64 release job also runs all 22 real-client commands against the
 binary it packages. Publication requires a successful receipt for that exact
