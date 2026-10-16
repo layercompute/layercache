@@ -13,7 +13,7 @@ permissions:
 steps:
   - uses: actions/checkout@v7
   - id: gradle-cache
-    uses: ziahamza/layercache/action/gradle@REVIEWED_COMMIT
+    uses: ziahamza/layercache/action/gradle@53ec27443a406a508b7e8faeab3f46292e0ba07b
     with:
       team-url: https://cache.example.com
       project: private-project

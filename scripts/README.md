@@ -1,8 +1,8 @@
 # Install a release
 
-The latest CLI beta is [v0.1.0-beta.4](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.4),
-pinned to protected main commit `ca3d5889a52815bce9565d3825b081839ac7077b`.
-It includes owner-only Personal projects, native Nx Local/direct private
+The latest CLI beta is [v0.1.0-beta.5](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.5),
+pinned to protected main commit `53ec27443a406a508b7e8faeab3f46292e0ba07b`.
+It adds native Gradle HTTP caching and complete-stream publication guards, while retaining owner-only Personal projects, native Nx Local/direct private
 endpoints, permanent-conflict pin retirement, complete Xcode graph retention,
 and confirmed publication of successful local Turbo tasks for CI reuse. Required
 checks can reuse matching tasks with `cache-mode: read-only`; a fresh task lane
@@ -14,7 +14,7 @@ are not qualified by this prerelease; a hosted self-serve cloud requires separat
 deployment. Run the installer from an inspected checkout pinned to that source commit:
 
 ```sh
-bash scripts/install.sh --repository ziahamza/layercache --version v0.1.0-beta.4 \
+bash scripts/install.sh --repository ziahamza/layercache --version v0.1.0-beta.5 \
   --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
@@ -39,15 +39,18 @@ An old `gh` without the required verification flags fails rather than weakening
 the policy. The Node test uses a local fake GitHub client to exercise policy
 failures and target preservation.
 
-The [beta.4 release workflow](https://github.com/ziahamza/layercache/actions/runs/38552629557)
+The [beta.5 release workflow](https://github.com/ziahamza/layercache/actions/runs/38893572601)
 qualifies native release candidates before immutable publication. The
 [published installer workflow](../.github/workflows/beta-release-install.yml)
-pins beta.4 and its exact source commit. It verifies the locked tag, attestations,
-checksum, installation into an empty prefix, `help`, and setup preview on Linux
-x64, Linux arm64, and macOS arm64. Each job then runs the
+pins beta.5 and its exact source commit. It checks the locked tag, attestations, checksum, installation into an empty
+prefix, `help`, and setup preview on Linux x64, Linux arm64, and macOS arm64.
+The installer qualification is pending until those jobs pass for beta.5. Each job then runs the
 [17-scenario real Turbo acceptance](../qa/local-ci-reuse/README.md) using the
 installed release binary, followed by the pinned compiled Nx client acceptance.
-Both use the published CLI; only Nx's QA credential helper is compiled. The retained JSON
+Linux x64 also runs the 22-command pinned Gradle 9.3.1/JDK 17 acceptance and
+binds its receipt to the installed binary, exact release source and init script.
+Gradle acceptance on the other two architectures remains unqualified.
+All cache traffic uses the published CLI; only the QA credential helper is compiled. The retained JSON
 contains task execution, restore, changed-input and offline-recovery evidence;
 it contains no daemon configuration or credentials.
 
