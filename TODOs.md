@@ -51,8 +51,10 @@ hit counts alone.
   metadata committed in the small malformed-upload cases. The [contract](docs/gradle-cache.md) separates this Java
   protocol proof from Phone Android adoption and measured build savings.
   Next: qualify the actual Android producer/fresh consumer and changed-input,
-  profile, repeated-failure and fresh controls. Add real Gradle acceptance to
-  the release candidate and installed-binary gates. Qualify the shared gateway
+  profile, repeated-failure and fresh controls. The Linux x64 release-candidate
+  gate now requires real Gradle acceptance and passed all 22 commands locally;
+  the next publication must execute it. Installed-release Gradle acceptance
+  remains to be added. Qualify the shared gateway
   upgrade with the incomplete-stream fix, preserved authentication, retained
   data and storage bounds before application workflow adoption. Installed
   beta.4 and the existing gateway are not upgraded by source qualification.
