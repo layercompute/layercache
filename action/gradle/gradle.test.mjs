@@ -31,7 +31,7 @@ function job() {
   const env = {
     RUNNER_TEMP: root, GITHUB_ENV: join(root, 'env'), GITHUB_OUTPUT: join(root, 'output'), GITHUB_STATE: join(root, 'state'),
     GITHUB_REPOSITORY: 'acme/widget', GITHUB_REF: 'refs/heads/main', GITHUB_EVENT_NAME: 'push',
-    'INPUT_TEAM-URL': 'https://cache.example/v1', INPUT_PROJECT: 'team-widget', INPUT_COMPATIBILITY: 'linux-x64-android36-schema1',
+    'INPUT_TEAM-URL': 'https://cache.example/v1/', INPUT_PROJECT: 'team-widget', INPUT_COMPATIBILITY: 'linux-x64-android36-schema1',
     ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example/token?fixture=1', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'request-fixture',
     LAYER_CACHE_GRADLE_URL: 'https://stale.example/', LAYER_CACHE_GRADLE_TOKEN: 'stale-token', LAYER_CACHE_GRADLE_PUSH: '1',
     LAYER_CACHE_GRADLE_LOCAL_ENABLED: '0',
