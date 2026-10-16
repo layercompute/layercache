@@ -4,14 +4,15 @@ Checked 2026-10-16. This is a proposed alternative for release-triggered writers
 not implemented writer authorization. Current release-triggered jobs retain
 read-only access.
 
-The active [Phone #317](https://github.com/ziahamza/phone-app/pull/317) candidate
-at `17b6fa7c64fbfad433a7991dd647bb659c2b76c4` avoids a policy expansion. It adds
-a path-filtered actual main-push Kotlin/Java producer on two vCPUs, with a graph
-guard against C++ compilation and APK packaging. PR, manual and `workflow_run` jobs remain
-readers. Local qualification has passed; hosted checks and a writer/fresh-reader
-pair are pending. Include the added writer's compute in net cost measurement.
-The alternative below is needed only if full release publication becomes a
-requirement. It must not block qualifying the existing push-write policy.
+[Phone #317](https://github.com/ziahamza/phone-app/pull/317) landed at
+`0fd189000d1166a91ca39a2a94f3de6e1e2c8cc9` using the existing strict policy.
+Its path-filtered actual main-push Kotlin/Java producer uses two vCPUs and a
+graph guard against C++ compilation and APK packaging. PR, manual and
+`workflow_run` jobs remain readers. The [first hosted same-source pair](../evidence/gradle-android-hosted-20261016.md)
+passes native reuse and fresh runtime acceptance. Net economic acceptance is
+open; include the added producer and compiler-state differences. The alternative
+below is needed only if full release publication becomes a requirement. It
+is not a prerequisite for the landed push-write path.
 
 A release workflow triggered by `workflow_run` may use the default branch's
 workflow definition while checking out a different source revision. Its default
