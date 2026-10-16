@@ -5,6 +5,15 @@ qualification of a reference Android application found useful Gradle task reuse
 and no C++ compiler hits. The next compiler experiment should explain its input
 differences before adding another storage transport.
 
+The later [hosted control](../evidence/gradle-android-hosted-20261016.md) adds a
+different condition: stable CI roots achieve 94/94 compiler hits with zero
+native Gradle restores and unchanged compiler safety flags. Its full build job
+takes 864s and inner compilation 496s. A subsequent same-source Gradle pair's
+first reader restores 297 task paths but has zero of 94 compiler hits. These
+observations keep compiler warmth and native task reuse separate. They support
+the stable-logical-root experiment below, without establishing cross-root
+portability, PCH reuse or a controlled combined speedup.
+
 ## What the local pair established
 
 The producer and consumer used independent checkouts and Gradle homes. The

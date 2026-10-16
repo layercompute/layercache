@@ -12,109 +12,77 @@ hit counts alone.
 
 ## P0: reliable Phone reuse
 
-- [ ] **Adopt native Gradle task reuse on Phone's Android build.**
-  Owner: LayerCache protocol/client integration, coordinated with Phone CI.
-  Active milestone on 2026-10-16. The protocol and an actual compatible Linux
-  Android producer/independent empty consumer pair are qualified through a direct
-  private endpoint. Immutable beta.5 publication, installed-binary qualification,
-  host installation and the existing shared gateway upgrade are complete.
-  The Phone CI owner opened [#317](https://github.com/ziahamza/phone-app/pull/317)
-  at `17b6fa7c64fbfad433a7991dd647bb659c2b76c4` for reviewed workflow adoption.
-  Local preparation passes all 28 workspace tasks and 45 focused contracts;
-  hosted Check and Android QA are pending. First qualify its narrow trusted
-  main-push producer and an independent full reader, then implement automatic
-  local publication. The receipt
-  records source/toolchain identity, native outcomes, exact restored outputs,
-  transfers, separate ccache contribution and command time. Preserve fresh runtime
-  acceptance with the application owner. Remote Mac dependency integration
-  remains gated on supported provider hooks.
-  The October 15 Android acceptance spent 16m11s in the build step inside a
-  21m02s compile job. The [October 16 native Android proof](docs/evidence/gradle-android-private-20261016.json)
-  measures 880.213s cold versus 524.971s in an independent read-only checkout,
-  with 318 native task restorations and 148,112,872 downloaded bytes. Exact 290
-  compiled-output files and 13 selected APK entries match. Changed source,
-  repeated failures, reader publication denial and incompatible profiles pass.
-  This one same-host compile pair does not measure complete CI or billing savings.
-  Both toolchains remain fully represented in native keys; the initial disposable
-  profile named only the root NDK, so its generator is not a production profile.
-  Keep Gradle's native keys, executor and archives through the existing scoped
-  GET/PUT adapter, bounded artifact engine and credential-free init script.
-  Qualify Local standalone and direct Personal/Team endpoints with the actual
-  pinned Gradle client: trusted producer, empty compatible consumer, exact
-  outputs, input/profile misses, failed-task reruns, read-only PRs, revocation,
-  outages, cancellation, duplicates and quota pressure. Preserve source/profile
-  identity and report native outcomes, transfer bytes and complete command time.
-  A Local acknowledgement does not establish private publication. LayerCache
-  still owns automatic Local-to-private forwarding. Phone workflow adoption,
-  whole Android job measurement and fresh runtime acceptance remain with the
-  application owner.
-  [Gateway and installed-client evidence](docs/evidence/gateway-beta5-rollout-20261016.json)
-  records the independently completed operational rollout.
-  Public Gradle publication remains disabled.
+- [x] **Qualify the first hosted native Gradle producer and full reader.**
+  Owner: Phone CI, with LayerCache protocol/client support. [Phone #317](https://github.com/ziahamza/phone-app/pull/317)
+  merged as `0fd189000d1166a91ca39a2a94f3de6e1e2c8cc9`; main Check is green.
+  The [hosted qualification](docs/evidence/gradle-android-hosted-20261016.md)
+  records the exact-source trusted main writer and independent read-only full
+  reader, matching profile and 297 matching restored task paths/native keys.
+  App filesystem task caching is disabled. APK inspection, Kotlin tests and
+  all eight fresh Contacts emulator steps pass, with no measured OOM events.
+  The narrow main writer includes no C++/JNI/signing/APK tasks, including its
+  separate Kotlin test graph. PR/manual/`workflow_run` builds remain readers.
+  This completes the first hosted correctness gate, not economic acceptance.
 
-  The #317 candidate preserves the current strict writer policy. A path-filtered
-  actual main push seeds only `:app:compileDebugKotlin` and
-  `:app:compileDebugJavaWithJavac` on two vCPUs. Its inspected seed graph has 462
-  tasks across 25 Android projects, with 305 potentially cacheable tasks, not
-  measured cache hits. A tested graph guard excludes C++ and APK packaging;
-  the inspected seed graph uses no signing. The job also retains its separate
-  Kotlin JVM tests. Same-repository
-  PR, manual and signed `workflow_run` jobs remain readers; full APK inspection
-  and fresh emulator assertions remain. Connected QA disables the filesystem
-  task cache for native HTTP attribution while retaining dependency and ccache
-  snapshots. The selected-model profile represents both actual NDKs; matching
-  Debug consumers share that profile, while Release/ARM remains distinct.
-  Actual Gradle 9.3.1 local fixtures cover authorization denial, server errors,
-  timeout, failed publication, a zero-PUT reader, corrupt archive failure and
-  repeated compile failures without publication. This is local qualification,
-  not hosted adoption, durable Team publication or a measured saving.
-  The application owner retains landing, trusted writer/fresh full-reader
-  measurement and current runtime acceptance. Include added writer compute,
-  setup, transfer, publication and complete job time when assessing net benefit.
-  Do not duplicate a full C++/APK build merely to populate cache.
+- [ ] **Measure net benefit of hosted Gradle adoption.**
+  Owner: Phone CI/release owner, coordinated with LayerCache. The first producer
+  takes 797s for its complete job, including 244.371s inner seed and 247.267s
+  initial cold selected-model discovery. Its reader takes 927s for the complete
+  build job and 616.427s inner compilation, with zero of 94 compiler hits.
+  The earlier warm PR baseline is 864s/496s with 94/94 compiler hits at another
+  source; it is not a controlled HTTP-cache comparison. Phone owns final normal
+  reader run `38925086191` and its report. Include added producer compute,
+  discovery/setup, transfer, publication, compiler state and complete job time.
+  The writer's 126 cache outcomes all have same-key executed counterparts inside
+  its own graph, not proof of older-cache reuse or unique publications. Observed
+  PUT/GET bytes and monthly savings remain unknown. Signed/ARM reuse requires
+  separate qualification. Keep fresh runtime assertions and required checks.
 
-  Existing signed `workflow_run` jobs intentionally retain read-only access.
-  The [producer-boundary research](docs/research/trusted-ci-producer-20261016.md)
-  describes a conditional future alternative if full release publication becomes
-  necessary. It is not a prerequisite for #317's actual main-push writer.
-  LayerCache would own any new narrowly authorized policy, with the application
-  owner for the complete immutable reusable build job. Bind signed caller/callee
-  identity and verify the successful same-repository default-branch push source
-  before checkout code. Caller-selected upstream IDs alone are insufficient;
-  token handoff to caller code remains disallowed. Keep current reader policy
-  until separate source, deployment and producer/consumer qualification passes.
+- [ ] **Implement retained private handoffs and transfer phase evidence.**
+  Owner: LayerCache storage/protocol/qualification; Phone owns workflow adoption.
+  The hosted reader spent 229s retrieving and verifying a reported
+  124,078,900-byte required artifact. This is a complete step, not a bandwidth
+  measurement. The [retained-artifact contract](docs/retained-artifacts.md)
+  proposes one immutable file over existing PostgreSQL/S3 storage, with reserved
+  capacity, verified bytes, an authoritative receipt, fixed expiry, active
+  retention claims, deletion fencing and acknowledgement recovery. No retained
+  route or receipt is implemented or deployed by that design.
+  First capture actual provider lookup/authentication, delivery authorization,
+  request/body, digest/provenance, extraction and final publication intervals,
+  including retries/overlap and actual bytes. Existing consumer code uses a
+  custom fetch helper; another action version's retry or extraction behavior
+  does not explain its 229s. Qualify the storage module against disposable
+  PostgreSQL and the production S3 SDK before exposing an authenticated route.
+  Required fallback stays until separate deployment and fresh hosted-consumer
+  acceptance pass. Existing cache pins alone are insufficient for this promise.
+  This work does not establish issue #34's historical miss cause.
 
-  First protocol slice is source-qualified at `3b9ded989140abadedb476cfc29fc100163c9597`.
-  The [native receipt](docs/evidence/gradle-native-private-20261015.json) records
-  22 actual Gradle 9.3.1/JDK 17 commands in 134.472s, with empty independent
-  Local/private consumers restoring exact compiled and verification outputs
-  as `FROM-CACHE` with zero actions. It covers native duplicate winners,
-  input/compiler/profile misses, failed-task reruns, read-only/revoked clients,
-  explicit fresh bypass, init conflicts, quota and service outage behavior.
-  [Personal policy controls](docs/evidence/gradle-personal-policy-20261015.json)
-  reproduce and fix the missing managed-portal route, then pass actual isolation,
-  restart, owner-only CI, PR-reader and former-owner revocation checks, including
-  race detection. [Real PostgreSQL/S3 SDK controls](docs/evidence/gradle-cloud-upload-integrity-20261015.json)
-  also reproduce and repair incomplete-upload publication, with zero bytes or
-  metadata committed in the small malformed-upload cases. The [contract](docs/gradle-cache.md) separates this Java
-  protocol proof from Phone Android adoption and measured build savings.
-  The Android pair passes changed-input/profile controls and repeated failures;
-  the protocol fixture separately qualifies explicit fresh bypass. The Linux x64 release-candidate
-  gate passed all 22 commands in the [immutable beta.5 release](https://github.com/ziahamza/layercache/actions/runs/38893572601)
-  at `53ec27443a406a508b7e8faeab3f46292e0ba07b`. Published-binary installer
-  qualification [passed all three architectures](https://github.com/ziahamza/layercache/actions/runs/38895127715),
-  including Linux x64 Gradle acceptance and matching binary/source/init digests.
-  [#49](https://github.com/ziahamza/layercache/pull/49) merged as
-  `bb4447f56c4268b0fd648858e2ee6fdd4fe34bbe`; all fourteen
-  post-merge checks pass across [CI](https://github.com/ziahamza/layercache/actions/runs/38895848461),
-  [persistence](https://github.com/ziahamza/layercache/actions/runs/38895848207)
-  and [reuse](https://github.com/ziahamza/layercache/actions/runs/38895848378).
-  The [existing gateway rollout](docs/evidence/gateway-beta5-rollout-20261016.json)
-  passed a complete cold-copy recovery rehearsal with 170 checks across five
-  phases, then live HTTPS Gradle/legacy/restart checks across all five projects.
-  The host CLI and five Local daemons now run the attested beta.5 binary.
-  Source, published installation, actual Android builds and deployment retain
-  separate evidence; the application owner owns fresh hosted adoption.
+- [ ] **Make local Gradle results available to authorized private CI.**
+  Owner: LayerCache. The direct hosted native path is now qualified; automatic
+  Local-to-Personal/Team forwarding remains outstanding. Reuse Gradle's native
+  keys/archives and the existing bounded artifact store, durable upload queue
+  and remote confirmation patterns. Preserve complete selected-model context,
+  Personal ownership, Team membership and read-only consumers. A Local admission
+  or successful duplicate PUT alone does not prove the exact requested remote
+  archive or retained handoff. Qualify read-through, durable publication,
+  canonical-winner confirmation, restart repair, revocation, incompatible
+  profiles, failed tasks, outages, cancellation, duplicates and quota pressure.
+  Report actual native outcomes, bytes and full command/job time. Public Gradle
+  publication remains disabled; this task does not supply retained artifacts.
+
+  Protocol source is qualified at `3b9ded989140abadedb476cfc29fc100163c9597`;
+  [native](docs/evidence/gradle-native-private-20261015.json),
+  [Personal](docs/evidence/gradle-personal-policy-20261015.json) and
+  [PostgreSQL/S3 integrity](docs/evidence/gradle-cloud-upload-integrity-20261015.json)
+  controls remain separate from the [local Android pair](docs/evidence/gradle-android-private-20261016.json)
+  and hosted application proof. The [immutable beta.5 release](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.5),
+  [published installation](docs/evidence/beta5-installed-20261016.json) and
+  [existing gateway/five-daemon rollout](docs/evidence/gateway-beta5-rollout-20261016.json)
+  are complete at reviewed source `53ec27443a406a508b7e8faeab3f46292e0ba07b`.
+  Existing `workflow_run` jobs remain readers. The [conditional producer-policy
+  alternative](docs/research/trusted-ci-producer-20261016.md) is not required for
+  the landed actual main-push writer. Phone retains workflow/release routing;
+  remote Mac dependency hooks and full signed-release publication remain separate.
 
 - [x] **Publish reusable CI optimization lessons.**
   Owner: LayerCache documentation. [#46](https://github.com/ziahamza/layercache/pull/46)
@@ -191,6 +159,9 @@ hit counts alone.
 
 - [ ] **Qualify required file handoffs independently of evictable caches.**
   Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
+  LayerCache owns the separate proposed [retained service contract](docs/retained-artifacts.md)
+  and phase evidence in P0 above; this application acceptance keeps the existing
+  qualified provider while the replacement is unimplemented.
   [Phone #299](https://github.com/ziahamza/phone-app/pull/299) repairs exact
   retained web/APK handoffs and qualifies hosted producer/consumer use;
   [Phone #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)
@@ -508,8 +479,9 @@ hit counts alone.
   and [managed Personal policy proof](docs/evidence/gradle-personal-policy-20261015.json)
   pass. The Linux native-client CI gate uses the pinned Gradle distribution and
   candidate binary. Beta.5 installation and the existing gateway rollout are
-  qualified above; Local forwarding, Phone adoption and whole-job measurement
-  remain open.
+  qualified above, as is the first hosted Phone producer/full-reader gate.
+  Local forwarding, net-benefit measurement and signed/ARM qualification remain
+  open.
 - [x] Phone's ten independent mobile test groups, all thirty isolated workflow
   processes and mandatory typechecking, reviewed source `b7279389` merged in
   [Phone #298](https://github.com/ziahamza/phone-app/pull/298) as

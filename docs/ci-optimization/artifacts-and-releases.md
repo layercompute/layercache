@@ -30,10 +30,11 @@ they do not replace those identities. A filename called `latest` is insufficient
 Download from the actual consuming job, verify the complete byte count and
 digest, then inspect the package. Keep web entry files, native package IDs,
 version/build values, signatures, entitlements or required runtime contents in
-that stage's existing validation. GitHub's download action reports artifact
-digest mismatches as warnings; required handoffs need a failing verification
-contract where a mismatch must stop consumption.
-[Artifact transfer and digest behavior](https://docs.github.com/en/actions/tutorials/store-and-share-data)
+that stage's existing validation. Digest handling depends on the pinned client;
+download-artifact v8 defaults to an error on a digest mismatch. Retain explicit
+payload, completeness and producer checks rather than treating a verified ZIP
+as verification of the contained package's identity.
+[Pinned v8 digest policy](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/action.yml)
 
 Avoid a redundant producer download when the protocol and retained-artifact
 contract do not require one. Prove the fresh consumer path and a consumer-only
@@ -47,6 +48,12 @@ become successful publication of partial bytes. An unknown commit response may
 mean the server accepted the data; confirm authoritative state before deleting
 possibly committed objects. Keep keys, signed URLs and credentials out of
 public evidence.
+
+The [proposed retained-artifact contract](../retained-artifacts.md) specifies
+admission, authoritative acknowledgement, deletion protection, expiry and
+transfer phase evidence. It is design work; LayerCache currently exposes no
+retained-artifact route. Keep the qualified required-transfer provider until
+the replacement's storage, authorization, deployment and fresh consumer pass.
 
 Publish a new proof atomically after validation. Invalidate an old output
 receipt before a supported new attempt starts, including initialization
