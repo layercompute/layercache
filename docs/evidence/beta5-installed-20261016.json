@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "published-beta-qualification-v1",
+  "checkedAt": "2026-10-16",
+  "release": "v0.1.0-beta.5",
+  "releaseSourceRevision": "53ec27443a406a508b7e8faeab3f46292e0ba07b",
+  "releaseWorkflowRun": "https://github.com/ziahamza/layercache/actions/runs/38893572601",
+  "installerWorkflowRevision": "2a5f0dae2a6bccce2f52f3d7f09482a9870715be",
+  "installerWorkflowRun": "https://github.com/ziahamza/layercache/actions/runs/38895127715",
+  "immutableRelease": true,
+  "installerPolicy": [
+    "exact locked tag and source",
+    "repository and release workflow attestations",
+    "GitHub-hosted builder",
+    "archive checksum and single regular binary member",
+    "fresh prefix, help and non-writing setup preview"
+  ],
+  "platforms": [
+    {
+      "platform": "Linux-x64",
+      "installed": true,
+      "turboScenariosPassed": 17,
+      "nxStagesPassed": 12
+    },
+    {
+      "platform": "Linux-arm64",
+      "installed": true,
+      "turboScenariosPassed": 17,
+      "nxStagesPassed": 12
+    },
+    {
+      "platform": "macOS-arm64",
+      "installed": true,
+      "turboScenariosPassed": 17,
+      "nxStagesPassed": 12
+    }
+  ],
+  "linuxX64Gradle": {
+    "schemaVersion": "gradle-native-v1",
+    "passed": true,
+    "sourceRevision": "53ec27443a406a508b7e8faeab3f46292e0ba07b",
+    "binaryDigest": "sha256:b7b4617eaebe93536f3ac78d79547c3d2c129364c8e7d88d490cb58c6da55280",
+    "initScriptDigest": "sha256:b45b47190b38f9f439d2324a49fbc5bbfdb8bf3a8671b63900c11d64ef32eaf5",
+    "gradleVersion": "9.3.1",
+    "stagesPassed": 22
+  },
+  "limits": [
+    "Gradle installed acceptance was run only on Linux x64",
+    "Native fixture acceptance does not measure full application CI, signed builds or billing",
+    "Host installation and gateway deployment require separate operational evidence"
+  ]
+}

@@ -44,7 +44,9 @@ qualifies native release candidates before immutable publication. The
 [published installer workflow](../.github/workflows/beta-release-install.yml)
 pins beta.5 and its exact source commit. It checks the locked tag, attestations, checksum, installation into an empty
 prefix, `help`, and setup preview on Linux x64, Linux arm64, and macOS arm64.
-The installer qualification is pending until those jobs pass for beta.5. Each job then runs the
+The [beta.5 installer run](https://github.com/ziahamza/layercache/actions/runs/38895127715)
+passed all three platforms; the [retained summary](../docs/evidence/beta5-installed-20261016.json)
+records the exact source and qualification scope. Each job then runs the
 [17-scenario real Turbo acceptance](../qa/local-ci-reuse/README.md) using the
 installed release binary, followed by the pinned compiled Nx client acceptance.
 Linux x64 also runs the 22-command pinned Gradle 9.3.1/JDK 17 acceptance and

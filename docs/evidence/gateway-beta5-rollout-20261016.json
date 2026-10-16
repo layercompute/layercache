@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "existing-private-gateway-rollout-v1",
+  "checkedAt": "2026-10-16",
+  "sourceRevision": "53ec27443a406a508b7e8faeab3f46292e0ba07b",
+  "gatewayImageDigest": "sha256:df745fb42eda7de19abb12ef93915454d927ee2d60ac3d6460b278c75a3b4a28",
+  "gatewayBinaryDigest": "sha256:b236d3aaf79c2b12efb3831287afe17d2640e4a583c739313d4816d0d94ffdb1",
+  "oldGatewayImageRetained": true,
+  "recovery": {
+    "completeColdPoolAndProtectedConfigurationCaptured": true,
+    "oldCliCaptured": true,
+    "archiveDigestsVerifiedBeforeRestore": true,
+    "disposablePoolGiB": 24,
+    "originalReserveGiB": 10,
+    "productionMounts": false,
+    "phases": [
+      "old-restored",
+      "candidate-upgrade",
+      "candidate-restart",
+      "old-rollback",
+      "candidate-forward"
+    ],
+    "checksPassed": 170,
+    "sameScopedCredentialsAcrossPhases": true,
+    "credentialScopes": 26,
+    "credentialValuesPersistedByHarness": false,
+    "cleanupComplete": true
+  },
+  "liveGateway": {
+    "projectCount": 5,
+    "configurationChanges": [
+      "gateway image pin only"
+    ],
+    "allAuthenticatedBackendsHealthy": true,
+    "legacyChecks": 11,
+    "gradleChecks": 17,
+    "restartChecks": 16,
+    "postCliInstallChecks": 16,
+    "registryWrites": 0,
+    "originCredentialsMembershipAndRetentionPreserved": true,
+    "configuredPoolBytes": 51539607552,
+    "configuredPoolReserveBytes": 10737418240,
+    "perProjectCommittedQuotaBytes": 5368709120,
+    "storedCanaryBytesPerProjectMaximum": 8192
+  },
+  "hostCli": {
+    "release": "v0.1.0-beta.5",
+    "binaryDigest": "sha256:b7b4617eaebe93536f3ac78d79547c3d2c129364c8e7d88d490cb58c6da55280",
+    "attestedInstallerToPrivateStaging": true,
+    "atomicLiveReplacement": true,
+    "activeDaemonsWithExactBinary": 5,
+    "authenticatedLocalStatusPassed": true,
+    "pendingUploads": 0,
+    "configurationChanges": false
+  },
+  "preservedOriginalWorkspaceFiles": 8,
+  "limits": [
+    "Protocol canaries do not qualify an application workflow, full Android CI, runtime behavior, signed release or billing savings",
+    "Scoped credentials reuse the preserved signing authority; external OAuth provider acceptance remains separate",
+    "Registry bytes are included in the cold pool archive; registry push/pull was not part of this restored-service qualification",
+    "The gateway image was built locally from the exact reviewed source; this is not publication of an attested container image",
+    "Automatic Local-to-private Gradle forwarding remains unimplemented"
+  ]
+}
