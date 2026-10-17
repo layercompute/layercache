@@ -9,11 +9,16 @@ qualifications. Application examples are anonymized. Measurements distinguish
 task time, job allocation and bills; a cache hit alone proves none of those
 savings. Each page states the limits of its examples.
 
+Agents: start with the [optimization playbook](agent-playbook.md) for the edit
+loop, recipe selection and completion evidence. Save new source-backed tips in
+the matching recipe so future agents can find and qualify them.
+
 ## Choose the work to avoid
 
 | What you observe | First useful change | Recipe |
 | --- | --- | --- |
 | New PR commits leave old checks running | Cancel superseded PR runs, avoid duplicate triggers | [Workflow structure](workflow-structure.md) |
+| Draft PRs allocate expensive runners before review | Gate selected jobs and handle both draft transitions | [Draft policy](workflow-structure.md#defer-selected-expensive-jobs-on-drafts) |
 | Prose edits compile every platform | Conservative change classification with stable required checks | [Workflow structure](workflow-structure.md#keep-required-checks-present) |
 | Small source edits rerun a large test command | Split useful groups inside the existing task graph | [Task reuse](task-reuse.md) |
 | Restoring generated reports causes more misses | Correct the declared input/output boundary | [Task reuse](task-reuse.md#stop-generated-evidence-from-invalidating-its-own-producer) |
@@ -24,6 +29,7 @@ savings. Each page states the limits of its examples.
 | JavaScript-only edits schedule another native build | Resolve a compatible framework fingerprint before allocating a builder | [Native builds](native-builds.md#reuse-a-compatible-development-build-before-scheduling-a-mac) |
 | Release preparation repeats successful general validation | Verify trusted results for that exact source; retain fresh fallback | [Release preparation](artifacts-and-releases.md#reuse-trusted-general-validation) |
 | A later job cannot find an acknowledged upload | Use retained artifacts for required handoffs; verify the consumer | [Artifacts and releases](artifacts-and-releases.md) |
+| Upload CPU dominates a compressed binary handoff | Compare packing levels and preserve consumer verification | [Transfer cost](artifacts-and-releases.md#measure-packing-and-transfer-separately) |
 | Snapshots crowd out useful work or exhaust disk | Budget physical storage, use bounded eviction and prune closed-PR snapshots | [Cache storage](cache-storage.md) |
 | Model-driven tests repeat identical planner calls | Replay recorded inference while executing current actions/assertions | [Inference and E2E](artifacts-and-releases.md#recorded-inference-is-an-input) |
 | A warm task is fast but the bill stays high | Include setup, transfer, remote workers, retries and all runner SKUs | [Measurement](measurement.md) |
