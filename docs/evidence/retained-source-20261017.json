@@ -1,0 +1,294 @@
+{
+  "consumerOnlyAttempt2": {
+    "schemaVersion": "retained-transfer-v1",
+    "outcome": "success",
+    "attempts": [
+      {
+        "operation": "inspect",
+        "attempt": 1,
+        "startMs": 2.8277940000000115,
+        "consumedBytes": 735,
+        "outcome": "success",
+        "headersMs": 77.52830200000002,
+        "httpStatus": 200,
+        "serverTiming": [
+          {
+            "name": "retained_inspect",
+            "durationMs": 6.103
+          }
+        ],
+        "endMs": 82.03164799999999
+      },
+      {
+        "operation": "download",
+        "attempt": 1,
+        "startMs": 85.26008900000002,
+        "consumedBytes": 124078900,
+        "outcome": "success",
+        "headersMs": 113.67523300000002,
+        "httpStatus": 200,
+        "serverTiming": [
+          {
+            "name": "retained_open",
+            "durationMs": 8.062
+          }
+        ],
+        "firstBodyMs": 119.14293699999999,
+        "bodyEndMs": 1013.220026,
+        "endMs": 1013.97082
+      }
+    ],
+    "phases": [
+      {
+        "name": "complete-size-and-digest",
+        "startMs": 1013.229396,
+        "endMs": 1013.292927
+      },
+      {
+        "name": "disk-flush",
+        "startMs": 1013.297867,
+        "endMs": 1013.7186649999999
+      },
+      {
+        "name": "local-publication",
+        "startMs": 1013.7317949999999,
+        "endMs": 1013.883928
+      }
+    ],
+    "acceptedPayloadBytes": 124078900,
+    "clock": "monotonic offsets in milliseconds; overlapping intervals are not additive",
+    "transport": "one opaque streaming request; consumed body bytes include local hashing/disk backpressure and are not pure network bandwidth",
+    "unavailablePhases": [
+      "DNS",
+      "TCP connection",
+      "TLS handshake",
+      "server durable commit internals unless reported in Server-Timing"
+    ],
+    "completeMs": 1015.0428999999999
+  },
+  "payloadBytes": 124078900,
+  "payloadSha256": "c130a4c3a78f3727d2ad782bbf7010fb0eb93291db4d5faebe6fc32af8e0be1b",
+  "publisher": {
+    "schemaVersion": "retained-transfer-v1",
+    "outcome": "success",
+    "attempts": [
+      {
+        "operation": "inspect",
+        "attempt": 1,
+        "startMs": 377.75813999999997,
+        "consumedBytes": 0,
+        "outcome": "failed",
+        "headersMs": 462.01614,
+        "httpStatus": 404,
+        "endMs": 462.725124
+      },
+      {
+        "operation": "reserve",
+        "attempt": 1,
+        "startMs": 462.80407499999995,
+        "consumedBytes": 690,
+        "outcome": "success",
+        "headersMs": 486.63370100000003,
+        "httpStatus": 200,
+        "serverTiming": [
+          {
+            "name": "retained_admission",
+            "durationMs": 11.649
+          }
+        ],
+        "endMs": 489.25207099999994
+      },
+      {
+        "operation": "upload",
+        "attempt": 1,
+        "startMs": 493.60936399999997,
+        "consumedBytes": 124078900,
+        "outcome": "success",
+        "firstBodyMs": 508.89711600000004,
+        "bodyEndMs": 2408.7237680000003,
+        "reconciled": true,
+        "endMs": 3009.8528880000003
+      },
+      {
+        "operation": "inspect",
+        "attempt": 2,
+        "startMs": 2997.562993,
+        "consumedBytes": 735,
+        "outcome": "success",
+        "headersMs": 3008.604424,
+        "httpStatus": 200,
+        "serverTiming": [
+          {
+            "name": "retained_inspect",
+            "durationMs": 2.686
+          }
+        ],
+        "endMs": 3009.393789
+      }
+    ],
+    "phases": [
+      {
+        "name": "source-hash",
+        "startMs": 0.9751479999999901,
+        "endMs": 372.040101,
+        "consumedBytes": 124078900
+      }
+    ],
+    "acceptedPayloadBytes": 124078900,
+    "clock": "monotonic offsets in milliseconds; overlapping intervals are not additive",
+    "transport": "one opaque streaming request; consumed body bytes include local hashing/disk backpressure and are not pure network bandwidth",
+    "unavailablePhases": [
+      "DNS",
+      "TCP connection",
+      "TLS handshake",
+      "server durable commit internals unless reported in Server-Timing"
+    ],
+    "completeMs": 3010.3625770000003
+  },
+  "qualified": [
+    "immutable publication",
+    "authoritative inspect",
+    "duplicate upload avoided",
+    "lost publication response reconciled through authoritative Inspect",
+    "read-only and foreign-run denial",
+    "quota admission rejection",
+    "server restart recovery",
+    "another-job read",
+    "consumer-only later attempt",
+    "complete size and SHA256",
+    "SQL receipt/claim/pin/accounting",
+    "corrupt-object rejection and no stale output"
+  ],
+  "readerAfterRestart": {
+    "schemaVersion": "retained-transfer-v1",
+    "outcome": "success",
+    "attempts": [
+      {
+        "operation": "inspect",
+        "attempt": 1,
+        "startMs": 2.62706,
+        "consumedBytes": 735,
+        "outcome": "success",
+        "headersMs": 58.121981000000005,
+        "httpStatus": 200,
+        "serverTiming": [
+          {
+            "name": "retained_inspect",
+            "durationMs": 5.206
+          }
+        ],
+        "endMs": 67.77113499999999
+      },
+      {
+        "operation": "download",
+        "attempt": 1,
+        "startMs": 71.88162399999999,
+        "consumedBytes": 124078900,
+        "outcome": "success",
+        "headersMs": 119.40279199999998,
+        "httpStatus": 200,
+        "serverTiming": [
+          {
+            "name": "retained_open",
+            "durationMs": 12.1
+          }
+        ],
+        "firstBodyMs": 124.376847,
+        "bodyEndMs": 1232.539638,
+        "endMs": 1233.939075
+      }
+    ],
+    "phases": [
+      {
+        "name": "complete-size-and-digest",
+        "startMs": 1232.5507579999999,
+        "endMs": 1232.62098
+      },
+      {
+        "name": "disk-flush",
+        "startMs": 1232.62827,
+        "endMs": 1233.594778
+      },
+      {
+        "name": "local-publication",
+        "startMs": 1233.597078,
+        "endMs": 1233.851713
+      }
+    ],
+    "acceptedPayloadBytes": 124078900,
+    "clock": "monotonic offsets in milliseconds; overlapping intervals are not additive",
+    "transport": "one opaque streaming request; consumed body bytes include local hashing/disk backpressure and are not pure network bandwidth",
+    "unavailablePhases": [
+      "DNS",
+      "TCP connection",
+      "TLS handshake",
+      "server durable commit internals unless reported in Server-Timing"
+    ],
+    "completeMs": 1235.905752
+  },
+  "receipt": {
+    "schemaVersion": "retained-artifact-v1",
+    "id": "42d6a3a1b25c34b4308d36ccec3c866a041f34e5216e9a38e4dbd27fb4351b71",
+    "state": "published",
+    "declaration": {
+      "producer": {
+        "project": "retained-integration-qa",
+        "repository": "acme/fixture",
+        "repositoryId": "42",
+        "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "workflowRef": "acme/fixture/.github/workflows/qa.yml@refs/pull/7/merge",
+        "runId": "100",
+        "runAttempt": "1",
+        "jobId": "200",
+        "profile": "qa-opaque-v1"
+      },
+      "name": "required-opaque",
+      "digest": "c130a4c3a78f3727d2ad782bbf7010fb0eb93291db4d5faebe6fc32af8e0be1b",
+      "size": 124078900,
+      "retainUntil": "2026-10-17T12:03:20.249Z"
+    },
+    "reservedUntil": "2026-10-17T11:18:20.89233Z",
+    "createdAt": "2026-10-17T11:03:20.89233Z",
+    "publishedAt": "2026-10-17T11:03:23.385337Z"
+  },
+  "schemaVersion": "retained-integration-qualification-v1",
+  "scope": "disposable local production server + PostgreSQL + real MinIO + direct JavaScript client; locally minted capabilities bypass GitHub issuer/exchange; no hosted or production proof",
+  "source": {
+    "baseRevision": "95f6ca3cb3ab6faec1bd02ca479c71ebe35a99fc",
+    "filesSha256": {
+      "internal/access/capability.go": "37bbaf41cb1bce9e1f687814234525255aca852e9ba2b76195547dccbe0c5189",
+      "internal/cloud/administration.go": "d8249b090dde6ed27edcf2c5087b2d57803bd703641ba0d61550ee0fa9fa1393",
+      "internal/cloud/cache.go": "b7fc78172a98575b7fcdaf84fb28f1c55d8acb6f78a8d2e8b04530105a125f3d",
+      "internal/cloud/maintenance.go": "be7d49e629a1949c3e92ac371b04ee7b606d752381b6faeaa3fc88fb9851d7ed",
+      "internal/cloud/prune.go": "f76a5e8b787109e1160fff044b5760c8578104b697f84ba07a9dbd185747292d",
+      "internal/cloud/retention.go": "6f7cbb6611c03751f158f619f235b57bc2a61a4365d101a5dbcd9da5e7c475d1",
+      "internal/cloud/schema.go": "2f7baaf2608f0d905bc4e9b891aa7a81698ab1609c1223b6e0880505459cd9f5",
+      "internal/cloud/retained.go": "ea7ea0deadfc6a46b7f8e1508ad20ef437b4541d65f0d1e0702eba6da37fd974",
+      "internal/config/config.go": "e6db9309f1c4cc75b2ff9773c039666bb7bf8fc1b4c3b7053fd20c689f0e4185",
+      "internal/githubauth/oidc.go": "4c34d17ecc437348407c0392a659e675f52c863e136edb5aaa0046ba02e9d3a3",
+      "internal/githubauth/retained.go": "78d9a5fb0ba21959903320f7bbb936f10df8497f6ea166ca9fb8d58c417842b1",
+      "internal/portal/portal.go": "bb528f3651d35f0faf07f9254cd4cbeae6fba11de4911cf2c707443fbf760c2b",
+      "internal/server/auth.go": "2bead37d901ce1540b7a8d7e4af1987636e4f6601b157ca412a3e4cddc6975f0",
+      "internal/server/server.go": "17da2179fe51acfc4cb370779646d57f8cb36f658c4ac1618661518a98332b78",
+      "internal/server/retained.go": "da68180e8c4176b3c809ef53ff433a601cf813ca31ff00d9b3c84e96858432bc",
+      "internal/server/retained_auth.go": "5d8155bb3e20f5422c396025965b032e7063b79ca08df30e60f7ad06980b29c2",
+      "internal/retained/types.go": "e470f399afd3660ed099c40871303dfe7e8e797be5a854587a6b54b09afb1d90",
+      "action/retained/action.yml": "44b56e260824d0a9d0678fd8f29fe82b351118cce923141050a0eb63299b864e",
+      "action/retained/client.mjs": "221b05f3054f95cc000753504a21a81bf6763534c38cd0b854fc28dbd48f6ef1",
+      "action/retained/main.mjs": "2bcffd2804e3ad56fd445fb6ba503448b7cc3b7282b8c0e805f563ada2d1c500"
+    }
+  },
+  "backends": {
+    "postgresqlMajor": 17,
+    "s3Backend": "hzia/minio:RELEASE.2025-10-15T17-29-55Z",
+    "go": "1.25.13",
+    "node": "24.13.0",
+    "fixtureCapacityBytes": 2147483648
+  },
+  "qualificationLimits": [
+    "Locally minted retained capabilities bypass real GitHub issuer and exchange; signed OIDC adapter has separate fixture tests.",
+    "No production service change, hosted application acceptance, transfer speedup or bill reduction is established.",
+    "Body timing includes hashing, local writes and backpressure. Intervals overlap and are not additive.",
+    "The first 512 MiB disposable backend filled during repeated large fixtures; the complete passing run uses a fresh 2 GiB tmpfs and successful fixture cleanup."
+  ]
+}

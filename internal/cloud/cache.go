@@ -19,10 +19,13 @@ import (
 )
 
 type projectUsage struct {
-	quota         int64
-	metadataQuota int64
-	used          int64
-	metadataUsed  int64
+	quota            int64
+	metadataQuota    int64
+	used             int64
+	metadataUsed     int64
+	reserved         int64
+	reservedMetadata int64
+	retainedStaging  int64
 }
 
 func (store *Store) Put(ctx context.Context, key artifact.Key, metadata artifact.Metadata, body io.Reader) (artifact.Entry, bool, error) {
@@ -76,23 +79,39 @@ func (store *Store) putWithCommit(
 	}
 	stageKey := "projects/" + store.namespace + "/staging/" + uploadID
 	now := store.config.Now().UTC()
+	stageUntil := now.Add(store.config.StageTTL)
+	retainedStage, isRetained := ctx.Value(retainedContextKey{}).(retainedUpload)
+	if isRetained {
+		stageUntil = retainedStage.expires
+	}
 	if _, err := store.database.ExecContext(ctx, `
-		INSERT INTO layercache_uploads_v1(
-			upload_id, project_id, object_key, state, created_at, expires_at
-		) VALUES($1, $2, $3, 'uploading', $4, $5)`,
-		uploadID, store.config.Project, stageKey, now, now.Add(store.config.StageTTL)); err != nil {
+        INSERT INTO layercache_uploads_v1(
+			upload_id, project_id, object_key, state, created_at, expires_at, retained_receipt_id
+		) VALUES($1, $2, $3, 'uploading', $4, $5, NULLIF($6,''))`,
+		uploadID, store.config.Project, stageKey, now, stageUntil, retainedStage.id); err != nil {
 		return artifact.Entry{}, false, store.safeError("record cloud staged upload", err)
 	}
-	defer store.discardStage(uploadID, stageKey)
+	if isRetained {
+		defer store.discardRetainedStage(uploadID, stageKey, retainedStage.id)
+	} else {
+		defer store.discardStage(uploadID, stageKey)
+	}
 
 	quota, err := store.Quota(ctx)
 	if err != nil {
 		return artifact.Entry{}, false, err
 	}
-	staged, err := store.blobs.Stage(ctx, stageKey, body, quota.MaxBytes, mediaType)
+	maximum := quota.MaxBytes
+	if isRetained {
+		maximum = min(maximum, retainedStage.size)
+	}
+	staged, err := store.blobs.Stage(ctx, stageKey, body, maximum, mediaType)
 	if err != nil {
 		if errors.Is(err, ErrQuota) {
 			return artifact.Entry{}, false, ErrQuota
+		}
+		if errors.Is(err, ErrCorrupt) {
+			return artifact.Entry{}, false, ErrCorrupt
 		}
 		return artifact.Entry{}, false, store.safeError("stage cloud artifact", err)
 	}
@@ -432,6 +451,10 @@ func (store *Store) lockProject(ctx context.Context, transaction *sql.Tx) (proje
 	if err != nil {
 		return projectUsage{}, store.safeError("lock cloud project quota", err)
 	}
+	if err := transaction.QueryRowContext(ctx, `SELECT COALESCE(SUM(reserved_bytes) FILTER (WHERE state <> 'published'),0), COUNT(*) FILTER (WHERE state IN ('reserved','staging') OR (staging_active AND state <> 'published')), COALESCE(SUM(reserved_bytes) FILTER (WHERE staging_active),0) FROM layercache_retained_receipts_v1 WHERE project_id=$1 AND receipt_id <> $2`, store.config.Project, retainedPublicationFromContext(ctx)).Scan(&usage.reserved, &usage.reservedMetadata, &usage.retainedStaging); err != nil {
+		return projectUsage{}, store.safeError("read retained obligations", err)
+	}
+	usage.reservedMetadata *= retainedEntryMetadataBytes(store.config.Project)
 	return usage, nil
 }
 
@@ -455,11 +478,14 @@ func (store *Store) evictToFit(
 	metadataBytes int64,
 	protectedDigest string,
 ) error {
-	for usage.used+blobBytes > usage.quota || usage.metadataUsed+metadataBytes > usage.metadataQuota {
+	if usage.retainedStaging > usage.quota {
+		return ErrQuota
+	}
+	for usage.used+usage.reserved+blobBytes > usage.quota || usage.metadataUsed+usage.reservedMetadata+metadataBytes > usage.metadataQuota {
 		// Metadata pressure can remove one unpinned alias even when another
 		// alias of the same digest is pinned. Blob pressure ranks whole groups.
 		evict := store.evictOldest
-		if usage.used+blobBytes > usage.quota {
+		if usage.used+usage.reserved+blobBytes > usage.quota {
 			evict = store.evictBlob
 		}
 		removed, _, _, err := evict(ctx, transaction, usage, protectedDigest)
@@ -486,7 +512,7 @@ func (store *Store) evictOldest(
 		WHERE entry.project_id = $1
 			AND NOT EXISTS (
 				SELECT 1 FROM layercache_entry_pins_v1 AS pin WHERE pin.entry_id = entry.entry_id
-			)`
+			) AND NOT EXISTS (SELECT 1 FROM layercache_retained_claims_v1 claim WHERE claim.entry_id=entry.entry_id)`
 	arguments := []any{store.config.Project}
 	if protectedDigest != "" {
 		query += ` AND entry.digest <> $2`
@@ -520,10 +546,17 @@ func (store *Store) deleteEntry(
 	transaction *sql.Tx,
 	key artifact.Key,
 ) (bool, string, int64, error) {
+	var retained bool
+	if err := transaction.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM layercache_retained_claims_v1 c JOIN layercache_entries_v1 e ON e.entry_id=c.entry_id WHERE e.project_id=$1 AND e.integration=$2 AND e.compatibility=$3 AND e.native_key=$4 AND e.version=$5 AND e.ref_scope=$6)`, key.Project, key.Integration, key.Compatibility, key.Native, key.Version, key.Ref).Scan(&retained); err != nil {
+		return false, "", 0, store.safeError("check retained deletion fence", err)
+	}
+	if retained {
+		return false, "", 0, ErrConflict
+	}
 	var digest string
 	var size, metadataBytes int64
 	err := transaction.QueryRowContext(ctx, `
-		DELETE FROM layercache_entries_v1
+        DELETE FROM layercache_entries_v1
 		WHERE project_id = $1 AND integration = $2 AND compatibility = $3
 			AND native_key = $4 AND version = $5 AND ref_scope = $6
 		RETURNING digest, size_bytes, metadata_bytes`,

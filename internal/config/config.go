@@ -86,6 +86,7 @@ type Config struct {
 	GitHubOIDCIssuer           string            `json:"githubOidcIssuer,omitempty"`
 	TeamMembers                map[string]string `json:"teamMembers,omitempty"`
 	CloudPostgresURL           string            `json:"cloudPostgresUrl,omitempty"`
+	RetainedArtifactsEnabled   bool              `json:"retainedArtifactsEnabled,omitempty"`
 	CloudS3Endpoint            string            `json:"cloudS3Endpoint,omitempty"`
 	CloudS3Bucket              string            `json:"cloudS3Bucket,omitempty"`
 	CloudS3Region              string            `json:"cloudS3Region,omitempty"`
@@ -301,6 +302,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Role != "local" && cfg.Role != "team" && cfg.Role != "public" {
 		return fmt.Errorf("role must be local, team, or public, got %q", cfg.Role)
+	}
+	if cfg.RetainedArtifactsEnabled && (cfg.Role != "team" || cfg.CloudPostgresURL == "") {
+		return errors.New("retained artifacts require a private Team runtime with PostgreSQL/S3 persistence")
 	}
 	if cfg.Listen == "" {
 		return errors.New("listen is required")

@@ -54,6 +54,7 @@ type Server struct {
 	store             cacheStore
 	localStore        *artifact.Store
 	cloudStore        *cloud.Store
+	retainedStore     retainedRepository
 	team              *remote.TurboClient
 	actionsTeam       *actionscache.RemoteStorage
 	teamTokenMu       sync.RWMutex
@@ -149,6 +150,7 @@ func NewWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 			return nil, fmt.Errorf("open cloud cache persistence: %w", err)
 		}
 		server.store = server.cloudStore
+		server.retainedStore = server.cloudStore
 		if authority == nil && (cfg.Role == "team" || cfg.Role == "public") {
 			if err := server.applyConfiguredCloudMemberships(ctx, server.cloudStore); err != nil {
 				_ = server.Close()
@@ -359,6 +361,7 @@ func (server *Server) routes() {
 	server.mux.Handle("POST /v1/reports/turbo", server.requireToken(http.HandlerFunc(server.reconcileTurboReport)))
 	server.mux.Handle("POST /v1/sync/turbo", server.requireToken(http.HandlerFunc(server.syncTurbo)))
 	server.cloudRoutes()
+	server.retainedRoutes()
 	server.mux.Handle("GET /v8/artifacts/status", server.requireToken(http.HandlerFunc(server.turboStatus)))
 	server.mux.Handle("POST /v8/artifacts/events", server.requireToken(http.HandlerFunc(server.turboEvents)))
 	server.mux.Handle("/v8/artifacts/{hash}", server.requireToken(http.HandlerFunc(server.turboArtifact)))

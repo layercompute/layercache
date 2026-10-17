@@ -1,0 +1,68 @@
+name: Transfer a retained Layer Cache artifact
+description: Publish or verify one immutable required private file with an explicit retention deadline.
+inputs:
+  mode:
+    description: publish or read. Required transfers fail if publication or complete verification fails.
+    required: true
+  team-url:
+    description: Explicit authorized project gateway. HTTPS is required outside loopback.
+    required: true
+  project:
+    description: Private project identity authorized for the repository.
+    required: true
+  profile:
+    description: Exact canonical execution and toolchain profile.
+    required: true
+  name:
+    description: Immutable logical output name within this producing job.
+    required: true
+  path:
+    description: One regular source file for publish, or destination file for read. No extraction is performed.
+    required: true
+  retain-until:
+    description: publish only. Fixed RFC3339 deadline in the next 24 hours. Exact retries must reuse this deadline.
+  receipt:
+    description: read only. Exact published receipt JSON from the producer output. Mutually exclusive with receipt-file.
+  receipt-file:
+    description: read only. File containing the exact producer receipt. Mutually exclusive with receipt.
+  expected-repository:
+    description: read only. Expected lowercase producer owner/repository from trusted job context.
+  expected-repository-id:
+    description: read only. Expected immutable repository ID.
+  expected-source:
+    description: read only. Expected complete source commit.
+  expected-workflow-ref:
+    description: read only. Expected signed producer workflow identity.
+  expected-run-id:
+    description: read only. Expected producer workflow run ID.
+  expected-run-attempt:
+    description: read only. Expected producer run attempt.
+  expected-job-id:
+    description: read only. Expected signed producer check_run_id, not the logical GitHub job label.
+  github-token:
+    description: Ephemeral GitHub token used only during OIDC exchange for repository/run eligibility verification.
+    default: ${{ github.token }}
+  receipt-output:
+    description: Optional caller-owned receipt file path. Replaced atomically only after verified publication or consumption.
+  timings-output:
+    description: Optional file for bounded monotonic transfer phases and consumed-byte counts. Contains no credentials or URLs.
+outputs:
+  published:
+    description: true only after authoritative publication or complete verified consumption.
+  receipt:
+    description: Immutable published receipt JSON without credentials.
+  receipt-file:
+    description: Atomically written local receipt file.
+  artifact-id:
+    description: Immutable retained publication ID.
+  sha256:
+    description: Complete opaque file SHA256.
+  size:
+    description: Complete opaque file size in bytes.
+  retain-until:
+    description: Unchanged server-approved retention deadline.
+  timings-file:
+    description: Private local phase evidence, including failed attempts when available.
+runs:
+  using: node24
+  main: main.mjs

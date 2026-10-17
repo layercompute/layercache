@@ -31,6 +31,12 @@ type Claims struct {
 	DefaultRef     string       `json:"defaultRef,omitempty"`
 	SourceCommit   string       `json:"sourceCommit,omitempty"`
 	ActionsActorID string       `json:"actionsActorId,omitempty"`
+	ActionsActor   string       `json:"actionsActor,omitempty"`
+	RepositoryID   string       `json:"repositoryId,omitempty"`
+	WorkflowRef    string       `json:"workflowRef,omitempty"`
+	ActionsRunID   string       `json:"actionsRunId,omitempty"`
+	RunAttempt     string       `json:"runAttempt,omitempty"`
+	CheckRunID     string       `json:"checkRunId,omitempty"`
 	RecipeDigest   string       `json:"recipeDigest,omitempty"`
 	Target         string       `json:"target,omitempty"`
 	Platform       string       `json:"platform,omitempty"`
@@ -114,8 +120,18 @@ func normalizeClaims(claims Claims, now time.Time) (Claims, error) {
 	if claims.Subject == "" || claims.Project == "" || claims.ExpiresAt.IsZero() || !claims.ExpiresAt.After(now) {
 		return Claims{}, ErrInvalidToken
 	}
-	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" {
+	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" && claims.Integration != "retained" {
 		return Claims{}, ErrInvalidToken
+	}
+	if claims.Integration == "retained" {
+		for _, value := range []string{claims.RepositoryID, claims.WorkflowRef, claims.ActionsRunID, claims.RunAttempt, claims.CheckRunID, claims.Repository, claims.SourceCommit, claims.Compatibility, claims.ActionsActorID, claims.ActionsActor} {
+			if value == "" || len(value) > 512 || strings.ContainsAny(value, "\x00\r\n") {
+				return Claims{}, ErrInvalidToken
+			}
+		}
+		if claims.ExpiresAt.Sub(now) > time.Hour {
+			return Claims{}, ErrInvalidToken
+		}
 	}
 	for _, identity := range []string{claims.RunID, claims.WorkspaceID} {
 		if len(identity) > 512 || strings.ContainsAny(identity, "\x00\r\n") {

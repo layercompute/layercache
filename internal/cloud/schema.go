@@ -74,6 +74,32 @@ var schemaStatements = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS layercache_entry_pins_entry_v1
 		ON layercache_entry_pins_v1(entry_id)`,
+	`CREATE TABLE IF NOT EXISTS layercache_retained_receipts_v1 (
+        project_id TEXT NOT NULL REFERENCES layercache_projects_v1(project_id) ON DELETE RESTRICT,
+        receipt_id TEXT NOT NULL CHECK (receipt_id ~ '^[0-9a-f]{64}$'),
+        declaration_json JSONB NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('reserved','staging','published','expired','revoked','unavailable')),
+        reserved_bytes BIGINT NOT NULL CHECK (reserved_bytes >= 0),
+        staging_active BOOLEAN NOT NULL DEFAULT FALSE,
+        metadata_bytes BIGINT NOT NULL CHECK (metadata_bytes > 0),
+        reserved_until TIMESTAMPTZ NOT NULL,
+        retain_until TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        published_at TIMESTAMPTZ,
+        tombstone_until TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY(project_id, receipt_id)
+    )`,
+	`CREATE INDEX IF NOT EXISTS layercache_retained_deadlines_v1 ON layercache_retained_receipts_v1(project_id, retain_until, reserved_until)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS layercache_entries_project_entry_v1 ON layercache_entries_v1(project_id,entry_id)`,
+	`CREATE TABLE IF NOT EXISTS layercache_retained_claims_v1 (
+        project_id TEXT NOT NULL,
+        receipt_id TEXT NOT NULL,
+        entry_id BIGINT NOT NULL,
+ FOREIGN KEY(project_id,entry_id) REFERENCES layercache_entries_v1(project_id,entry_id) ON DELETE RESTRICT,
+        PRIMARY KEY(project_id, receipt_id),
+        FOREIGN KEY(project_id, receipt_id) REFERENCES layercache_retained_receipts_v1(project_id, receipt_id) ON DELETE RESTRICT
+    )`,
+	`CREATE INDEX IF NOT EXISTS layercache_retained_claim_entry_v1 ON layercache_retained_claims_v1(entry_id)`,
 	`CREATE TABLE IF NOT EXISTS layercache_uploads_v1 (
 		upload_id TEXT PRIMARY KEY,
 		project_id TEXT NOT NULL REFERENCES layercache_projects_v1(project_id) ON DELETE RESTRICT,
@@ -84,6 +110,7 @@ var schemaStatements = []string{
 		created_at TIMESTAMPTZ NOT NULL,
 		expires_at TIMESTAMPTZ NOT NULL
 	)`,
+	`ALTER TABLE layercache_uploads_v1 ADD COLUMN IF NOT EXISTS retained_receipt_id TEXT`,
 	`CREATE INDEX IF NOT EXISTS layercache_uploads_expiry_v1
 		ON layercache_uploads_v1(expires_at)`,
 	`CREATE TABLE IF NOT EXISTS layercache_blob_read_leases_v1 (

@@ -1,6 +1,6 @@
 # LayerCache TODOs
 
-Last strategic review: 2026-10-16. This file owns outstanding work. Checkboxes
+Last strategic review: 2026-10-17. This file owns outstanding work. Checkboxes
 mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
@@ -25,37 +25,34 @@ hit counts alone.
   This completes the first hosted correctness gate, not economic acceptance.
 
 - [ ] **Measure net benefit of hosted Gradle adoption.**
-  Owner: Phone CI/release owner, coordinated with LayerCache. The first producer
-  takes 797s for its complete job, including 244.371s inner seed and 247.267s
-  initial cold selected-model discovery. Its reader takes 927s for the complete
-  build job and 616.427s inner compilation, with zero of 94 compiler hits.
-  The earlier warm PR baseline is 864s/496s with 94/94 compiler hits at another
-  source; it is not a controlled HTTP-cache comparison. Phone owns final normal
-  reader run `38925086191` and its report. Include added producer compute,
-  discovery/setup, transfer, publication, compiler state and complete job time.
-  The writer's 126 cache outcomes all have same-key executed counterparts inside
-  its own graph, not proof of older-cache reuse or unique publications. Observed
-  PUT/GET bytes and monthly savings remain unknown. Signed/ARM reuse requires
-  separate qualification. Keep fresh runtime assertions and required checks.
+  Owner: Phone CI/release owner. The final warm reader restores 297 matching
+  native tasks in a 644s complete two-vCPU compile job, versus the earlier 864s
+  warm baseline. Both have 94/94 compiler hits. Another warm consumer takes
+  834s and a normal PR restores 296 tasks. Source, VM and network differences
+  prevent causal or monthly savings claims. Warm publisher jobs cost 309s and
+  316s separately; the first cold publisher costs 797s. Complete workflow latency
+  includes queue time and has not shown the same stage improvement. Retain
+  fresh APK inspection, Kotlin tests and device assertions. Signed/ARM and
+  observed PUT/GET byte costs remain separate acceptance targets.
 
 - [ ] **Implement retained private handoffs and transfer phase evidence.**
   Owner: LayerCache storage/protocol/qualification; Phone owns workflow adoption.
-  The hosted reader spent 229s retrieving and verifying a reported
-  124,078,900-byte required artifact. This is a complete step, not a bandwidth
-  measurement. The [retained-artifact contract](docs/retained-artifacts.md)
-  proposes one immutable file over existing PostgreSQL/S3 storage, with reserved
-  capacity, verified bytes, an authoritative receipt, fixed expiry, active
-  retention claims, deletion fencing and acknowledgement recovery. No retained
-  route or receipt is implemented or deployed by that design.
-  First capture actual provider lookup/authentication, delivery authorization,
-  request/body, digest/provenance, extraction and final publication intervals,
-  including retries/overlap and actual bytes. Existing consumer code uses a
-  custom fetch helper; another action version's retry or extraction behavior
-  does not explain its 229s. Qualify the storage module against disposable
-  PostgreSQL and the production S3 SDK before exposing an authenticated route.
-  Required fallback stays until separate deployment and fresh hosted-consumer
-  acceptance pass. Existing cache pins alone are insufficient for this promise.
-  This work does not establish issue #34's historical miss cause.
+  Required retrieval plus verification of a reported 124,078,900-byte artifact
+  takes 229s in the first reader and 87s in the warm reader. These are step
+  durations, not pure transfer bandwidth. The [retained-artifact contract](docs/retained-artifacts.md)
+  now has an active implementation over existing PostgreSQL/S3 storage and its
+  production SDK, with capacity reservation, immutable receipts, fixed expiry,
+  deletion fencing, durable commit and acknowledgement reconciliation.
+  The separate direct action streams one opaque file and records consumed bytes
+  and overlapping phase timings. The feature defaults off. Qualify actual
+  PostgreSQL/S3, authenticated eligible same-repository PRs, consumer-only reruns,
+  quota pressure, cleanup outages, restart and full-file corruption rejection.
+  Then review and land, qualify deployment and send exact action/image pins.
+  **GitHub artifacts remain the required-transfer path** until deployed retention,
+  admission and provenance guarantees plus a fresh hosted consumer qualify.
+  Optional exact-input APK reuse is independently evictable and rebuilds on a
+  miss. Phone owns that work and all application dispatches. This implementation
+  does not establish issue #34's historical miss cause.
 
 - [ ] **Make local Gradle results available to authorized private CI.**
   Owner: LayerCache. The direct hosted native path is now qualified; automatic
@@ -161,7 +158,7 @@ hit counts alone.
   Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
   LayerCache owns the separate proposed [retained service contract](docs/retained-artifacts.md)
   and phase evidence in P0 above; this application acceptance keeps the existing
-  qualified provider while the replacement is unimplemented.
+  qualified provider while the replacement remains unqualified.
   [Phone #299](https://github.com/ziahamza/phone-app/pull/299) repairs exact
   retained web/APK handoffs and qualifies hosted producer/consumer use;
   [Phone #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)

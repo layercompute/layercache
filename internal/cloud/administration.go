@@ -12,11 +12,15 @@ import (
 const administratorPinNamespace = "administrator"
 
 type Quota struct {
-	Project          string `json:"project"`
-	MaxBytes         int64  `json:"maxBytes"`
-	UsedBytes        int64  `json:"usedBytes"`
-	MetadataMaxBytes int64  `json:"metadataMaxBytes"`
-	MetadataBytes    int64  `json:"metadataBytes"`
+	Project               string `json:"project"`
+	MaxBytes              int64  `json:"maxBytes"`
+	UsedBytes             int64  `json:"usedBytes"`
+	MetadataMaxBytes      int64  `json:"metadataMaxBytes"`
+	MetadataBytes         int64  `json:"metadataBytes"`
+	ReservedBytes         int64  `json:"reservedBytes"`
+	RetainedBytes         int64  `json:"retainedBytes"`
+	RetainedMetadataBytes int64  `json:"retainedMetadataBytes"`
+	RetainedStagingBytes  int64  `json:"retainedStagingBytes"`
 }
 
 // Quota reads the authoritative project limit, including changes made by a
@@ -26,7 +30,15 @@ func (store *Store) Quota(ctx context.Context) (Quota, error) {
 	err := store.database.QueryRowContext(ctx, `SELECT quota_bytes, used_bytes, metadata_quota_bytes, metadata_bytes
 		FROM layercache_projects_v1 WHERE project_id = $1`, store.config.Project).
 		Scan(&result.MaxBytes, &result.UsedBytes, &result.MetadataMaxBytes, &result.MetadataBytes)
-	return result, store.safeError("read project quota", err)
+	if err != nil {
+		return result, store.safeError("read project quota", err)
+	}
+	err = store.database.QueryRowContext(ctx, `SELECT COALESCE(SUM(reserved_bytes) FILTER(WHERE state <> 'published'),0),COALESCE(SUM(metadata_bytes),0),COALESCE(SUM(reserved_bytes) FILTER(WHERE staging_active),0) FROM layercache_retained_receipts_v1 WHERE project_id=$1`, store.config.Project).Scan(&result.ReservedBytes, &result.RetainedMetadataBytes, &result.RetainedStagingBytes)
+	if err != nil {
+		return result, store.safeError("read retained quota obligations", err)
+	}
+	err = store.database.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes),0) FROM layercache_artifacts_v1 a WHERE a.project_id=$1 AND EXISTS (SELECT 1 FROM layercache_retained_claims_v1 c JOIN layercache_entries_v1 e ON e.entry_id=c.entry_id WHERE e.project_id=a.project_id AND e.digest=a.digest)`, store.config.Project).Scan(&result.RetainedBytes)
+	return result, store.safeError("read retained committed bytes", err)
 }
 
 // SetQuota changes the limit and evicts eligible entries in one transaction.
@@ -66,7 +78,7 @@ func (store *Store) SetQuota(ctx context.Context, actor string, maxBytes int64) 
 	if err := tx.Commit(); err != nil {
 		return Quota{}, store.safeError("commit project quota", err)
 	}
-	return Quota{Project: store.config.Project, MaxBytes: maxBytes, UsedBytes: usage.used, MetadataMaxBytes: usage.metadataQuota, MetadataBytes: usage.metadataUsed}, nil
+	return store.Quota(ctx)
 }
 
 func (store *Store) SetAdministratorPin(ctx context.Context, actor string, pin artifact.Pin) error {
