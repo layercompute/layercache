@@ -48,9 +48,24 @@ took 864s for its complete build job and 496s for inner compilation, with 94/94
 compiler hits and zero Gradle task restores. Its source differs. The first
 same-source reader above has a cold compiler cache, so comparing those durations
 does not isolate native HTTP savings. Include the added 797s producer job and
-discovery/setup/publication costs in the economic evaluation. The Phone owner
-retains normal reader `38925086191`; its final result is not part of this receipt.
-No combined hot-path speedup or monthly bill reduction is established here.
+discovery/setup/publication costs in the economic evaluation. The final warm reader
+[38925086191](https://github.com/ziahamza/phone-app/actions/runs/38925086191)
+passes at the same producer source and profile with 297 matching native task
+restores, 94/94 compiler hits and fresh APK/Kotlin/device acceptance. Its complete
+compile job is 644s, inner prepared APK is 369.765s and model probe is 29.280s.
+The observed compile-job difference against the earlier 864s baseline is 25.46%,
+with different source SHAs and independent VMs. Full workflow span is 1,409s
+including queue time versus the earlier 1,377s, so there is no equivalent
+end-to-end improvement claim.
+
+The Phone owner's completion report also records a subsequent 834s warm full
+consumer, 296 restored tasks in a normal PR, and complete warm publisher jobs
+of 309s and 316s. Their prepared seeds are 45.662s and 45.697s, with probes
+28.030s and 29.423s. Keep that recurring producer cost separate from consumer
+observations and the first cold producer. Net monthly savings remain unmeasured.
+The [public owner receipt](https://github.com/ziahamza/phone-app/pull/317#issuecomment-6219482580)
+records the qualification; narrowing publisher triggers landed separately in
+Phone #319 and matcher correction #320.
 
 The earlier different-checkout-root local experiment's zero compiler hits and
 the hosted stable-root warm compiler result describe different conditions.
@@ -60,13 +75,14 @@ a separate qualification target.
 ## Required transfer observation
 
 The first reader reports a required artifact of 124,078,900 bytes and 229s for
-retrieval plus provenance verification. That is a complete step duration. The
+retrieval plus provenance verification. The warm reader reports 87s for the
+same step. These are complete step durations. The
 custom client resolves metadata/authorization, receives and verifies a ZIP,
 unpacks bounded entries, compares the producer manifest and separately verifies
 the payload. Actual wire bytes and individual phases were not measured; do not
 derive bandwidth or a new-backend saving from the reported size and duration.
 
-The [retained-artifact contract](../retained-artifacts.md) owns the proposed
+The [retained-artifact contract](../retained-artifacts.md) owns the implemented and still unqualified
 service semantics and phase-receipt acceptance. Existing retained-transfer
 fallback stays in place until source, deployment and fresh consumer proof pass.
 The historical Actions lookup miss in issue #34 remains unexplained.

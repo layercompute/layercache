@@ -38,6 +38,7 @@ func (store *Store) evictBlob(ctx context.Context, tx *sql.Tx, usage *projectUsa
 			JOIN layercache_entries_v1 AS pinned ON pinned.entry_id = pin.entry_id
 			WHERE pinned.project_id = entry.project_id AND pinned.digest = entry.digest
 		)
+		AND NOT EXISTS (SELECT 1 FROM layercache_retained_claims_v1 claim JOIN layercache_entries_v1 retained ON retained.entry_id=claim.entry_id WHERE retained.project_id=entry.project_id AND retained.digest=entry.digest)
 		ORDER BY entry.digest FOR UPDATE OF entry`, store.config.Project, protectedDigest)
 	if err != nil {
 		return false, "", 0, store.safeError("select cloud impact candidates", err)

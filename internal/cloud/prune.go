@@ -30,6 +30,7 @@ func (store *Store) pruneExpiredEntries(ctx context.Context, now time.Time) (int
 	  AND NOT EXISTS (SELECT 1 FROM layercache_entry_pins_v1 p
 	    JOIN layercache_entries_v1 pinned ON pinned.entry_id=p.entry_id
 	    WHERE pinned.project_id=candidate.project_id AND pinned.digest=candidate.digest)
+	  AND NOT EXISTS (SELECT 1 FROM layercache_retained_claims_v1 c JOIN layercache_entries_v1 retained ON retained.entry_id=c.entry_id WHERE retained.project_id=candidate.project_id AND retained.digest=candidate.digest)
 	  AND NOT EXISTS (SELECT 1 FROM layercache_blob_read_leases_v1 l
 	    WHERE l.project_id=candidate.project_id AND l.digest=candidate.digest AND l.expires_at>$2)
 	  GROUP BY candidate.digest

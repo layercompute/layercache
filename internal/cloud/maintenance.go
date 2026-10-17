@@ -15,6 +15,9 @@ func (store *Store) Maintain(ctx context.Context) (MaintenanceResult, error) {
 	var result MaintenanceResult
 	now := store.config.Now().UTC()
 	var err error
+	if err = store.maintainRetained(ctx); err != nil {
+		return result, err
+	}
 	result.PrunedEntries, err = store.pruneExpiredEntries(ctx, now)
 	if err != nil {
 		return result, err
@@ -48,6 +51,9 @@ func (store *Store) Maintain(ctx context.Context) (MaintenanceResult, error) {
 		result.ExpiredUploads += int(count)
 	}
 
+	if err = store.maintainRetained(ctx); err != nil {
+		return result, err
+	}
 	result.ExpiredLeases, err = store.expirePromotionLeases(ctx, now)
 	if err != nil {
 		return result, err

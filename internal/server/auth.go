@@ -22,6 +22,21 @@ const actionsPublicToolchain = "actions/cache@6.2.0"
 
 var oidcVerifiers sync.Map
 
+type githubOIDCExchangeInput struct {
+	Project       string `json:"project"`
+	Integration   string `json:"integration,omitempty"`
+	TTLSeconds    int    `json:"ttlSeconds,omitempty"`
+	Compatibility string `json:"compatibility"`
+	IDToken       string `json:"idToken"`
+	RecipeDigest  string `json:"recipeDigest,omitempty"`
+	Target        string `json:"target,omitempty"`
+	Platform      string `json:"platform,omitempty"`
+	Toolchain     string `json:"toolchain,omitempty"`
+	Builder       string `json:"builder,omitempty"`
+	Mode          string `json:"mode,omitempty"`
+	GitHubToken   string `json:"githubToken,omitempty"`
+}
+
 func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, request *http.Request) {
 	if server.config.Role != "team" && server.config.Role != "public" {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -112,18 +127,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	defer request.Body.Close()
 	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()
-	var input struct {
-		Project       string `json:"project"`
-		Integration   string `json:"integration,omitempty"`
-		TTLSeconds    int    `json:"ttlSeconds,omitempty"`
-		Compatibility string `json:"compatibility"`
-		IDToken       string `json:"idToken"`
-		RecipeDigest  string `json:"recipeDigest,omitempty"`
-		Target        string `json:"target,omitempty"`
-		Platform      string `json:"platform,omitempty"`
-		Toolchain     string `json:"toolchain,omitempty"`
-		Builder       string `json:"builder,omitempty"`
-	}
+	var input githubOIDCExchangeInput
 	if err := decoder.Decode(&input); err != nil || rejectTrailingJSON(decoder) != nil ||
 		input.Project != server.config.ProjectID || compatibility.Validate(input.Compatibility) != nil {
 		server.writeCapabilityExchangeFailure(writer, request)
@@ -132,8 +136,13 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	if input.Integration == "" {
 		input.Integration = "actions"
 	}
-	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit" && input.Integration != "nx" && input.Integration != "gradle") ||
+	if input.Integration == "retained" && !server.config.RetainedArtifactsEnabled {
+		http.NotFound(writer, request)
+		return
+	}
+	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit" && input.Integration != "nx" && input.Integration != "gradle" && input.Integration != "retained") ||
 		input.TTLSeconds < 0 || input.TTLSeconds > 3600 ||
+		(input.Integration != "retained" && (input.Mode != "" || input.GitHubToken != "")) ||
 		(input.Integration == "actions" && input.TTLSeconds != 0) ||
 		(input.Integration != "actions" && (input.RecipeDigest != "" || input.Target != "" ||
 			input.Platform != "" || input.Toolchain != "" || input.Builder != "")) {
@@ -150,6 +159,10 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	if err != nil || !strings.EqualFold(identity.Repository, server.config.ActionsRepository) ||
 		!immutableCommit(identity.Commit) || !validGitRef(identity.Ref) {
 		server.writeCapabilityExchangeFailure(writer, request)
+		return
+	}
+	if input.Integration == "retained" {
+		server.githubRetainedCapabilityExchange(writer, request, input, identity)
 		return
 	}
 	if server.projectAuthority != nil {
