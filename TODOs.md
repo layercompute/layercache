@@ -157,6 +157,19 @@ hit counts alone.
   publication PR; these are documentation checks, not new application benchmarks.
   No application workflow, service or diagnostic dispatch is part of publication.
 
+- [x] **Apply the confirmed case-study provenance correction.**
+  Owner: LayerCache documentation. The
+  [corrected source](https://github.com/ziahamza/layercache/commit/522984f87a866e733cd511f42414f518319fc6c4)
+  and [schema 2 record](https://github.com/ziahamza/layercache/blob/522984f87a866e733cd511f42414f518319fc6c4/docs/ci-optimization/case-study/case-study-measurements.json)
+  supersede the initial digest comparison and metric names. ZIP size differences
+  are non-controlled; producing-run UTC intervals, changed browser coverage and
+  zero fresh assertions in accepted iOS QA reuse are explicit. Percentage
+  arithmetic, six UTC intervals, 41 local links/anchors, privacy scans and local
+  lint pass; independent Standards/Spec reviews check the correction. Hosted
+  checks and landing remain in the documentation PR. GitHub artifacts remain
+  required; no application benchmark, workflow/service change or diagnostic
+  dispatch is part of this correction.
+
 - [ ] **Complete representative native step-overlap qualification.**
   Owner: application CI owners. The first hosted two-vCPU execution overlaps
   both complete tooling command families and joins them before workspace tasks.

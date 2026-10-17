@@ -1,6 +1,6 @@
 # Faster CI without losing the evidence that matters
 
-Prepared on October 17, 2026, from a mobile application's CI work and earlier build-cache experiments. This case study accompanies the [CI optimization recipes](../README.md). The case measurements are anonymized, bounded observations, with their limitations in [the measurement record](case-study-measurements.json). They are not a forecast of another project's savings.
+Prepared on October 17, 2026, from a mobile application's CI work and earlier build-cache experiments. This case study accompanies the [CI optimization recipes](../README.md). The case measurements are anonymized, bounded observations, with their limitations in [the measurement record](case-study-measurements.json). Measurement schema 2 names the ZIP statistic as an observed container-size difference and separates fresh producer QA from accepted-result reuse. They are not a forecast of another project's savings.
 
 The largest gains came from avoiding unnecessary execution, reusing compatible finished products and moving orchestration to Linux. Compiler caching helped where it actually received compatible work. Several expensive failures happened before compilation started.
 
@@ -151,7 +151,7 @@ Choose a transport with immutable declarations, content verification, admission 
 
 Stream whole bodies instead of imposing serial per-chunk round trips. Separate hashing, authentication, metadata, headers, body transfer, commit and local verification in phase receipts. Record byte counters and overlap. A 229-second download-plus-verification phase cannot be treated as 229 seconds of network throughput.
 
-Two comparable-size handoff generations produced a stored ZIP of 124,109,619 bytes and a level-1 ZIP of 65,433,617 bytes, a 47.28% container-byte reduction. Their source TARs had the same size but different digests, so this is not an identical-payload compression control. Both upload steps rounded to six seconds. The byte comparison establishes no time or bandwidth-cost saving. Avoid redundant producer download-and-hash cycles when publication can be authoritatively reconciled; preserve independent consumer verification. See measurement `artifact-compression`.
+Two October 16 UTC handoffs produced a stored ZIP of 124,109,619 bytes and a level-1 compressed ZIP of 65,433,617 bytes. The observed size difference is 47.28%, but the runs used different source and payload generations. This was not an identical-payload compression control and does not isolate compression's contribution. Both upload steps rounded to six seconds; neither a causal transfer-time improvement nor bandwidth-cost saving was established. Avoid redundant producer download-and-hash cycles when publication can be authoritatively reconciled; preserve independent consumer verification. See measurement `artifact-compression`.
 
 Bind handoffs to the repository and numeric ID, authorized source, workflow, run, producer attempt and signed producer job identity, profile, logical name, full hash, size and fixed deadline. Verify checkout HEAD against the authorized source. OIDC provenance identifies the authorized producer context; it does not by itself attest embedded package contents or prove how the build process produced them.
 

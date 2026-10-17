@@ -84,8 +84,9 @@ benchmark. Keep each row's measurement boundary when quoting it.
 The [mobile CI case study](case-study/ci-cd-optimization-guide.md) explains six
 further observations and failed approaches. Its
 [machine-readable measurements](case-study/case-study-measurements.json) keep
-allocation, wall time, byte reduction, publisher overhead and accepted-result
-reuse separate. Their percentages cannot be added or treated as invoice savings.
+allocation, wall time, observed ZIP size differences, publisher overhead and
+accepted-result reuse separate. Their percentages cannot be added or treated as
+invoice savings.
 
 | Change | Observed before and after | Boundary and remaining work |
 | --- | --- | --- |
