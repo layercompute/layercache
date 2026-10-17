@@ -159,8 +159,8 @@ hit counts alone.
 
 - [x] **Apply the confirmed case-study provenance correction.**
   Owner: LayerCache documentation. The
-  [corrected source](https://github.com/ziahamza/layercache/commit/b49a798b2bb3881794d4252f08da337f00af4b0b)
-  and [schema 2 record](https://github.com/ziahamza/layercache/blob/b49a798b2bb3881794d4252f08da337f00af4b0b/docs/ci-optimization/case-study/case-study-measurements.json)
+  [corrected source](https://github.com/ziahamza/layercache/commit/522984f87a866e733cd511f42414f518319fc6c4)
+  and [schema 2 record](https://github.com/ziahamza/layercache/blob/522984f87a866e733cd511f42414f518319fc6c4/docs/ci-optimization/case-study/case-study-measurements.json)
   supersede the initial digest comparison and metric names. ZIP size differences
   are non-controlled; producing-run UTC intervals, changed browser coverage and
   zero fresh assertions in accepted iOS QA reuse are explicit. Percentage
