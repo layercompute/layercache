@@ -78,7 +78,8 @@ checks and retention when changing packing or transfer providers.
 
 A failed consumer need not rebuild a valid producer solely for diagnostics.
 `gh run rerun RUN_ID --failed` or `--job JOB_ID` can target failed work;
-`--job` takes the database job ID, which differs from the job's web URL number.
+`--job` takes `databaseId` from `gh run view RUN_ID --json jobs`; resolve it
+there rather than inferring an ID from a URL.
 The CLI describes these reruns as including dependencies; inspect the selected
 rerun graph before assuming the producer will stay skipped.
 Use this only after checking the exact producer, attempt binding, retained
