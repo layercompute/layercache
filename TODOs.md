@@ -5,12 +5,54 @@ mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
 
-The next milestone is reliable Phone handoffs plus less repeated test and
-inference work across compatible local machines and CI. Reuse established
-build/test/model clients. Prefer fewer expensive executions over higher cache
-hit counts alone.
+The next milestone is reliable Phone handoffs and fewer repeated executions or
+copies across local machines and CI. Build a general compute and storage product
+through established build/test/model clients. Prioritize expensive immutable
+outputs, bounded native stores and run-owned generated data. Measure net benefit
+before adding another integration. Transparent sharing of arbitrary mutable
+workspaces and filesystem migration are outside the current product scope.
 
-## P0: reliable Phone reuse
+## P0: reliable compute and storage reuse
+
+- [x] **Expose an honest local storage inventory.**
+  Owner: LayerCache. User outcome: identify the owners of disk growth before
+  collecting another cache or deleting useful work. Add account-free
+  `storage inspect` for explicit paths, with allocated and apparent bytes,
+  inode-aware hardlink accounting, sparse files and filesystem headroom.
+  Never initialize or repair a cache, follow symlinks, traverse nested mounts,
+  or label path categories as deletion eligibility. Bound error details and
+  report incomplete live scans. Qualify overlap, links, cancellation and platform
+  limits through the CLI. This first slice measures storage; it neither deduplicates
+  existing files nor establishes reclaimable bytes.
+  [Reviewed source](https://github.com/ziahamza/layercache/commit/b1045376e7469f10ab5811a753995fe746061e8b) passes
+  complete CLI/module tests, focused race tests, vet and local lint; independent
+  Standards/Spec reviews have zero findings. The
+  [built CLI fixture](docs/evidence/storage-inspect-20261017.json) confirms
+  cross-root hardlink and overlap accounting, sparse allocation, preserved bytes
+  and metadata, unvisited symlinks and partial JSON with nonzero exit. A live
+  explicit-root scan matches an independent native `du` allocation total. Darwin
+  arm64 and Windows amd64 module compilation passed; target tests were not
+  executed. Mounted-file boundaries and root-relative categories have scanner
+  regression tests and independent follow-up review. Hosted checks and landing
+  are tracked by [#58](https://github.com/ziahamza/layercache/pull/58); this
+  records source qualification, not a released CLI or reclaimed storage.
+
+- [ ] **Prevent repeated local outputs and abandoned build-slot growth.**
+  Owner: LayerCache, coordinated with application execution owners. User outcome:
+  materially less compute and allocated storage across short-lived workspaces.
+  Rank immutable final outputs and native package/task caches before writable
+  workspace sharing. Use complete native identities and one bounded managed
+  copy where existing clients support it. New managed materializations require
+  explicit ownership, active-reader leases, admission before publication, and
+  restart-safe release/GC; count packed bytes, expanded bytes and concurrent
+  deltas together. Preserve required handoffs and source/evidence retention.
+  Accept one representative workload only after measuring total allocated bytes
+  and complete command time, changed-input isolation, concurrent readers,
+  cancellation, quota pressure and restart cleanup. The
+  [storage decision](docs/research/local-workspace-storage-20261017.md) records
+  why native clone support is optional and rootless overlays remain a separate
+  experiment. Do not rewrite active worktrees, hardlink mutable outputs, or
+  create a generic filesystem layer for this milestone.
 
 - [x] **Qualify the first hosted native Gradle producer and full reader.**
   Owner: Phone CI, with LayerCache protocol/client support. [Phone #317](https://github.com/ziahamza/phone-app/pull/317)

@@ -1,0 +1,35 @@
+{
+  "qualifiedAtUTC": "2026-10-17T21:38:08Z",
+  "binarySHA256": "90ef7705ba1b7e896f32899ab391fb0124863cf40cc89127b86087d6306a48c8",
+  "buildCommand": "go build -buildvcs=false -trimpath -o CANDIDATE ./cmd/layercache",
+  "elapsedSeconds": 0.352,
+  "hardlinksAcrossRootsCountedOnce": true,
+  "overlappingRootCountedOnce": true,
+  "externalSymlinkNotVisited": true,
+  "sparseFileApparentBytes": 67108864,
+  "sparseFileAllocatedBytes": 4096,
+  "sourceBytesAndMetadataUnchanged": true,
+  "partialJSONRetainedWithNonzeroExit": true,
+  "totals": {
+    "apparentBytes": 69218358,
+    "allocatedBytes": 2113536,
+    "files": 2,
+    "directories": 3,
+    "symlinks": 1,
+    "otherEntries": 0,
+    "sparseFiles": 1
+  },
+  "hostCleanupPerformed": false,
+  "computeOrStorageSavingsEstablished": false,
+  "baseSource": "06bb9901c1bcf5662cc1ec927dc44835b4c6adef",
+  "changedSourceSHA256": {
+    "internal/cli/run.go": "c447119fcf90d4c0c20c54cfdb6269d85759b72a7f517459734dc1701c899920",
+    "internal/cli/storage.go": "7371f65f2d6289972fa3b829c6f7acdb0e69e05278d0d5511bec9b64bdd6b51c",
+    "internal/storageinspect/filesystem_other.go": "470b97c117f045dd6b9e05aca36d6b16a808985a4d7a2dad90b4f7709ed387b3",
+    "internal/storageinspect/filesystem_unix.go": "c6fcc6dc70a94f3d14be5eae287f3eb028b5fc9eedf0ab702ce0bbbc814f70be",
+    "internal/storageinspect/inspect.go": "28ba654b7052e35d499c9906a0460570d0fcf3c7141430f931aa3726b687c532",
+    "internal/storageinspect/mounts_linux.go": "1bd38e47c76ca7b6277cb0741de5242082486578b4d8f7bbdee4e669cc68ed74",
+    "internal/storageinspect/mounts_other.go": "785f845e561758d91541beed26beaaeab8a5da2fdd22021701d994d9ed25f61e"
+  },
+  "goVersion": "go version go1.25.13 linux/amd64"
+}

@@ -66,6 +66,12 @@ artifacts are never automatically promoted to Public Cache. See the
 
 A Workspace is a checkout and execution environment, including a Git worktree or disposable VM. A Workspace can disappear while Local Cache or Team Cache artifacts remain reusable.
 
+For local disk growth, `layercache storage inspect --path /absolute/workspace --json`
+reports inode allocation, apparent size, hardlink sharing and filesystem
+headroom without opening a cache or deleting data. See the
+[storage recipe](docs/ci-optimization/cache-storage.md) for limits and native-store
+guidance.
+
 ## Build and configure
 
 The pinned development toolchain is Go 1.25.13, Node.js 24.13.0, and pnpm 10.34.5.

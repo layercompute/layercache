@@ -17,6 +17,28 @@ contracts. A compiler's private disk cache, package store, DerivedData or Nx
 filesystem cache may remain outside that budget. Inventory and bound those
 owners instead of assuming the daemon's limit covers them.
 
+The account-free CLI can inspect explicit roots without opening, repairing or
+evicting a cache:
+
+```sh
+layercache storage inspect --path /absolute/workspaces --path /absolute/build-slots --json
+```
+
+It counts hardlinked inodes once across the selected roots and separates
+apparent size from allocated blocks. Sparse files can have a large apparent
+size and little allocation. Path categories are hints; they do not establish
+that a directory is finished or safe to delete. Errors and unsupported
+capabilities produce a partial report and a nonzero exit. Use a filesystem's
+native tools when already available; LayerCache's report gives automation one
+portable schema without changing the inspected data. It neither scans content
+for duplicates nor reports bytes that deletion would reclaim.
+
+The [local storage decision](../research/local-workspace-storage-20261017.md)
+ranks immutable output reuse and bounded run-owned storage ahead of writable
+workspace sharing. CoW support depends on the actual filesystem; a copy fallback
+does not save blocks. Keep native package-store sharing and account for each
+mutable build slot separately.
+
 Use an owned cache directory per configured service and explicit profiles for
 the workloads it serves. Do not archive a developer's global home, unrelated
 projects, package credentials, signing keys or a running database. Save closed
