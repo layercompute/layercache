@@ -1,0 +1,616 @@
+{
+  "schemaVersion": "private-retained-gateway-qualification-v1",
+  "checkedAt": "2026-10-17",
+  "sourceRevision": "29489e8e9b132df4cf2f9625ea49cb7c3150e858",
+  "mergedRevision": "b0d39011fa703944b4f7cd9c7936f067db1347ed",
+  "reviewedAndMergedTreesMatch": true,
+  "actionPin": "ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858",
+  "gatewayImageDigest": "sha256:1bbd87ee07f7d2f37314a3e0e72addc3241c5fd64566b91bde10a2c92c97f63b",
+  "gatewayBinaryDigest": "sha256:368a187d39c6d5a862c512744e95e6db56897b7f0b24186cb2539a7908e0de6c",
+  "previousGatewayImageRetained": true,
+  "mainWorkflows": {
+    "ci": "https://github.com/ziahamza/layercache/actions/runs/39028098237",
+    "postgresql": "https://github.com/ziahamza/layercache/actions/runs/39028098221",
+    "localToCi": "https://github.com/ziahamza/layercache/actions/runs/39028098238",
+    "existingDeployedHealth": "https://github.com/ziahamza/layercache/actions/runs/39028133576",
+    "allPassed": true
+  },
+  "recovery": {
+    "completeColdPoolAndProtectedConfigurationCaptured": true,
+    "archiveDigestsVerifiedBeforeRestore": true,
+    "backupIdentitySha256": "254b79550a2f6523640f3b5f50d38d30559253dc146d1a43df36c120771548ce",
+    "archives": {
+      "pool.tar": {
+        "bytes": 1131130880,
+        "sha256": "db523e702a41a3f4b95ff93576b16bcff3033925893e4b6932cbce88193ae710"
+      },
+      "configuration.tar": {
+        "bytes": 45127680,
+        "sha256": "f0c1b66e00524977661eafdeb4761f9228cc1e8d04fced3868cbf048bfdfeafc"
+      }
+    },
+    "disposablePoolGiB": 24,
+    "originalReserveGiB": 10,
+    "productionMounts": false,
+    "networkEgress": false,
+    "phases": [
+      "old-restored",
+      "candidate-upgrade",
+      "candidate-restart",
+      "old-rollback",
+      "candidate-forward"
+    ],
+    "checksPassed": 191,
+    "credentialValuesPersistedByHarness": false,
+    "oldBinaryServedRetainedApi": false,
+    "retainedCanaries": {
+      "small": {
+        "payloadBytes": 4096,
+        "payloadSha256": "2868ec1a6b45daa70daf31f74a0f6010c043358df18754f9a06697a65c3bd648",
+        "publishedReceipt": true,
+        "prepareHashMs": 4.466,
+        "phases": {
+          "admission": {
+            "method": "POST",
+            "requestHeaderMs": 0.32,
+            "requestBodyMs": 0.022,
+            "responseHeaderMs": 8.64,
+            "responseBodyMs": 0.074,
+            "requestBytes": 579,
+            "responseBytes": 788,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_admission;dur=6.034",
+            "totalMs": 9.086
+          },
+          "upload": {
+            "method": "PUT",
+            "requestHeaderMs": 0.28,
+            "requestBodyMs": 0.119,
+            "responseHeaderMs": 99.967,
+            "responseBodyMs": 0.072,
+            "requestBytes": 4096,
+            "responseBytes": 833,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_publish;dur=92.195",
+            "totalMs": 100.464
+          },
+          "first-read": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 0.219,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 10.21,
+              "responseBodyMs": 0.086,
+              "requestBytes": 0,
+              "responseBytes": 833,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=4.573",
+              "totalMs": 10.537
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 0.227,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 18.893,
+              "responseBodyMs": 7.004,
+              "requestBytes": 0,
+              "responseBytes": 4096,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=11.077",
+              "sha256": "2868ec1a6b45daa70daf31f74a0f6010c043358df18754f9a06697a65c3bd648",
+              "contentLength": "4096",
+              "totalMs": 26.158
+            }
+          },
+          "candidate-restart": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 0.148,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 5.505,
+              "responseBodyMs": 0.053,
+              "requestBytes": 0,
+              "responseBytes": 833,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=4.346",
+              "totalMs": 5.726
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 0.185,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 20.215,
+              "responseBodyMs": 6.373,
+              "requestBytes": 0,
+              "responseBytes": 4096,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=13.304",
+              "sha256": "2868ec1a6b45daa70daf31f74a0f6010c043358df18754f9a06697a65c3bd648",
+              "contentLength": "4096",
+              "totalMs": 26.799
+            }
+          },
+          "candidate-forward": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 0.147,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 10.201,
+              "responseBodyMs": 0.22,
+              "requestBytes": 0,
+              "responseBytes": 833,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=6.578",
+              "totalMs": 10.602
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 0.832,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 21.635,
+              "responseBodyMs": 7.488,
+              "requestBytes": 0,
+              "responseBytes": 4096,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=11.842",
+              "sha256": "2868ec1a6b45daa70daf31f74a0f6010c043358df18754f9a06697a65c3bd648",
+              "contentLength": "4096",
+              "totalMs": 29.982
+            }
+          }
+        },
+        "provenanceQualification": "operator-minted synthetic capability, not verified GitHub OIDC"
+      },
+      "representative": {
+        "payloadBytes": 124078900,
+        "payloadSha256": "04210584fa89f9026fc896abc5df95fb1971ed02c84034e627456c890014962d",
+        "publishedReceipt": true,
+        "prepareHashMs": 291.046,
+        "phases": {
+          "admission": {
+            "method": "POST",
+            "requestHeaderMs": 0.258,
+            "requestBodyMs": 0.021,
+            "responseHeaderMs": 7.11,
+            "responseBodyMs": 0.067,
+            "requestBytes": 593,
+            "responseBytes": 802,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_admission;dur=5.463",
+            "totalMs": 7.477
+          },
+          "upload": {
+            "method": "PUT",
+            "requestHeaderMs": 0.298,
+            "requestBodyMs": 751.822,
+            "responseHeaderMs": 2528.579,
+            "responseBodyMs": 0.043,
+            "requestBytes": 124078900,
+            "responseBytes": 847,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_publish;dur=3271.281",
+            "totalMs": 3280.771
+          },
+          "first-read": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 0.193,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 12.129,
+              "responseBodyMs": 0.07,
+              "requestBytes": 0,
+              "responseBytes": 847,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=8.768",
+              "totalMs": 12.413
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 0.177,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 17.311,
+              "responseBodyMs": 443.867,
+              "requestBytes": 0,
+              "responseBytes": 124078900,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=12.102",
+              "sha256": "04210584fa89f9026fc896abc5df95fb1971ed02c84034e627456c890014962d",
+              "contentLength": "124078900",
+              "totalMs": 461.382
+            }
+          },
+          "candidate-restart": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 0.19,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 6.035,
+              "responseBodyMs": 0.06,
+              "requestBytes": 0,
+              "responseBytes": 847,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=4.622",
+              "totalMs": 6.305
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 0.205,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 14.245,
+              "responseBodyMs": 486.471,
+              "requestBytes": 0,
+              "responseBytes": 124078900,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=10.753",
+              "sha256": "04210584fa89f9026fc896abc5df95fb1971ed02c84034e627456c890014962d",
+              "contentLength": "124078900",
+              "totalMs": 500.952
+            }
+          },
+          "candidate-forward": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 0.349,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 18.247,
+              "responseBodyMs": 0.072,
+              "requestBytes": 0,
+              "responseBytes": 847,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=10.672",
+              "totalMs": 18.694
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 0.21,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 16.027,
+              "responseBodyMs": 710.022,
+              "requestBytes": 0,
+              "responseBytes": 124078900,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=13.179",
+              "sha256": "04210584fa89f9026fc896abc5df95fb1971ed02c84034e627456c890014962d",
+              "contentLength": "124078900",
+              "totalMs": 726.288
+            }
+          }
+        },
+        "provenanceQualification": "operator-minted synthetic capability, not verified GitHub OIDC"
+      }
+    },
+    "cleanupComplete": true,
+    "sameLegacyScopedCredentialsAcrossPhases": true,
+    "legacyCredentialScopes": 22,
+    "reservationsOrStagingBeforeOldRollback": 0,
+    "publishedReceiptsAndClaimsPreservedAcrossOldRollbackAndForward": true
+  },
+  "liveGateway": {
+    "passed": true,
+    "projectCount": 5,
+    "configurationChanges": [
+      "gateway image pin",
+      "Phone retainedArtifactsEnabled=true"
+    ],
+    "retainedFeatureEnabledProjectCount": 1,
+    "retainedFeatureDefault": false,
+    "legacyVerificationPasses": 3,
+    "legacyChecksPerPass": 16,
+    "legacyPayloadBytesPerProjectMaximum": 8192,
+    "restartScope": "gateway process only; PostgreSQL and object-store services remain running",
+    "retainedCanaries": {
+      "small": {
+        "payloadBytes": 4096,
+        "payloadSha256": "88eafac33335ef4abbe522cf5b513643bb77664bc3725dd20641e2d40eb98157",
+        "publishedReceipt": true,
+        "prepareHashMs": 3.901,
+        "phases": {
+          "admission": {
+            "method": "POST",
+            "requestHeaderMs": 9.408,
+            "requestBodyMs": 0.023,
+            "responseHeaderMs": 11.393,
+            "responseBodyMs": 0.148,
+            "requestBytes": 587,
+            "responseBytes": 796,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_admission;dur=9.380",
+            "totalMs": 21.005
+          },
+          "upload": {
+            "method": "PUT",
+            "requestHeaderMs": 8.921,
+            "requestBodyMs": 0.149,
+            "responseHeaderMs": 95.815,
+            "responseBodyMs": 0.138,
+            "requestBytes": 4096,
+            "responseBytes": 841,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_publish;dur=85.535",
+            "totalMs": 105.056
+          },
+          "first-read": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 11.432,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 6.362,
+              "responseBodyMs": 0.122,
+              "requestBytes": 0,
+              "responseBytes": 841,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=4.167",
+              "totalMs": 17.943
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 11.099,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 26.97,
+              "responseBodyMs": 11.534,
+              "requestBytes": 0,
+              "responseBytes": 4096,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=18.354",
+              "sha256": "88eafac33335ef4abbe522cf5b513643bb77664bc3725dd20641e2d40eb98157",
+              "contentLength": "4096",
+              "totalMs": 49.65
+            }
+          },
+          "live-restart": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 11.956,
+              "requestBodyMs": 0.001,
+              "responseHeaderMs": 6.723,
+              "responseBodyMs": 0.188,
+              "requestBytes": 0,
+              "responseBytes": 841,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=4.972",
+              "totalMs": 18.905
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 11.089,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 17.436,
+              "responseBodyMs": 5.318,
+              "requestBytes": 0,
+              "responseBytes": 4096,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=10.654",
+              "sha256": "88eafac33335ef4abbe522cf5b513643bb77664bc3725dd20641e2d40eb98157",
+              "contentLength": "4096",
+              "totalMs": 33.876
+            }
+          }
+        },
+        "provenanceQualification": "operator-minted synthetic capability, not verified GitHub OIDC"
+      },
+      "representative": {
+        "payloadBytes": 124078900,
+        "payloadSha256": "ff754dd70abfea66fca6ab5449a08244cbefa63edd3e366c28854884fc840aae",
+        "publishedReceipt": true,
+        "prepareHashMs": 262.419,
+        "phases": {
+          "admission": {
+            "method": "POST",
+            "requestHeaderMs": 11.135,
+            "requestBodyMs": 0.245,
+            "responseHeaderMs": 5.98,
+            "responseBodyMs": 0.15,
+            "requestBytes": 601,
+            "responseBytes": 810,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_admission;dur=5.211",
+            "totalMs": 17.543
+          },
+          "upload": {
+            "method": "PUT",
+            "requestHeaderMs": 11.37,
+            "requestBodyMs": 847.647,
+            "responseHeaderMs": 781.405,
+            "responseBodyMs": 0.126,
+            "requestBytes": 124078900,
+            "responseBytes": 855,
+            "responseHashOverlapsBody": false,
+            "singleRequest": true,
+            "status": 200,
+            "serverTiming": "retained_publish;dur=1618.220",
+            "totalMs": 1640.653
+          },
+          "first-read": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 13.661,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 6.833,
+              "responseBodyMs": 0.121,
+              "requestBytes": 0,
+              "responseBytes": 855,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=5.465",
+              "totalMs": 20.642
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 11.424,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 17.129,
+              "responseBodyMs": 524.16,
+              "requestBytes": 0,
+              "responseBytes": 124078900,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=12.564",
+              "sha256": "ff754dd70abfea66fca6ab5449a08244cbefa63edd3e366c28854884fc840aae",
+              "contentLength": "124078900",
+              "totalMs": 552.753
+            }
+          },
+          "live-restart": {
+            "inspection": {
+              "method": "GET",
+              "requestHeaderMs": 12.307,
+              "requestBodyMs": 0.001,
+              "responseHeaderMs": 7.697,
+              "responseBodyMs": 0.135,
+              "requestBytes": 0,
+              "responseBytes": 855,
+              "responseHashOverlapsBody": false,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_inspect;dur=5.115",
+              "totalMs": 20.167
+            },
+            "download": {
+              "method": "GET",
+              "requestHeaderMs": 10.524,
+              "requestBodyMs": 0.0,
+              "responseHeaderMs": 14.22,
+              "responseBodyMs": 485.955,
+              "requestBytes": 0,
+              "responseBytes": 124078900,
+              "responseHashOverlapsBody": true,
+              "singleRequest": true,
+              "status": 200,
+              "serverTiming": "retained_open;dur=10.966",
+              "sha256": "ff754dd70abfea66fca6ab5449a08244cbefa63edd3e366c28854884fc840aae",
+              "contentLength": "124078900",
+              "totalMs": 510.739
+            }
+          }
+        },
+        "provenanceQualification": "operator-minted synthetic capability, not verified GitHub OIDC"
+      }
+    },
+    "registryWrites": 0,
+    "installedCliChanged": false,
+    "otherProjectFeaturesChanged": false,
+    "configuredPoolBytes": 51539607552,
+    "configuredPoolReserveBytes": 10737418240,
+    "perProjectCommittedQuotaBytes": 5368709120,
+    "signingAuthorityMembershipAndStorageBoundsPreserved": true
+  },
+  "hostCli": {
+    "release": "v0.1.0-beta.5",
+    "changed": false,
+    "newReleaseRequiredByDirectAction": false
+  },
+  "requiredTransferProvider": "GitHub artifacts",
+  "freshPhoneWorkflowOidcAndRequiredConsumerAccepted": false,
+  "measurement": {
+    "durations": "milliseconds from the operator client; intervals may overlap and must not be summed as independent phases",
+    "consumedBytes": "actual request and response body counts from the operator client",
+    "streaming": "one complete opaque-file PUT per publication and one complete opaque-file GET per read; no per-chunk proxy RPC",
+    "hashing": "response SHA256 verification overlaps body reads",
+    "liveConnectionScope": "operator host to the configured HTTPS origin, not a fresh CI runner",
+    "unmeasured": [
+      "fresh GitHub OIDC exchange",
+      "real Phone workflow and queue latency",
+      "archive extraction",
+      "package inspection",
+      "device assertions",
+      "monthly costs"
+    ]
+  },
+  "limits": [
+    "Synthetic operator capabilities deliberately bypass the real GitHub issuer and OIDC exchange. Signed OIDC and same-repository PR eligibility have separate source fixtures.",
+    "Configured HTTPS-origin canaries and a gateway restart establish service behavior, not fresh hosted Phone producer/consumer acceptance or backend crash recovery.",
+    "The isolated old-binary rollback begins with zero reservations or staging uploads. Published receipts and claims remain unchanged, and forward upgrade restores full reads. The previous binary does not serve the retained API.",
+    "Body timing includes storage, hashing and client backpressure. These operator-host timings are not pure bandwidth or a comparison with the prior 229s/87s Phone retrieval steps.",
+    "The gateway image was built locally from the exact reviewed source; it is not a published attested container image.",
+    "No CI speedup, net monthly saving, signed ARM acceptance, Public publication or self-serve cloud rollout is established.",
+    "The historical Actions acknowledgement/miss cause in issue #34 remains unknown."
+  ],
+  "liveContract": {
+    "passed": true,
+    "scope": "synthetic operator capabilities; real GitHub issuer and hosted consumers remain unqualified",
+    "payloadBytes": 4096,
+    "payloadSha256": "ad2037bf319dce2bcd6e58c68a2926fb0bbf37784019afb004cfbcc64b930458",
+    "declaredWindowSeconds": 25,
+    "retainUntil": "2026-10-17T11:25:06Z",
+    "checks": [
+      "published complete file before explicit expiry",
+      "read-only consumer cannot reserve",
+      "foreign run cannot inspect receipt",
+      "publisher cannot inspect another job",
+      "over-quota declaration rejected before content",
+      "new read denied after unchanged absolute TTL",
+      "expiry releases SQL claim pin and reservation"
+    ],
+    "rejectedRequests": {
+      "readOnlyReserve": 403,
+      "foreignRunInspect": 404,
+      "anotherJobPublisherInspect": 404,
+      "overQuotaDeclarationBeforeContent": 507,
+      "newContentReadAfterExpiry": 410
+    },
+    "expiryAccounting": {
+      "state": "expired",
+      "reservedBytes": 0,
+      "stagingActive": false,
+      "claims": 0,
+      "pins": 0
+    },
+    "githubArtifactsRemainRequired": true
+  },
+  "finalHealth": {
+    "allFiveProjectBackendsHealthy": true,
+    "configuredProjects": 5,
+    "retainedEnabledProjects": 1,
+    "eachProjectQuotaBytes": 5368709120,
+    "gatewayImageAndSourceVerified": true,
+    "installedCliSha256": "b7b4617eaebe93536f3ac78d79547c3d2c129364c8e7d88d490cb58c6da55280"
+  }
+}

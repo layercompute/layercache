@@ -35,24 +35,47 @@ hit counts alone.
   fresh APK inspection, Kotlin tests and device assertions. Signed/ARM and
   observed PUT/GET byte costs remain separate acceptance targets.
 
-- [ ] **Implement retained private handoffs and transfer phase evidence.**
-  Owner: LayerCache storage/protocol/qualification; Phone owns workflow adoption.
+- [x] **Land retained private storage and the direct action.**
+  Owner: LayerCache storage/protocol/qualification.
   Required retrieval plus verification of a reported 124,078,900-byte artifact
   takes 229s in the first reader and 87s in the warm reader. These are step
-  durations, not pure transfer bandwidth. The [retained-artifact contract](docs/retained-artifacts.md)
-  now has an active implementation over existing PostgreSQL/S3 storage and its
-  production SDK, with capacity reservation, immutable receipts, fixed expiry,
-  deletion fencing, durable commit and acknowledgement reconciliation.
-  The separate direct action streams one opaque file and records consumed bytes
-  and overlapping phase timings. The feature defaults off. Qualify actual
-  PostgreSQL/S3, authenticated eligible same-repository PRs, consumer-only reruns,
-  quota pressure, cleanup outages, restart and full-file corruption rejection.
-  Then review and land, qualify deployment and send exact action/image pins.
-  **GitHub artifacts remain the required-transfer path** until deployed retention,
-  admission and provenance guarantees plus a fresh hosted consumer qualify.
+  durations, not pure transfer bandwidth. [#53](https://github.com/ziahamza/layercache/pull/53)
+  merged at `b0d39011fa703944b4f7cd9c7936f067db1347ed` after all fourteen PR
+  checks, independent Standards/Spec review and external review passed.
+  Immutable action source `29489e8e9b132df4cf2f9625ea49cb7c3150e858` has the
+  same tree. The [contract](docs/retained-artifacts.md) and
+  [source evidence](docs/evidence/retained-source-20261017.json) cover reserved
+  admission, fixed TTL, immutable receipts, deletion fencing, durable commit,
+  lost-acknowledgement reconciliation and full-file integrity. PostgreSQL/S3
+  race tests and signed OIDC eligibility fixtures remain distinct from the
+  locally authorized large-file fixture. The direct action streams one opaque
+  file and records consumed bytes and overlapping phase timings. Full main
+  CI, PostgreSQL and local-to-CI workflows pass at the merged source. This
+  implementation does not establish issue #34's historical miss cause.
+
+- [x] **Qualify the retained service deployment.**
+  Owner: LayerCache operations. The [gateway receipt](docs/evidence/retained-gateway-20261017.json)
+  records a fresh full cold backup, 191 isolated checks over five phases and
+  exact legacy bytes through upgrade/restart/rollback/forward. Retained 4 KiB
+  and 124,078,900-byte files pass after candidate restart and forward. The
+  old-binary rollback begins with zero reservations or staging uploads and
+  preserves published receipts and claims. Forward upgrade restores full reads.
+  Live HTTPS publication and full-file reads pass before and
+  after a gateway-only restart. Only the gateway image pin and Phone feature
+  flag change; quotas, physical reserve, signing authority, other projects and
+  the beta.5 CLI installation remain unchanged. The [interface](docs/retained-artifacts.md)
+  records the exact source/action/image pins. A live 25-second fixed-TTL canary
+  rejects read-only publication, foreign-run/other-job access and over-quota
+  admission, then expires and releases its claim, pin and reservation. These
+  operator-minted capabilities qualify service behavior, not real GitHub OIDC
+  or application adoption.
+
+  **GitHub artifacts remain the required-transfer path.** Fresh actual Phone
+  workflow OIDC and required-consumer acceptance remain outstanding. Phone owns
+  those workflow changes and dispatches, including a consumer-only rerun within
+  the retained deadline.
   Optional exact-input APK reuse is independently evictable and rebuilds on a
-  miss. Phone owns that work and all application dispatches. This implementation
-  does not establish issue #34's historical miss cause.
+  miss.
 
 - [ ] **Make local Gradle results available to authorized private CI.**
   Owner: LayerCache. The direct hosted native path is now qualified; automatic
@@ -156,9 +179,10 @@ hit counts alone.
 
 - [ ] **Qualify required file handoffs independently of evictable caches.**
   Owner: Phone workflow/held-stack owners, coordinated with LayerCache.
-  LayerCache owns the separate proposed [retained service contract](docs/retained-artifacts.md)
-  and phase evidence in P0 above; this application acceptance keeps the existing
-  qualified provider while the replacement remains unqualified.
+  LayerCache owns the separate [retained service contract](docs/retained-artifacts.md)
+  and service evidence in P0 above. This application acceptance keeps GitHub
+  artifacts as the required provider until fresh actual workflow OIDC and the
+  required consumer qualify against the deployed immutable pins.
   [Phone #299](https://github.com/ziahamza/phone-app/pull/299) repairs exact
   retained web/APK handoffs and qualifies hosted producer/consumer use;
   [Phone #305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570)

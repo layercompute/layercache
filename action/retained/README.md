@@ -9,6 +9,8 @@ Source implementation and disposable tests do not qualify a deployed service.
 Keep the current required-transfer provider until the gateway pin, configured
 policy and fresh hosted producer/consumer have passed acceptance. This action
 fails on a required-transfer error. It contains no optional cache fallback.
+The [deployment status](../../docs/retained-artifacts.md#deployed-service-qualification)
+records the accepted source and service pins separately from hosted adoption.
 
 ## Identity and authority
 
@@ -55,10 +57,10 @@ streams one complete PUT. A lost acknowledgement causes an authoritative GET,
 without a blind second upload. A staging publication fails visibly and can be
 reconciled on a later invocation with the exact declaration.
 
-An illustrative producer uses a caller-approved gateway and an immutable action
-commit. Replace the commit placeholder only after source and deployment
-qualification. Compute the deadline once in a preparation step and preserve it
-with the declaration if that step is retried.
+An illustrative producer uses a caller-approved gateway and the reviewed source
+accepted by the operator deployment. The deployment status above records the
+remaining hosted adoption gate. Compute the deadline once in a preparation step
+and preserve it with the declaration if that step is retried.
 
 ```yaml
 permissions:
@@ -73,7 +75,7 @@ steps:
     shell: bash
     run: |
       node -e 'console.log("until=" + new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString())' >> "$GITHUB_OUTPUT"
-  - uses: ziahamza/layercache/action/retained@<reviewed-immutable-commit>
+  - uses: ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858
     id: retained
     with:
       mode: publish
@@ -103,7 +105,7 @@ job label. Do not take the remaining expected context from an arbitrary
 downloaded receipt.
 
 ```yaml
-- uses: ziahamza/layercache/action/retained@<reviewed-immutable-commit>
+- uses: ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858
   id: retained
   with:
     mode: read
