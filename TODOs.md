@@ -129,8 +129,13 @@ hit counts alone.
   semantics, plus focused edit loops, honest failure logs, compression and
   retained-input reruns. Local lint, 81 relative links/anchors and the combined
   workflow fragments pass; independent Standards/Spec review checks the guidance.
+  [Reviewed recipe source](https://github.com/ziahamza/layercache/commit/07bd184ddd75153fb2a06a42b301fb0ac6207fd4)
+  passes all fourteen hosted jobs across [CI](https://github.com/ziahamza/layercache/actions/runs/39037344552),
+  [PostgreSQL](https://github.com/ziahamza/layercache/actions/runs/39037344535)
+  and [local-to-CI](https://github.com/ziahamza/layercache/actions/runs/39037344532).
+  Independent Standards/Spec reviews have zero findings at that source.
   The [documentation PR](https://github.com/ziahamza/layercache/pull/55) records
-  exact reviewed source and hosted checks.
+  the subsequent evidence-only update separately from qualified recipes.
   Application workflows and service adoption remain owned by their separate
   tasks.
 
