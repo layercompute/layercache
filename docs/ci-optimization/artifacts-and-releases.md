@@ -49,11 +49,11 @@ mean the server accepted the data; confirm authoritative state before deleting
 possibly committed objects. Keep keys, signed URLs and credentials out of
 public evidence.
 
-The [proposed retained-artifact contract](../retained-artifacts.md) specifies
+The [retained-artifact contract](../retained-artifacts.md) specifies
 admission, authoritative acknowledgement, deletion protection, expiry and
-transfer phase evidence. It is design work; LayerCache currently exposes no
-retained-artifact route. Keep the qualified required-transfer provider until
-the replacement's storage, authorization, deployment and fresh consumer pass.
+transfer phase evidence. Its source and gateway qualification are recorded
+separately from actual application OIDC and fresh-consumer acceptance. Keep the
+qualified required-transfer provider until those application gates pass.
 
 Publish a new proof atomically after validation. Invalidate an old output
 receipt before a supported new attempt starts, including initialization
@@ -62,6 +62,27 @@ with the outcome of the current failing attempt. Stop owned processes and clean
 temporary state even when shutdown itself reports an error. The standalone
 [Go probe](../../qa/go-dogfood/README.md) has real failure controls for these
 receipt and cleanup cases.
+
+## Measure packing and transfer separately
+
+Already compressed APK/ZIP/archive payloads may spend CPU on compression with
+little size reduction. The official upload action supports
+`compression-level: 0`; compare it with the current level using the same bytes
+and pinned client. Text logs may benefit from compression instead.
+[Upload compression controls](https://github.com/actions/upload-artifact#altering-compressions-level-speed-v-size)
+
+Record packing CPU/time, uploaded bytes, upload, download and full consumer
+verification separately, plus complete job allocation. A retrieval-and-check
+step is not a bandwidth benchmark. Preserve immutable provenance, digest/size
+checks and retention when changing packing or transfer providers.
+
+A failed consumer need not rebuild a valid producer solely for diagnostics.
+`gh run rerun RUN_ID --failed` or `--job JOB_ID` can target failed work;
+`--job` takes the database job ID, which differs from the job's web URL number.
+Use this only after checking the exact producer, attempt binding, retained
+deadline and current consumer policy. A changed input or unavailable artifact
+needs the normal producer/fallback, and runtime assertions still execute fresh.
+[GitHub CLI rerun contract](https://cli.github.com/manual/gh_run_rerun)
 
 ## Reuse trusted general validation
 

@@ -3,6 +3,8 @@
 Read [TODOs.md](TODOs.md) before starting a feature, investigating a regression,
 or changing priorities. It owns outstanding work and acceptance targets.
 Read [CONTEXT.md](CONTEXT.md) when naming cache scopes or recording new concepts.
+Before optimizing CI/CD, build/test reuse or runner allocation, read the
+[agent CI playbook](docs/ci-optimization/agent-playbook.md).
 
 For a new request, update the relevant TODO with its user outcome, owner,
 evidence, and completion target. Implement the smallest useful slice through an

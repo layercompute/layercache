@@ -120,6 +120,15 @@ hit counts alone.
   and [local-to-CI](https://github.com/ziahamza/layercache/actions/runs/38822434236)
   validation passed all fourteen jobs at that merged source.
 
+- [ ] **Make CI optimization tips discoverable and usable by agents.**
+  Owner: LayerCache documentation. Save the requested
+  [superseded-run and draft tip](https://x.com/JinjingLiang/status/2111211135542362334)
+  with primary-source checks, an agent discovery pointer and an ordered
+  [playbook](docs/ci-optimization/agent-playbook.md). Completion target: reviewed
+  guidance for stable concurrency groups, draft transitions and required-check
+  semantics, plus complementary edit-loop and transfer recipes. Validation and
+  landing evidence are pending; no application workflow change is requested.
+
 - [ ] **Complete representative native step-overlap qualification.**
   Owner: application CI owners. The first hosted two-vCPU execution overlaps
   both complete tooling command families and joins them before workspace tasks.

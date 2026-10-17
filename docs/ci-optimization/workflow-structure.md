@@ -22,7 +22,13 @@ concurrency:
 ```
 
 Include the workflow name in the group so unrelated workflows do not cancel
-each other. Keep signing/publication in their own serialized groups. This
+each other. Keep the group stable across PR revisions: putting the commit SHA
+or run ID in it prevents replacement of that PR's previous run. Reusable
+workflows inherit the caller's `github.workflow`; give the caller and each
+callee distinct group prefixes if both set concurrency, or a callee can cancel
+its own caller. [Reusable workflow concurrency](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#supported-keywords-for-jobs-that-call-a-reusable-workflow)
+
+Keep signing/publication in their own serialized groups. This
 fragment preserves running main work, but default concurrency can still replace
 an older pending run. If every release must queue, qualify the platform's queue
 policy separately. [GitHub concurrency contract](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
@@ -32,6 +38,51 @@ does not prove its remote builder stopped. Keep bounded polling and request
 timeouts, stop owned process groups, and test cancellation against the actual
 provider contract. Failed work remains failed; retry infrastructure failures
 within a bound rather than retrying the entire pipeline indefinitely.
+
+## Defer selected expensive jobs on drafts
+
+The [requested tip from Jinjing Liang](https://x.com/JinjingLiang/status/2111211135542362334)
+combines superseded-run cancellation with draft gating. Treat its reported
+savings as that author's workload observation. Adopt a repository-specific
+policy: cheap feedback can stay on drafts while selected native builds or
+large matrices wait for review readiness.
+
+Preserve existing triggers, filters and activity types when adding the two
+draft transitions. For a workflow that previously used the default PR types,
+extend its `pull_request` mapping with:
+
+```yaml
+pull_request:
+  types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+```
+
+`ready_for_review` starts qualification without requiring another commit.
+`converted_to_draft` creates a replacement run that can cancel the running PR
+work through the stable group above. Cancellation needs a replacement run;
+workflow-level path filters can prevent that event from creating one.
+[PR activity types](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)
+
+Put the draft predicate on the expensive job, including a job that calls a
+reusable workflow, to avoid allocating its runners. A step guard leaves the
+job allocation. Combine this fragment with the job's existing condition rather
+than replacing its scope, dependency or authority checks:
+
+```yaml
+if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+```
+
+A skipped job reports success even when required. Record what was skipped;
+do not turn that status into evidence that a test executed. Audit downstream
+`needs`, aggregate checks and trusted-validation reuse so an intentional draft
+skip cannot hide a missing ready-PR or release gate.
+[Job condition semantics](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions)
+
+Before adopting, check two successive commits, separate PRs/workflows,
+caller/callee execution, draft-to-ready without a commit, and conversion back
+to draft while expensive work is running. Preserve main/manual/release
+coverage and verify remote children actually stop. If path filters require a
+separate cancellation controller, review its current-head races and authority
+separately; the fragments here do not implement one.
 
 ## Keep required checks present
 
