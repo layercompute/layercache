@@ -1,8 +1,10 @@
 # Retained private artifacts
 
-Implementation and qualification contract, 2026-10-17. The first private
-single-file implementation is in development. Its feature flag defaults off;
-this document does not establish deployed retention or hosted adoption.
+Implementation and qualification contract, 2026-10-17. [#53](https://github.com/ziahamza/layercache/pull/53)
+merged the private single-file implementation and direct action. The existing
+gateway is qualified with retention enabled only for the approved project.
+The feature defaults off elsewhere. Fresh hosted application acceptance remains
+separate from source and operator service qualification.
 **GitHub artifacts remain the required-transfer path.** Preserve their failing
 integrity and provenance checks until the replacement passes source, deployment
 and fresh hosted-consumer qualification.
@@ -27,26 +29,26 @@ outside this slice. Do not add an archive format, task executor, registry,
 daemon or second S3 SDK. Directory packaging and package inspection stay with
 the existing native client.
 
-Current source was inspected at `09bf4f77621ef0f6c732ef83e957858f01c7ed7c`:
+The implementation reuses these existing modules:
 
 | Existing module | Reuse and limit |
 | --- | --- |
-| [Cloud publication](../internal/cloud/cache.go), `putWithCommit` | Verified staging, immutable content, project quota locking and a transaction hook for protocol metadata. Retained reservation and receipts are new work. |
+| [Cloud publication](../internal/cloud/cache.go), `putWithCommit` | Verified staging, immutable content, project quota locking and a transaction hook for protocol metadata. |
 | [Actions commit](../internal/cloud/actions.go) | An existing example of metadata published through that transaction hook. Its cache acknowledgement provides no future retention. |
 | [S3 adapter](../internal/cloud/s3.go) | Production SDK multipart transport, input-error fence and complete size/digest verification. Backend availability and recovery remain separately qualified. |
-| [Cloud pins](../internal/cloud/pins.go) and [schema](../internal/cloud/schema.go) | Eviction protection exists. Ordinary pin rows cascade when a cache entry is explicitly deleted. |
+| [Cloud pins](../internal/cloud/pins.go) and [schema](../internal/cloud/schema.go) | Ordinary pins protect cache eviction. Retained claims add a restrictive reference that also fences explicit deletion. |
 | [Cloud reads](../internal/cloud/cache.go), [maintenance](../internal/cloud/maintenance.go) | Active-read protection and collection machinery. An active-read lease does not reserve a future handoff. |
 
-`cloud.Store.Delete` calls `deleteEntry` without testing ordinary pins. The
-current pin foreign key uses `ON DELETE CASCADE`. That is existing cache
-behavior, not a retained contract or an explanation of the historical Actions
-lookup miss in issue #34. Adding an ordinary pin alone cannot implement the
-promise below. Local pins and short graph-read leases also do not establish a
-remote retained publication.
+Ordinary pin foreign keys use `ON DELETE CASCADE`; ordinary pins alone do not
+provide retained publication. [Retained storage](../internal/cloud/retained.go)
+adds capacity reservations, immutable receipts and restrictive active claims.
+Local pins and short graph-read leases do not establish remote retained
+publication. None of these findings explains the historical Actions lookup
+miss in issue #34.
 
 ## Publication interface
 
-The retained module should hide reservation, staging, commit and recovery behind
+The retained module hides reservation, staging, commit and recovery behind
 three caller operations:
 
 ```text
@@ -55,9 +57,9 @@ Inspect(authorized principal, immutable publication identity) -> current state
 Open(authorized reader, expected receipt) -> current receipt and verified stream
 ```
 
-These are proposed operations, not CLI commands or existing endpoints.
-Administrative revocation is a separate policy operation. Consumers receive no
-publish, renew or revoke authority.
+These operations map to the private HTTP interface below. They are not CLI
+commands. Administrative revocation is a separate storage policy operation.
+Consumers receive no publish, renew or revoke authority.
 
 The declaration binds the project, immutable repository ID, source SHA,
 workflow identity, run ID, run attempt, producing job identity, logical output
@@ -302,10 +304,26 @@ Verify accounting and eventual object cleanup as well as returned status.
 
 Then qualify the authenticated producer/consumer adapter and current phase
 receipts. A separate reviewed deployment and fresh hosted-consumer proof are
-required before changing the required-transfer fallback. The implementation and fixture evidence alone establish no deployed retained
-service, application transfer speedup or cause for issue #34's historical miss.
+required before changing the required-transfer fallback. Implementation and
+fixture evidence alone establish no deployed retained service, application
+transfer speedup or cause for issue #34's historical miss.
 
 ## Current source qualification
+
+The immutable action pin is:
+
+```yaml
+uses: ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858
+```
+
+That reviewed source has the same Git tree as merged main
+`b0d39011fa703944b4f7cd9c7936f067db1347ed`. All fourteen PR checks,
+independent Standards/Spec reviews and the external review passed.
+Post-merge [CI](https://github.com/ziahamza/layercache/actions/runs/39028098237),
+[PostgreSQL](https://github.com/ziahamza/layercache/actions/runs/39028098221)
+and [local-to-CI](https://github.com/ziahamza/layercache/actions/runs/39028098238)
+checks also passed. This direct action needs no CLI release or installation
+change.
 
 The [source fixture receipt](evidence/retained-source-20261017.json) binds the
 implementation file hashes and a complete 124,078,900-byte synthetic transfer
@@ -330,3 +348,54 @@ The combined large-file fixture mints capabilities locally. It does not verify
 a real GitHub issuer, qualify the deployed endpoint or replace fresh hosted
 application acceptance. Its local durations are not predictions for CI.
 GitHub artifacts remain the required-transfer path.
+
+## Deployed service qualification
+
+The [operator gateway receipt](evidence/retained-gateway-20261017.json) records
+the October 17 rollout of that exact reviewed source:
+
+| Component | Immutable pin |
+| --- | --- |
+| Gateway image | `sha256:1bbd87ee07f7d2f37314a3e0e72addc3241c5fd64566b91bde10a2c92c97f63b` |
+| Gateway binary | `sha256:368a187d39c6d5a862c512744e95e6db56897b7f0b24186cb2539a7908e0de6c` |
+| Direct action | `ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858` |
+
+The existing project gateway has retention enabled only for Phone. Its other
+four project flags remain off. The live change preserves the 48 GiB physical
+pool, 10 GiB reserve, 5 GiB per-project quotas, signing authority, membership,
+backend images and installed beta.5 CLI. The locally built image is not a
+published attested container.
+
+A fresh complete cold pool and configuration copy passed isolated restoration
+before deployment. Across five phases, 191 checks preserve exact legacy
+Turbo/Actions/Gradle bytes, credentials and storage bounds. Retained 4 KiB and
+124,078,900-byte files survive the candidate gateway restart and read back
+after forward upgrade. The old-binary rollback starts with zero reservations
+or staging uploads. Published receipts and claims remain unchanged through
+rollback, then full reads pass after forward upgrade. The previous binary does
+not serve the retained API.
+
+Live publication, inspection and full-size/SHA256 reads of both synthetic files
+pass over the configured HTTPS origin, then pass again after a gateway-only
+restart. Three verification passes preserve legacy behavior across all five
+projects. The live restart keeps PostgreSQL and object storage running.
+The receipt preserves actual body bytes, source hashing, admission, upload,
+inspection, response headers and body/hash intervals. Publication uses one PUT;
+each read uses one GET, with no per-chunk proxy RPC. These requests originate on
+the operator host; their durations cannot predict fresh-runner transfer time or
+be compared directly with the earlier 229s/87s retrieval-and-verification steps.
+
+A separate live 4 KiB canary uses an unchanged 25-second deadline. Read-only
+reservation fails with HTTP 403; foreign-run and another-job publisher
+inspection fail with 404. An over-quota declaration fails with 507 before
+content upload. After the absolute deadline, inspection reports `expired` and
+a new content read fails with 410. SQL shows zero reserved bytes, inactive
+staging and no remaining claim or pin. This verifies the live fixed-TTL and
+admission boundaries without modifying other production objects.
+
+The operator mints scoped synthetic capabilities for service canaries. Those
+requests deliberately bypass real GitHub OIDC and its exchange. Signed OIDC
+and same-repository PR policy have source fixtures, but fresh actual Phone
+workflow OIDC, required-consumer acceptance and a consumer-only rerun remain
+the adoption gate. Phone owns those workflow changes and dispatches.
+**GitHub artifacts remain the required-transfer path.**

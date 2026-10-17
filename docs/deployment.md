@@ -22,19 +22,30 @@ Migrate one trusted main-branch job first. Compare its declared outputs against 
 
 For `agent-access`, the previous workflow used archived `.turbo` directories rather than native Vercel caching. Prefer the native Turbo integration and remove the redundant `.turbo` archive step after proving reuse. Existing package-manager caching may remain during rollout. npm dependency download caching and Turbo output caching are separate operations.
 
+## Required retained artifacts
+
+The [retained-artifact contract](retained-artifacts.md) records the qualified
+source/action/image pins and remaining hosted adoption gates. Its private
+single-file API requires an explicit `retainedArtifactsEnabled: true` setting,
+Team role and PostgreSQL/S3 persistence. The default is off. A successful
+reservation is not publication; only the immutable published receipt confirms
+verified object bytes and the SQL retention claim. Keep GitHub artifacts as the
+required-transfer path until the actual workflow's OIDC, consumer and rerun
+acceptance pass. A Local acknowledgement does not provide this guarantee.
+
 ## Backup and restore
 
-1. Back up PostgreSQL using the provider's snapshots and point-in-time recovery. Include project metadata, memberships, audit, publication tombstones, and Public Build coordination tables. Test restoration into a separate database.
+1. Back up PostgreSQL using the provider's snapshots and point-in-time recovery. Include project metadata, memberships, audit, retained receipts/reservations/claims and expiry state, publication tombstones, and Public Build coordination tables. Test restoration into a separate database.
 2. Enable S3 versioning or replication and retain objects longer than the database recovery window. A database restored to an earlier point may still reference objects collected later. Back up OCI registry storage separately using its supported method.
 3. Protect service configuration and Public Cache signing keys in a secret manager with its own recovery policy. Never place them in this Git repository or ordinary QA output.
 4. For a consistent manual recovery point, stop writers and background collection before taking database and object snapshots. Record the database snapshot and object/registry snapshot IDs together.
-5. Restore into isolated services with no CI traffic. Verify `status`, authentication, a known Turbo restore, an Actions archive, and an immutable BuildKit pull. Corrupt or missing artifacts must return a miss. Check revocation/tombstone records before enabling Public Cache reads.
+5. Restore into isolated services with no CI traffic. Verify `status`, authentication, a known Turbo restore, an Actions archive, and an immutable BuildKit pull. Corrupt or missing evictable cache artifacts must return a miss. Required retained artifacts fail explicitly; verify their unchanged producer identity, complete bytes, deadline and retention claims. Check revocation/tombstone records before enabling Public Cache reads.
 6. Resume traffic only after the isolated restore passes. Keep the original snapshot and service configuration available for rollback.
 
 Local Cache is disposable, but backing up its complete stopped state can avoid a cold machine. Do not copy SQLite files piecemeal while a daemon is writing. Team PostgreSQL/S3 records cannot be reconstructed from Local Cache metadata.
 
 ## Upgrade and rollback
 
-Save the running binary/image digest and configuration before upgrading. Take a database recovery point, stop API processes, install the candidate, and run the migration/restore checks against an isolated copy first. The schema currently uses additive migrations, but backwards compatibility is not a general downgrade guarantee. When an older binary cannot read the new schema, rollback requires the matching database recovery point and compatible object snapshot. Do not delete the current data merely to make an old binary start.
+Save the running binary/image digest and configuration before upgrading. Take a database recovery point, stop API processes, install the candidate, and run the migration/restore checks against an isolated copy first. The schema currently uses additive migrations, but backwards compatibility is not a general downgrade guarantee. Before an old binary that lacks retained admission accounting starts, close retained admission and prove zero outstanding reservations or staging uploads. Preserve published receipts, restrictive claims and pins; the older API cannot serve retained reads. See the exact tested rollback boundary in the retained-artifact contract. When an older binary cannot read the new schema, rollback requires the matching database recovery point and compatible object snapshot. Do not delete the current data merely to make an old binary start.
 
 Watch failed authentication, upload backlog, negative estimated savings, quota pressure, S3 errors, and PostgreSQL latency. A full cache must retain reads and let builds finish locally. Keep log retention bounded independently of cache quotas.
