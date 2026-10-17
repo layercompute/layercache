@@ -24,7 +24,7 @@ workspaces and filesystem migration are outside the current product scope.
   report incomplete live scans. Qualify overlap, links, cancellation and platform
   limits through the CLI. This first slice measures storage; it neither deduplicates
   existing files nor establishes reclaimable bytes.
-  [Reviewed source](https://github.com/ziahamza/layercache/commit/3e9e138) passes
+  [Reviewed source](https://github.com/ziahamza/layercache/commit/b1045376e7469f10ab5811a753995fe746061e8b) passes
   complete CLI/module tests, focused race tests, vet and local lint; independent
   Standards/Spec reviews have zero findings. The
   [built CLI fixture](docs/evidence/storage-inspect-20261017.json) confirms
@@ -32,7 +32,9 @@ workspaces and filesystem migration are outside the current product scope.
   and metadata, unvisited symlinks and partial JSON with nonzero exit. A live
   explicit-root scan matches an independent native `du` allocation total. Darwin
   arm64 and Windows amd64 module compilation passed; target tests were not
-  executed. Hosted checks and landing remain in the implementation PR; this
+  executed. Mounted-file boundaries and root-relative categories have scanner
+  regression tests and independent follow-up review. Hosted checks and landing
+  are tracked by [#58](https://github.com/ziahamza/layercache/pull/58); this
   records source qualification, not a released CLI or reclaimed storage.
 
 - [ ] **Prevent repeated local outputs and abandoned build-slot growth.**
