@@ -41,7 +41,7 @@ within a bound rather than retrying the entire pipeline indefinitely.
 
 ## Defer selected expensive jobs on drafts
 
-The [requested tip from Jinjing Liang](https://x.com/JinjingLiang/status/2111211135542362334)
+The [CI tip from Jinjing Liang](https://x.com/JinjingLiang/status/2111211135542362334)
 combines superseded-run cancellation with draft gating. Treat its reported
 savings as that author's workload observation. Adopt a repository-specific
 policy: cheap feedback can stay on drafts while selected native builds or

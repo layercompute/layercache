@@ -75,7 +75,7 @@ what stays fresh, fallback and a concrete adoption check. Reuse the recipe links
 instead of copying the same advice into several agent files. Add work to the
 owning TODO only when there is an actual adoption or qualification task.
 
-The [requested cancellation/draft post](https://x.com/JinjingLiang/status/2111211135542362334)
+The [cancellation and draft tip](https://x.com/JinjingLiang/status/2111211135542362334)
 is saved in the workflow recipe. Its author's reported savings are not a
 LayerCache measurement. A new tip is ready to use when an agent can identify
 the applicable workload, implement through the existing tool, verify preserved
