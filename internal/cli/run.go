@@ -41,6 +41,7 @@ Usage:
   layercache repair [options]
   layercache gc [options]
   layercache cache quota|pins|pin|unpin [options]
+  layercache storage inspect --path ABSOLUTE_PATH [--path ABSOLUTE_PATH ...] [--json]
   layercache disable [--adapter turbo|actions|buildkit|nx|gradle|all] [options]
   layercache bypass --adapter turbo|actions|buildkit|nx|gradle|all [options]
   layercache uninstall --preserve-cache|--delete-cache [options]
@@ -97,6 +98,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runGC(ctx, args[1:], stdout, stderr)
 	case "cache":
 		return runCacheAdmin(ctx, args[1:], stdout, stderr)
+	case "storage":
+		return runStorage(ctx, args[1:], stdout, stderr)
 	case "bypass":
 		return runBypass(ctx, args[1:], stdout, stderr)
 	case "disable":

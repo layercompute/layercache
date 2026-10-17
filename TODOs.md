@@ -5,12 +5,42 @@ mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
 
-The next milestone is reliable Phone handoffs plus less repeated test and
-inference work across compatible local machines and CI. Reuse established
-build/test/model clients. Prefer fewer expensive executions over higher cache
-hit counts alone.
+The next milestone is reliable Phone handoffs and fewer repeated executions or
+copies across local machines and CI. Build a general compute and storage product
+through established build/test/model clients. Prioritize expensive immutable
+outputs, bounded native stores and run-owned generated data. Measure net benefit
+before adding another integration. Transparent sharing of arbitrary mutable
+workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable Phone reuse
+
+- [ ] **Expose an honest local storage inventory.**
+  Owner: LayerCache. User outcome: identify the owners of disk growth before
+  collecting another cache or deleting useful work. Add account-free
+  `storage inspect` for explicit paths, with allocated and apparent bytes,
+  inode-aware hardlink accounting, sparse files and filesystem headroom.
+  Never initialize or repair a cache, follow symlinks, traverse nested mounts,
+  or label path categories as deletion eligibility. Bound error details and
+  report incomplete live scans. Qualify overlap, links, cancellation and platform
+  limits through the CLI. This first slice measures storage; it neither deduplicates
+  existing files nor establishes reclaimable bytes.
+
+- [ ] **Prevent repeated local outputs and abandoned build-slot growth.**
+  Owner: LayerCache, coordinated with application execution owners. User outcome:
+  materially less compute and allocated storage across short-lived workspaces.
+  Rank immutable final outputs and native package/task caches before writable
+  workspace sharing. Use complete native identities and one bounded managed
+  copy where existing clients support it. New managed materializations require
+  explicit ownership, active-reader leases, admission before publication, and
+  restart-safe release/GC; count packed bytes, expanded bytes and concurrent
+  deltas together. Preserve required handoffs and source/evidence retention.
+  Accept one representative workload only after measuring total allocated bytes
+  and complete command time, changed-input isolation, concurrent readers,
+  cancellation, quota pressure and restart cleanup. The
+  [storage decision](docs/research/local-workspace-storage-20261017.md) records
+  why native clone support is optional and rootless overlays remain a separate
+  experiment. Do not rewrite active worktrees, hardlink mutable outputs, or
+  create a generic filesystem layer for this milestone.
 
 - [x] **Qualify the first hosted native Gradle producer and full reader.**
   Owner: Phone CI, with LayerCache protocol/client support. [Phone #317](https://github.com/ziahamza/phone-app/pull/317)

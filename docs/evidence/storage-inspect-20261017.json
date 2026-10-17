@@ -1,0 +1,34 @@
+{
+  "qualifiedAtUTC": "2026-10-17T21:30:08Z",
+  "binarySHA256": "867b2af403d19555798366181a53667718ce9a05ff5ad1afe78a59c0ab6056a8",
+  "elapsedSeconds": 0.266,
+  "hardlinksAcrossRootsCountedOnce": true,
+  "overlappingRootCountedOnce": true,
+  "externalSymlinkNotVisited": true,
+  "sparseFileApparentBytes": 67108864,
+  "sparseFileAllocatedBytes": 4096,
+  "sourceBytesAndMetadataUnchanged": true,
+  "partialJSONRetainedWithNonzeroExit": true,
+  "totals": {
+    "apparentBytes": 69218358,
+    "allocatedBytes": 2113536,
+    "files": 2,
+    "directories": 3,
+    "symlinks": 1,
+    "otherEntries": 0,
+    "sparseFiles": 1
+  },
+  "hostCleanupPerformed": false,
+  "computeOrStorageSavingsEstablished": false,
+  "baseSource": "06bb9901c1bcf5662cc1ec927dc44835b4c6adef",
+  "changedSourceSHA256": {
+    "internal/cli/run.go": "c447119fcf90d4c0c20c54cfdb6269d85759b72a7f517459734dc1701c899920",
+    "internal/cli/storage.go": "7371f65f2d6289972fa3b829c6f7acdb0e69e05278d0d5511bec9b64bdd6b51c",
+    "internal/storageinspect/filesystem_other.go": "470b97c117f045dd6b9e05aca36d6b16a808985a4d7a2dad90b4f7709ed387b3",
+    "internal/storageinspect/filesystem_unix.go": "c6fcc6dc70a94f3d14be5eae287f3eb028b5fc9eedf0ab702ce0bbbc814f70be",
+    "internal/storageinspect/inspect.go": "807c4d18aea54b0e705c696616068e737b5e6cab929255c5398fa4c61841f499",
+    "internal/storageinspect/mounts_linux.go": "1bd38e47c76ca7b6277cb0741de5242082486578b4d8f7bbdee4e669cc68ed74",
+    "internal/storageinspect/mounts_other.go": "785f845e561758d91541beed26beaaeab8a5da2fdd22021701d994d9ed25f61e"
+  },
+  "goVersion": "go version go1.25.13 linux/amd64"
+}
