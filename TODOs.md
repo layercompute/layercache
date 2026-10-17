@@ -157,16 +157,18 @@ hit counts alone.
   publication PR; these are documentation checks, not new application benchmarks.
   No application workflow, service or diagnostic dispatch is part of publication.
 
-- [ ] **Apply the confirmed case-study provenance correction.**
-  Owner: LayerCache documentation. Update the published guide and six-case
-  record from the corrected source handoff. Remove the unsupported original
-  stored-TAR digest comparison, label the ZIP statistic as a non-controlled
-  container-size difference and record producing-run UTC intervals. Make
-  changed browser coverage and zero fresh assertions in accepted iOS QA reuse
-  explicit. Completion target: reviewed immutable source with arithmetic,
-  interval, link and privacy checks, plus the normal documentation PR. Keep
-  GitHub artifacts required; this correction adds no application benchmark,
-  workflow/service change or diagnostic dispatch.
+- [x] **Apply the confirmed case-study provenance correction.**
+  Owner: LayerCache documentation. The
+  [corrected source](https://github.com/ziahamza/layercache/commit/b49a798b2bb3881794d4252f08da337f00af4b0b)
+  and [schema 2 record](https://github.com/ziahamza/layercache/blob/b49a798b2bb3881794d4252f08da337f00af4b0b/docs/ci-optimization/case-study/case-study-measurements.json)
+  supersede the initial digest comparison and metric names. ZIP size differences
+  are non-controlled; producing-run UTC intervals, changed browser coverage and
+  zero fresh assertions in accepted iOS QA reuse are explicit. Percentage
+  arithmetic, six UTC intervals, 41 local links/anchors, privacy scans and local
+  lint pass; independent Standards/Spec reviews check the correction. Hosted
+  checks and landing remain in the documentation PR. GitHub artifacts remain
+  required; no application benchmark, workflow/service change or diagnostic
+  dispatch is part of this correction.
 
 - [ ] **Complete representative native step-overlap qualification.**
   Owner: application CI owners. The first hosted two-vCPU execution overlaps
