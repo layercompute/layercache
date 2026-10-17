@@ -175,6 +175,39 @@ func TestRetainedAdapterAuthorityAndRequiredContent(t *testing.T) {
 	}
 }
 
+func TestRetainedPublisherReadsOnlyOwnReceipt(t *testing.T) {
+	s, f := retainedTestServer(t)
+	producer := retainedTestClaims()
+	otherJob := producer
+	otherJob.CheckRunID = "999"
+	laterAttempt := producer
+	laterAttempt.RunAttempt = "3"
+	reader := otherJob
+	reader.Capabilities = []access.Capability{access.CapabilityRead}
+	rerunReader := reader
+	rerunReader.RunAttempt = "3"
+	for _, test := range []struct {
+		name   string
+		claims access.Claims
+		status int
+	}{
+		{"publisher inspects own publication", producer, http.StatusOK},
+		{"publisher cannot inspect another job", otherJob, http.StatusNotFound},
+		{"publisher cannot inspect an earlier attempt", laterAttempt, http.StatusNotFound},
+		{"read-only consumer reads another job", reader, http.StatusOK},
+		{"read-only rerun reads explicit earlier receipt", rerunReader, http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, suffix := range []string{"", "/content"} {
+				w := retainedRequest(t, s, http.MethodGet, "/v1/retained-artifacts/"+f.receipt.ID+suffix, test.claims, nil)
+				if w.Code != test.status {
+					t.Fatalf("GET %s: HTTP %d, want %d", suffix, w.Code, test.status)
+				}
+			}
+		})
+	}
+}
+
 func TestRetainedAdapterReservationAdmissionAndProtocolIsolation(t *testing.T) {
 	s, f := retainedTestServer(t)
 	claims := retainedTestClaims()

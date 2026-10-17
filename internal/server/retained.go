@@ -78,7 +78,7 @@ func (server *Server) authorizedRetainedReceipt(writer http.ResponseWriter, requ
 	claims, _ := access.ClaimsFromContext(request.Context())
 	expected := retainedProducer(claims)
 	actual := receipt.Declaration.Producer
-	if !producerOnly {
+	if !producerOnly && !claims.Allows(access.CapabilityWrite) {
 		producerAttempt, producerError := strconv.ParseUint(actual.RunAttempt, 10, 64)
 		readerAttempt, readerError := strconv.ParseUint(expected.RunAttempt, 10, 64)
 		if producerError != nil || readerError != nil || producerAttempt == 0 || producerAttempt > readerAttempt {
@@ -87,7 +87,8 @@ func (server *Server) authorizedRetainedReceipt(writer http.ResponseWriter, requ
 		}
 		// A consumer-only rerun may name a retained receipt from an earlier
 		// attempt of this exact run. There is no search for a previous/latest
-		// receipt, and publication still requires the signed current attempt.
+		// receipt. Publisher capabilities retain their own exact signed job and
+		// attempt for inspection as well as publication.
 		expected.RunAttempt = actual.RunAttempt
 		expected.JobID = actual.JobID
 	}

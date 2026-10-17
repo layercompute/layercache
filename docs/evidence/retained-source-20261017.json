@@ -6,53 +6,53 @@
       {
         "operation": "inspect",
         "attempt": 1,
-        "startMs": 2.8277940000000115,
-        "consumedBytes": 735,
+        "startMs": 1.9613680000000073,
+        "consumedBytes": 737,
         "outcome": "success",
-        "headersMs": 77.52830200000002,
+        "headersMs": 32.244506,
         "httpStatus": 200,
         "serverTiming": [
           {
             "name": "retained_inspect",
-            "durationMs": 6.103
+            "durationMs": 2.309
           }
         ],
-        "endMs": 82.03164799999999
+        "endMs": 34.49736
       },
       {
         "operation": "download",
         "attempt": 1,
-        "startMs": 85.26008900000002,
+        "startMs": 35.825545000000005,
         "consumedBytes": 124078900,
         "outcome": "success",
-        "headersMs": 113.67523300000002,
+        "headersMs": 46.500399,
         "httpStatus": 200,
         "serverTiming": [
           {
             "name": "retained_open",
-            "durationMs": 8.062
+            "durationMs": 5.738
           }
         ],
-        "firstBodyMs": 119.14293699999999,
-        "bodyEndMs": 1013.220026,
-        "endMs": 1013.97082
+        "firstBodyMs": 48.63411000000001,
+        "bodyEndMs": 501.33525199999997,
+        "endMs": 501.91766300000006
       }
     ],
     "phases": [
       {
         "name": "complete-size-and-digest",
-        "startMs": 1013.229396,
-        "endMs": 1013.292927
+        "startMs": 501.343482,
+        "endMs": 501.39385300000004
       },
       {
         "name": "disk-flush",
-        "startMs": 1013.297867,
-        "endMs": 1013.7186649999999
+        "startMs": 501.39933300000007,
+        "endMs": 501.712809
       },
       {
         "name": "local-publication",
-        "startMs": 1013.7317949999999,
-        "endMs": 1013.883928
+        "startMs": 501.72357999999997,
+        "endMs": 501.836272
       }
     ],
     "acceptedPayloadBytes": 124078900,
@@ -64,7 +64,7 @@
       "TLS handshake",
       "server durable commit internals unless reported in Server-Timing"
     ],
-    "completeMs": 1015.0428999999999
+    "completeMs": 502.682178
   },
   "payloadBytes": 124078900,
   "payloadSha256": "c130a4c3a78f3727d2ad782bbf7010fb0eb93291db4d5faebe6fc32af8e0be1b",
@@ -75,62 +75,62 @@
       {
         "operation": "inspect",
         "attempt": 1,
-        "startMs": 377.75813999999997,
+        "startMs": 119.06680599999999,
         "consumedBytes": 0,
         "outcome": "failed",
-        "headersMs": 462.01614,
+        "headersMs": 148.947287,
         "httpStatus": 404,
-        "endMs": 462.725124
+        "endMs": 149.39209499999998
       },
       {
         "operation": "reserve",
         "attempt": 1,
-        "startMs": 462.80407499999995,
-        "consumedBytes": 690,
+        "startMs": 149.455587,
+        "consumedBytes": 692,
         "outcome": "success",
-        "headersMs": 486.63370100000003,
+        "headersMs": 158.220644,
         "httpStatus": 200,
         "serverTiming": [
           {
             "name": "retained_admission",
-            "durationMs": 11.649
+            "durationMs": 3.986
           }
         ],
-        "endMs": 489.25207099999994
+        "endMs": 159.57025
       },
       {
         "operation": "upload",
         "attempt": 1,
-        "startMs": 493.60936399999997,
+        "startMs": 159.96248699999998,
         "consumedBytes": 124078900,
         "outcome": "success",
-        "firstBodyMs": 508.89711600000004,
-        "bodyEndMs": 2408.7237680000003,
+        "firstBodyMs": 161.579778,
+        "bodyEndMs": 1106.335696,
         "reconciled": true,
-        "endMs": 3009.8528880000003
+        "endMs": 1488.50412
       },
       {
         "operation": "inspect",
         "attempt": 2,
-        "startMs": 2997.562993,
-        "consumedBytes": 735,
+        "startMs": 1482.307322,
+        "consumedBytes": 737,
         "outcome": "success",
-        "headersMs": 3008.604424,
+        "headersMs": 1486.770327,
         "httpStatus": 200,
         "serverTiming": [
           {
             "name": "retained_inspect",
-            "durationMs": 2.686
+            "durationMs": 1.609
           }
         ],
-        "endMs": 3009.393789
+        "endMs": 1487.517861
       }
     ],
     "phases": [
       {
         "name": "source-hash",
-        "startMs": 0.9751479999999901,
-        "endMs": 372.040101,
+        "startMs": 0.6588330000000013,
+        "endMs": 118.056026,
         "consumedBytes": 124078900
       }
     ],
@@ -143,7 +143,7 @@
       "TLS handshake",
       "server durable commit internals unless reported in Server-Timing"
     ],
-    "completeMs": 3010.3625770000003
+    "completeMs": 1488.783355
   },
   "qualified": [
     "immutable publication",
@@ -166,53 +166,53 @@
       {
         "operation": "inspect",
         "attempt": 1,
-        "startMs": 2.62706,
-        "consumedBytes": 735,
+        "startMs": 1.9336169999999981,
+        "consumedBytes": 737,
         "outcome": "success",
-        "headersMs": 58.121981000000005,
+        "headersMs": 33.055662,
         "httpStatus": 200,
         "serverTiming": [
           {
             "name": "retained_inspect",
-            "durationMs": 5.206
+            "durationMs": 3.262
           }
         ],
-        "endMs": 67.77113499999999
+        "endMs": 35.258933999999996
       },
       {
         "operation": "download",
         "attempt": 1,
-        "startMs": 71.88162399999999,
+        "startMs": 36.614940000000004,
         "consumedBytes": 124078900,
         "outcome": "success",
-        "headersMs": 119.40279199999998,
+        "headersMs": 50.49330500000001,
         "httpStatus": 200,
         "serverTiming": [
           {
             "name": "retained_open",
-            "durationMs": 12.1
+            "durationMs": 7.977
           }
         ],
-        "firstBodyMs": 124.376847,
-        "bodyEndMs": 1232.539638,
-        "endMs": 1233.939075
+        "firstBodyMs": 52.549435,
+        "bodyEndMs": 548.087396,
+        "endMs": 548.6282960000001
       }
     ],
     "phases": [
       {
         "name": "complete-size-and-digest",
-        "startMs": 1232.5507579999999,
-        "endMs": 1232.62098
+        "startMs": 548.0952960000001,
+        "endMs": 548.141737
       },
       {
         "name": "disk-flush",
-        "startMs": 1232.62827,
-        "endMs": 1233.594778
+        "startMs": 548.146707,
+        "endMs": 548.437593
       },
       {
         "name": "local-publication",
-        "startMs": 1233.597078,
-        "endMs": 1233.851713
+        "startMs": 548.447123,
+        "endMs": 548.5599050000001
       }
     ],
     "acceptedPayloadBytes": 124078900,
@@ -224,7 +224,7 @@
       "TLS handshake",
       "server durable commit internals unless reported in Server-Timing"
     ],
-    "completeMs": 1235.905752
+    "completeMs": 549.255858
   },
   "receipt": {
     "schemaVersion": "retained-artifact-v1",
@@ -245,11 +245,11 @@
       "name": "required-opaque",
       "digest": "c130a4c3a78f3727d2ad782bbf7010fb0eb93291db4d5faebe6fc32af8e0be1b",
       "size": 124078900,
-      "retainUntil": "2026-10-17T12:03:20.249Z"
+      "retainUntil": "2026-10-17T12:09:58.878Z"
     },
-    "reservedUntil": "2026-10-17T11:18:20.89233Z",
-    "createdAt": "2026-10-17T11:03:20.89233Z",
-    "publishedAt": "2026-10-17T11:03:23.385337Z"
+    "reservedUntil": "2026-10-17T11:24:59.126867Z",
+    "createdAt": "2026-10-17T11:09:59.126867Z",
+    "publishedAt": "2026-10-17T11:10:00.441343Z"
   },
   "schemaVersion": "retained-integration-qualification-v1",
   "scope": "disposable local production server + PostgreSQL + real MinIO + direct JavaScript client; locally minted capabilities bypass GitHub issuer/exchange; no hosted or production proof",
@@ -270,7 +270,7 @@
       "internal/portal/portal.go": "bb528f3651d35f0faf07f9254cd4cbeae6fba11de4911cf2c707443fbf760c2b",
       "internal/server/auth.go": "2bead37d901ce1540b7a8d7e4af1987636e4f6601b157ca412a3e4cddc6975f0",
       "internal/server/server.go": "17da2179fe51acfc4cb370779646d57f8cb36f658c4ac1618661518a98332b78",
-      "internal/server/retained.go": "da68180e8c4176b3c809ef53ff433a601cf813ca31ff00d9b3c84e96858432bc",
+      "internal/server/retained.go": "fa196919eb853d43c256136dab6c98dd042bcb69659a8caa4633fc8c48cb69b9",
       "internal/server/retained_auth.go": "5d8155bb3e20f5422c396025965b032e7063b79ca08df30e60f7ad06980b29c2",
       "internal/retained/types.go": "e470f399afd3660ed099c40871303dfe7e8e797be5a854587a6b54b09afb1d90",
       "action/retained/action.yml": "44b56e260824d0a9d0678fd8f29fe82b351118cce923141050a0eb63299b864e",

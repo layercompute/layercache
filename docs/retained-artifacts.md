@@ -140,7 +140,8 @@ Consumers can use another job in the same run. A consumer-only rerun may
 explicitly read an older producer attempt when its repository, source, run,
 workflow and profile match. A future producer attempt is rejected. The producer
 attempt remains immutable in the receipt, with no discovery of a latest result.
-Publishers can mutate only their own signed attempt and job.
+Publication tokens can inspect, read and publish only their own signed attempt
+and job. Only read-only tokens receive cross-job and earlier-attempt access.
 
 The first bounds are 24 hours of requested retention, 15 minutes to finish a
 reservation, eight simultaneous reserved or staging sessions, 1,024 receipts

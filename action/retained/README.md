@@ -27,7 +27,9 @@ source and run. The receipt identifies one exact producer attempt, which must
 be the current attempt or an earlier attempt in that same run. This supports
 a consumer-only rerun without publishing again. Future producer attempts are
 denied. There is no search for a previous output or `latest` fallback. Eligible
-same-repository pull requests remain isolated from other runs.
+same-repository pull requests remain isolated from other runs. Publication
+tokens can inspect and read only their own job and attempt; cross-job and
+earlier-attempt access requires an explicit read-only token.
 
 `sourceCommit` is the signed OIDC SHA, which must equal `GITHUB_SHA`. The
 publishing action also runs `git rev-parse HEAD` in `GITHUB_WORKSPACE` and
