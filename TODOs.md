@@ -129,8 +129,10 @@ hit counts alone.
   semantics, plus focused edit loops, honest failure logs, compression and
   retained-input reruns. Local lint, 81 relative links/anchors and the combined
   workflow fragments pass; independent Standards/Spec review checks the guidance.
-  Source and hosted checks are recorded in the documentation PR. Application
-  workflows and service adoption remain owned by their separate tasks.
+  [Reviewed recipe source](https://github.com/ziahamza/layercache/commit/331c8724da805bb341e580c0c6fd0d10c6813bbd)
+  pins the guidance; hosted checks are recorded in the documentation PR.
+  Application workflows and service adoption remain owned by their separate
+  tasks.
 
 - [ ] **Complete representative native step-overlap qualification.**
   Owner: application CI owners. The first hosted two-vCPU execution overlaps
