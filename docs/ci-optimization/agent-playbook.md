@@ -6,6 +6,11 @@ Read the repository's workflow and coverage policy before applying a tip. The
 were checked on 2026-10-17; platform support and pinned clients still need
 verification at adoption time.
 
+For native profiles, shared application packages, Apple orchestration or
+required handoffs, consult the [mobile CI case study](case-study/ci-cd-optimization-guide.md).
+It records the failed approaches and acceptance controls alongside
+[bounded observations](case-study/case-study-measurements.json).
+
 ## Work in this order
 
 1. **Map the actual work.** Read triggers, reusable workflows, scripts, required

@@ -13,6 +13,12 @@ Agents: start with the [optimization playbook](agent-playbook.md) for the edit
 loop, recipe selection and completion evidence. Save new source-backed tips in
 the matching recipe so future agents can find and qualify them.
 
+The [mobile CI case study](case-study/ci-cd-optimization-guide.md) follows the
+decisions, failed approaches and verification controls across native builds,
+finished-app reuse, Apple orchestration and required handoffs. Its
+[six measurement records](case-study/case-study-measurements.json) retain
+publisher overhead, coverage changes and the limits of each observation.
+
 ## Choose the work to avoid
 
 | What you observe | First useful change | Recipe |

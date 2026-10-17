@@ -81,11 +81,17 @@ was checked during qualification, but this public summary does not expose the
 private repositories or provide an independently reproducible application
 benchmark. Keep each row's measurement boundary when quoting it.
 
+The [mobile CI case study](case-study/ci-cd-optimization-guide.md) explains six
+further observations and failed approaches. Its
+[machine-readable measurements](case-study/case-study-measurements.json) keep
+allocation, wall time, byte reduction, publisher overhead and accepted-result
+reuse separate. Their percentages cannot be added or treated as invoice savings.
+
 | Change | Observed before and after | Boundary and remaining work |
 | --- | --- | --- |
 | Independent mobile test groups | Producer native stage 4m10.355s; empty consumer 965ms, twelve restored results and zero task executions | Separate compatible workspaces on one host; read-only remote consumer; 396,756 downloaded bytes. Setup and whole-job time excluded. |
 | Exact trusted validation reused in manual release preparation | Preparation 28m18s to 3m16s | Repeated validation removed after exact-source trusted-check lookup with fresh fallback. Subsequent native build, signing, publication and runtime work are outside these preparation times. |
-| Matching native QA artifact reused | Native QA lane 19m46s to 2m12s | Reused the matching artifact and retained current runtime checks. Does not establish physical-device or omitted optional coverage. |
+| Compatible accepted standard QA result reused | Linux QA controller job 19m46s to 2m12s | Reused the matching app and successful QA receipt within its age bound; no new Xcode build or fresh runtime execution. Does not qualify full Contacts XCTest, dense fixtures or carrier audio. |
 | Native parallel tooling steps | Earlier sequential stage 85s; hosted parallel group 56s, with Node at 56s and Python at 42s | One earlier main observation and one PR observation on the same two-vCPU Ubuntu runner class. Both command families passed and joined before workspace tasks. No controlled whole-job or cost improvement established. |
 | LayerCache prose-only PR classification | Summed selected job spans 40m54s to 2m15s, seventeen jobs to fourteen | All thirteen required contexts retained; full main qualification remains. Active span 5m21s to 27s excludes initial queue time. Standard public runners have no runner charge. |
 | Standalone Go compiler archive over loopback | Cold build plus fresh tests 4.623s; restore plus relocated build and fresh tests 0.755s | 13,076,823 archive bytes; compiler reuse, with test execution fresh. Single-host fixture, not hosted CI or Team savings. |

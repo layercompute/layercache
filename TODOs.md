@@ -139,6 +139,18 @@ hit counts alone.
   Application workflows and service adoption remain owned by their separate
   tasks.
 
+- [ ] **Publish the audited mobile CI case study.**
+  Owner: LayerCache documentation. Publish the reviewed
+  [guide](docs/ci-optimization/case-study/ci-cd-optimization-guide.md) and its
+  [six anonymized measurements](docs/ci-optimization/case-study/case-study-measurements.json)
+  together, linked from the recipe index, agent playbook and measurement guide.
+  Preserve private-source boundaries, distinct reuse identities, observed
+  versus causal savings, publisher cost and the required GitHub artifact path.
+  Completion target: reconcile existing claims, verify primary upstream sources
+  and private measurement evidence, then pass privacy, arithmetic/link and
+  independent Standards/Spec reviews through the normal documentation PR.
+  No application workflow, service or diagnostic dispatch is part of publication.
+
 - [ ] **Complete representative native step-overlap qualification.**
   Owner: application CI owners. The first hosted two-vCPU execution overlaps
   both complete tooling command families and joins them before workspace tasks.

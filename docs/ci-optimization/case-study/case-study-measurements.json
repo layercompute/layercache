@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "preparedOn": "2026-10-17",
+  "observedDateConvention": "UTC date of the producing run or upload; audit and publication dates are separate.",
+  "status": "anonymized historical observations",
+  "context": "Observations from one mobile application's CI optimization work. Detailed source mapping is retained privately by the coordinating owners.",
+  "scope": {
+    "newBenchmarksForThisDocument": false,
+    "monthlySavingsEstablished": false,
+    "invoiceSavingsEstablished": false,
+    "experimentsAreAdditive": false,
+    "comparisonWarning": "These experiments used different sources, recipes, environments and dates. Do not sum their percentages or extrapolate them to monthly spend."
+  },
+  "measurements": [
+    {
+      "id": "signed-runner-sizing",
+      "observedOn": "2026-10-14",
+      "operation": "Complete signed Android build jobs with subsequent fresh package smoke acceptance",
+      "samples": [
+        {
+          "allocatedVcpu": 8,
+          "completeJobSeconds": 1240,
+          "allocatedCoreMinutes": 165.333333,
+          "peakProcessRssGiB": 11.06,
+          "observedBuildSwapGiB": 0
+        },
+        {
+          "allocatedVcpu": 4,
+          "completeJobSeconds": 1304,
+          "allocatedCoreMinutes": 86.933333,
+          "peakProcessRssGiB": 8.41,
+          "observedBuildSwapGiB": 0,
+          "minimumAvailableMemoryGiB": 6.54
+        },
+        {
+          "allocatedVcpu": 2,
+          "completeJobSeconds": 1675,
+          "allocatedCoreMinutes": 55.833333,
+          "peakProcessRssGiB": 6.31,
+          "observedBuildSwapGiB": 2.43,
+          "majorPageFaults": 95589
+        }
+      ],
+      "comparison": {
+        "fourVersusEightCoreAllocationReductionPercent": 47.419355,
+        "fourVersusEightAdditionalWallSeconds": 64,
+        "selectedProductionVcpu": 4
+      },
+      "limits": [
+        "Same application source, but SDK cache warmth and workflow recipe commits differed.",
+        "Allocated core-minutes use job duration, not independently measured billable VM lifetime.",
+        "Two cores passed but paging made it a poor default for this workload.",
+        "This does not establish a CPU-only causal effect, provider price comparison or invoice saving."
+      ]
+    },
+    {
+      "id": "local-gradle-task-cache",
+      "observedOn": "2026-10-16",
+      "operation": "Whole Gradle Debug x86_64 command in independent local checkouts constrained to two CPUs",
+      "producerSeconds": 880.213,
+      "readOnlyConsumerSeconds": 524.971,
+      "wallReductionSeconds": 355.242,
+      "wallReductionPercent": 40.35864,
+      "taskRestores": 318,
+      "remoteBytesDownloaded": 148112872,
+      "consumerPutRequests": 0,
+      "equalityChecks": {
+        "selectedNativeOutputFiles": 290,
+        "selectedApkEntries": 13,
+        "existingCompileOnlyInspectionPassed": true
+      },
+      "separateCompilerSeed": {
+        "cacheableCalls": 94,
+        "hits": 0,
+        "precompiledHeaderRefusals": 206,
+        "linkCalls": 5
+      },
+      "limits": [
+        "One local pair, not hosted complete-job or signed-release performance.",
+        "Selected native trees and APK entries matched; this is not whole-APK byte equality.",
+        "Compiler seed was copied explicitly and produced no hits. Attribute the improvement to native Gradle task reuse, not compiler hits.",
+        "No device/runtime acceptance or monthly savings claim follows from this pair."
+      ]
+    },
+    {
+      "id": "cross-pr-apk-reuse",
+      "observedOn": "2026-10-17",
+      "operation": "Hosted Debug compile job, trusted-main compatible APK restored by a PR reader",
+      "beforeCompleteCompileJobSeconds": 670,
+      "afterCompleteCompileJobSeconds": 352,
+      "reductionSeconds": 318,
+      "reductionPercent": 47.462687,
+      "initialMainPublisherSeconds": 912,
+      "previousNarrowPublisherSeconds": 417,
+      "incrementalPublisherSecondsForIllustration": 495,
+      "illustrativeReadersToRepayIncrementalWallWork": 2,
+      "freshConsumerRuntimeJobSeconds": 349,
+      "freshDeviceAssertionsPassed": 8,
+      "currentSourceKotlinValidationPassed": true,
+      "nativeAssemblySkipped": true,
+      "restoredKeyAndOriginalPackageProvenanceVerified": true,
+      "limits": [
+        "One before/after hosted reader pair; recipe, cache warmth and VM variability are not fully controlled.",
+        "Compile-job reduction excludes the separate runtime job and added main publication cost.",
+        "The two-reader example compares incremental job wall work under assumed comparable conditions, not billed money or critical-path latency.",
+        "Provider authorization settings were not independently verified by successful lookup and namespace separation.",
+        "Debug x86_64 evidence does not qualify signed ARM builds or monthly net savings."
+      ]
+    },
+    {
+      "id": "artifact-compression",
+      "observedOn": "2026-10-16",
+      "operation": "Observed ZIP containers from separate 124,108,800-byte required-handoff generations, stored versus compression level 1",
+      "storedZipBytes": 124109619,
+      "compressedZipBytes": 65433617,
+      "byteReductionPercent": 47.277562,
+      "reportedStoredUploadStepSeconds": 6,
+      "reportedCompressedUploadStepSeconds": 6,
+      "limits": [
+        "Both source TARs were 124,108,800 bytes, but their digests differed; this was not an identical-payload compression control.",
+        "These are ZIP container sizes, not the original uncompressed TAR size or a later package generation.",
+        "Equal rounded upload step duration does not prove equal precise transfer time.",
+        "The byte reduction is not a measured time reduction or bandwidth-cost saving."
+      ]
+    },
+    {
+      "id": "check-work-selection",
+      "observedOn": "2026-10-13",
+      "operation": "Observed Check runs after reducing repeated and selected work",
+      "beforeSummedAllocatedJobSeconds": 3068,
+      "afterSummedAllocatedJobSeconds": 1464,
+      "summedAllocationReductionPercent": 52.281617,
+      "beforeElapsedRunSeconds": 896,
+      "afterElapsedRunSeconds": 616,
+      "elapsedReductionPercent": 31.25,
+      "limits": [
+        "Summed job duration and elapsed run critical path are different quantities.",
+        "Moving browser coverage to main changes detection timing and pre-merge coverage; it is not proof of identical pre-merge correctness.",
+        "These observations are not a controlled fixed-source trial or monthly spend estimate."
+      ]
+    },
+    {
+      "id": "ios-standard-qa-reuse",
+      "observedOn": "2026-10-15",
+      "operation": "Observed Linux standard QA controller job for RunCloud: fresh run versus accepted compatible result reuse",
+      "freshCompleteJobSeconds": 1186,
+      "reuseCompleteJobSeconds": 132,
+      "reuseStartedNewXcodeBuild": false,
+      "limits": [
+        "An exact compatible accepted result with an age bound was reused; QA itself was not made faster.",
+        "This does not qualify full automated Contacts XCTest, dense contacts, another appearance or carrier audio.",
+        "Different observed runs and recipes; not an additive speedup with other iOS preparation or compiler experiments."
+      ]
+    }
+  ],
+  "serviceAcceptanceBoundary": {
+    "retainedServiceCanariesAndRecoveryAccepted": true,
+    "consumerOnlyRerunAcceptanceEstablishedAtSnapshot": false,
+    "existingGithubArtifactPathRemainsRequired": true,
+    "publicContract": "https://github.com/ziahamza/layercache/blob/ab3b63b2b189a557303202ddaec035d247379e0f/docs/retained-artifacts.md",
+    "actualApplicationOidcProducerConsumerAcceptanceEstablishedAtSnapshot": false
+  }
+}
