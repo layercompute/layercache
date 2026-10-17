@@ -147,7 +147,7 @@
       "afterElapsedRunSeconds": 616,
       "elapsedReductionPercent": 31.25,
       "limits": [
-        "Summed job duration and elapsed run critical path are different quantities.",
+        "Summed job duration and run elapsed time are different quantities; these elapsed intervals run from creation to last-job completion and include queueing.",
         "Baseline included WebKit and browser-auth; comparison omitted WebKit and skipped browser-auth. This changes pre-merge coverage and detection timing, not just execution speed.",
         "These observations are not a controlled fixed-source trial or monthly spend estimate."
       ],
