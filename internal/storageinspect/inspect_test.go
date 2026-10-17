@@ -155,6 +155,52 @@ func TestInspectionCategoriesAreDisjointPathHints(t *testing.T) {
 	}
 }
 
+func TestInspectionCategoriesIgnoreAncestorsOutsideTheSelectedRoot(t *testing.T) {
+	for _, ancestor := range []string{"build", "node_modules", "avd", "device.avd"} {
+		t.Run(ancestor, func(t *testing.T) {
+			root := filepath.Join(directory(t), ancestor, "widget")
+			write(t, filepath.Join(root, "src", "main.go"), "source")
+			write(t, filepath.Join(root, "build", "output"), "build output")
+			report, err := storageinspect.Inspect(context.Background(), []string{root})
+			if err != nil || report.Incomplete {
+				t.Fatalf("Inspect = %+v, %v", report, err)
+			}
+			files := make(map[string]uint64)
+			for _, category := range report.Categories {
+				files[category.Name] = category.Counts.Files
+			}
+			if !reflect.DeepEqual(files, map[string]uint64{"build-output": 1, "unclassified": 1}) {
+				t.Fatalf("ancestor %q contaminated categories: %v", ancestor, files)
+			}
+			withOverlap, err := storageinspect.Inspect(context.Background(), []string{filepath.Join(root, "build"), filepath.Join(root, "src"), root})
+			if err != nil || withOverlap.Incomplete || !reflect.DeepEqual(report.Totals, withOverlap.Totals) || !reflect.DeepEqual(report.Categories, withOverlap.Categories) {
+				t.Fatalf("overlap changed categories: single=%+v overlap=%+v err=%v", report, withOverlap, err)
+			}
+		})
+	}
+}
+
+func TestInspectionCategoriesRetainTheSelectedRootBasename(t *testing.T) {
+	for rootName, want := range map[string]string{
+		"node_modules": "dependencies", "avd": "emulator", "device.avd": "emulator",
+		"build": "build-output", ".cxx": "build-output", "DerivedData": "build-output",
+	} {
+		t.Run(rootName, func(t *testing.T) {
+			root := filepath.Join(directory(t), rootName)
+			child := filepath.Join(root, "package")
+			write(t, filepath.Join(child, "payload"), "payload")
+			report, err := storageinspect.Inspect(context.Background(), []string{root})
+			if err != nil || report.Incomplete || len(report.Categories) != 1 || report.Categories[0].Name != want || report.Categories[0].Counts.Files != 1 {
+				t.Fatalf("selected %q = %+v, %v; want %q", rootName, report, err, want)
+			}
+			withOverlap, err := storageinspect.Inspect(context.Background(), []string{child, root})
+			if err != nil || withOverlap.Incomplete || !reflect.DeepEqual(report.Totals, withOverlap.Totals) || !reflect.DeepEqual(report.Categories, withOverlap.Categories) {
+				t.Fatalf("selected category root changed with overlap: single=%+v overlap=%+v err=%v", report, withOverlap, err)
+			}
+		})
+	}
+}
+
 func TestInspectionRejectsImplicitRootsAndHonorsCancellation(t *testing.T) {
 	for _, paths := range [][]string{nil, {""}, {"relative"}, {directory(t), "relative"}} {
 		if _, err := storageinspect.Inspect(context.Background(), paths); err == nil {

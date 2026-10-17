@@ -1,5 +1,6 @@
 // Package storageinspect measures explicit local paths without managing their
-// contents. Categories are path hints, never evidence that data can be deleted.
+// contents. Categories use paths within each selected root, including the root
+// basename. They are hints, never evidence that data can be deleted.
 package storageinspect
 
 import (
@@ -80,7 +81,9 @@ type fileMetadata struct {
 // it skips nested mounts and counts inode aliases once across the entire report.
 // Explicitly requested mounted roots are inspected independently. Other
 // platforms report unavailable capabilities in Limitations and Incomplete.
-// Categories use the first encountered path of an inode, in lexical path order.
+// Categories use paths relative to the selected root, retaining its basename.
+// An inode's first encountered path in lexical root and walk order determines
+// its category. Ancestors outside the selected root do not affect categories.
 // The live scan is not an atomic filesystem snapshot. Entry errors return a
 // partial report with at most 32 issue details; invalid arguments, cancellation
 // and numeric overflow return an error as well as the partial report.
@@ -106,14 +109,21 @@ func Inspect(ctx context.Context, paths []string) (Report, error) {
 		}
 	}
 	sort.Strings(roots)
-	if !platformSupported {
-		report.Incomplete = true
-		report.Limitations = append(report.Limitations, "Filesystem capacity, allocated bytes, inode deduplication and nested mount detection are unsupported on this platform.")
-	}
 	mounts, err := mountPoints()
 	if err != nil {
 		report.issue("", "mount-table", err)
 		return report, fmt.Errorf("cannot inspect storage without a mount table: %w", err)
+	}
+	return inspectRoots(ctx, roots, mounts)
+}
+
+// inspectRoots consumes normalized, sorted roots and the mount metadata read
+// before traversal. Explicit roots remain eligible even when they are mounts.
+func inspectRoots(ctx context.Context, roots []string, mounts map[string]bool) (Report, error) {
+	report := Report{Roots: []Root{}, Categories: []Category{}, Issues: []Issue{}, Limitations: []string{}}
+	if !platformSupported {
+		report.Incomplete = true
+		report.Limitations = append(report.Limitations, "Filesystem capacity, allocated bytes, inode deduplication and nested mount detection are unsupported on this platform.")
 	}
 	seen := make(map[fileIdentity]string)
 	seenPaths := make(map[string]bool)
@@ -176,9 +186,12 @@ func Inspect(ctx context.Context, paths []string) (Report, error) {
 				return nil
 			}
 			meta := metadata(info)
-			if current != path && info.IsDir() && (mounts[current] || rootMetadata.known && meta.known && meta.identity.device != rootMetadata.identity.device) {
+			if current != path && (mounts[current] || rootMetadata.known && meta.known && meta.identity.device != rootMetadata.identity.device) {
 				report.SkippedMounts++
-				return fs.SkipDir
+				if info.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
 			}
 			previousPath, known := seen[meta.identity]
 			if meta.known && known || !meta.known && seenPaths[current] {
@@ -196,7 +209,7 @@ func Inspect(ctx context.Context, paths []string) (Report, error) {
 			} else {
 				seenPaths[current] = true
 			}
-			name := category(current, info)
+			name := category(path, current, info)
 			if categories[name] == nil {
 				categories[name] = &Counts{}
 			}
@@ -296,7 +309,12 @@ func addEntry(counts *Counts, info fs.FileInfo, meta fileMetadata) error {
 	return nil
 }
 
-func category(path string, info fs.FileInfo) string {
+func category(root, path string, info fs.FileInfo) string {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return "unclassified"
+	}
+	path = filepath.Join(filepath.Base(root), relative)
 	parts := strings.Split(filepath.ToSlash(path), "/")
 	for _, part := range parts {
 		if part == "node_modules" {

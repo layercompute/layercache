@@ -99,8 +99,12 @@ Traversal does not follow symlinks or descend into nested mounts; a mounted root
 must be selected explicitly. A symlink root is counted without visiting its
 target; a root reached through a symlink ancestor produces an incomplete report.
 Linux mount-table checks also identify nested bind mounts sharing a device
-number. Categories are path hints, never deletion
-authority. [Linux mount information](https://www.man7.org/linux/man-pages/man5/proc_pid_mountinfo.5.html)
+number, including mounted files. Explicitly selected mounted files remain
+inspectable. Categories use the path within its selected root and that root's
+basename; ancestors outside the root do not supply hints. An inode's first
+encountered path determines its category, with roots and entries visited in
+lexical order. Categories never confer deletion authority.
+[Linux mount information](https://www.man7.org/linux/man-pages/man5/proc_pid_mountinfo.5.html)
 
 A live scan is not an atomic snapshot. Disappearing or inaccessible entries,
 unsupported capabilities and other traversal failures remain visible as a
