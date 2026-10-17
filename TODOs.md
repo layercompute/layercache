@@ -157,6 +157,17 @@ hit counts alone.
   publication PR; these are documentation checks, not new application benchmarks.
   No application workflow, service or diagnostic dispatch is part of publication.
 
+- [ ] **Apply the confirmed case-study provenance correction.**
+  Owner: LayerCache documentation. Update the published guide and six-case
+  record from the corrected source handoff. Remove the unsupported original
+  stored-TAR digest comparison, label the ZIP statistic as a non-controlled
+  container-size difference and record producing-run UTC intervals. Make
+  changed browser coverage and zero fresh assertions in accepted iOS QA reuse
+  explicit. Completion target: reviewed immutable source with arithmetic,
+  interval, link and privacy checks, plus the normal documentation PR. Keep
+  GitHub artifacts required; this correction adds no application benchmark,
+  workflow/service change or diagnostic dispatch.
+
 - [ ] **Complete representative native step-overlap qualification.**
   Owner: application CI owners. The first hosted two-vCPU execution overlaps
   both complete tooling command families and joins them before workspace tasks.
