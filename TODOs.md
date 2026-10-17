@@ -12,9 +12,9 @@ outputs, bounded native stores and run-owned generated data. Measure net benefit
 before adding another integration. Transparent sharing of arbitrary mutable
 workspaces and filesystem migration are outside the current product scope.
 
-## P0: reliable Phone reuse
+## P0: reliable compute and storage reuse
 
-- [ ] **Expose an honest local storage inventory.**
+- [x] **Expose an honest local storage inventory.**
   Owner: LayerCache. User outcome: identify the owners of disk growth before
   collecting another cache or deleting useful work. Add account-free
   `storage inspect` for explicit paths, with allocated and apparent bytes,
@@ -24,6 +24,16 @@ workspaces and filesystem migration are outside the current product scope.
   report incomplete live scans. Qualify overlap, links, cancellation and platform
   limits through the CLI. This first slice measures storage; it neither deduplicates
   existing files nor establishes reclaimable bytes.
+  [Reviewed source](https://github.com/ziahamza/layercache/commit/3e9e138) passes
+  complete CLI/module tests, focused race tests, vet and local lint; independent
+  Standards/Spec reviews have zero findings. The
+  [built CLI fixture](docs/evidence/storage-inspect-20261017.json) confirms
+  cross-root hardlink and overlap accounting, sparse allocation, preserved bytes
+  and metadata, unvisited symlinks and partial JSON with nonzero exit. A live
+  explicit-root scan matches an independent native `du` allocation total. Darwin
+  arm64 and Windows amd64 module compilation passed; target tests were not
+  executed. Hosted checks and landing remain in the implementation PR; this
+  records source qualification, not a released CLI or reclaimed storage.
 
 - [ ] **Prevent repeated local outputs and abandoned build-slot growth.**
   Owner: LayerCache, coordinated with application execution owners. User outcome:
