@@ -140,7 +140,14 @@ func TestPersonalCacheOIDCRequiresOwnerAndPreservesPRReaderPolicy(t *testing.T) 
 		}}})
 	}))
 	defer issuer.Close()
-	q.p.cfg.ProjectTemplate.GitHubOIDCIssuer = issuer.URL
+	q.cfg.ProjectTemplate.GitHubOIDCIssuer = issuer.URL
+	if err := q.p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	q.p, err = New(context.Background(), q.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	alice := q.login("alice")
 	response := q.request("POST", "/api/teams", `{"kind":"personal"}`, alice, nil)
 	requireStatus(t, response, 201)

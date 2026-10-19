@@ -35,6 +35,10 @@ func (server *Server) readCacheQuota(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) changeCacheQuota(w http.ResponseWriter, r *http.Request) {
+	if server.projectAuthority != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "managed project quotas are controlled by the operator storage plan"})
+		return
+	}
 	var body struct {
 		MaxBytes int64 `json:"maxBytes"`
 	}

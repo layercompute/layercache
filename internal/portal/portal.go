@@ -38,18 +38,22 @@ import (
 var assets embed.FS
 
 type Config struct {
-	Origin             string
-	DataDir            string
-	PostgresURL        string
-	GitHubClientID     string
-	GitHubClientSecret string
-	SessionKey         []byte
-	GitHubAPIURL       string
-	GitHubAuthorizeURL string
-	GitHubTokenURL     string
-	TeamCreatorIDs     []string
-	ProjectTemplate    config.Config
-	StoragePool        server.StoragePoolConfig
+	Origin                  string
+	DataDir                 string
+	PostgresURL             string
+	GitHubClientID          string
+	GitHubClientSecret      string
+	SessionKey              []byte
+	GitHubAPIURL            string
+	GitHubAuthorizeURL      string
+	GitHubTokenURL          string
+	TeamCreatorIDs          []string
+	ProjectTemplate         config.Config
+	StoragePool             server.StoragePoolConfig
+	HostedStoragePools      map[string]config.Config
+	StoragePlans            map[string]StoragePlan
+	DefaultStoragePlan      string
+	TeamCreatorStoragePlans map[string]string
 }
 type Portal struct {
 	cfg       Config
@@ -119,6 +123,10 @@ func New(ctx context.Context, cfg Config) (*Portal, error) {
 			return nil, err
 		}
 	}
+	storage, err := newStoragePolicy(cfg)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
 		return nil, errors.New("create cloud data directory")
 	}
@@ -141,6 +149,10 @@ func New(ctx context.Context, cfg Config) (*Portal, error) {
 	store, err := OpenStore(ctx, cfg.PostgresURL, filepath.Join(cfg.DataDir, "portal.db"))
 	if err != nil {
 		return nil, err
+	}
+	if err := store.configureStorage(ctx, storage); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("restore managed storage assignments: %w", err)
 	}
 	origin, _ := url.Parse(cfg.Origin)
 	creators := make(map[string]struct{}, len(cfg.TeamCreatorIDs))
@@ -173,7 +185,10 @@ func New(ctx context.Context, cfg Config) (*Portal, error) {
 }
 func (p *Portal) Close() error { return errors.Join(p.gateway.Close(), p.store.Close()) }
 func (p *Portal) ensureProject(ctx context.Context, project Project) error {
-	cfg := p.cfg.ProjectTemplate
+	cfg, err := p.store.projectTemplate(ctx, project)
+	if err != nil {
+		return err
+	}
 	cfg.Role, cfg.ProjectID, cfg.LocalToken = "team", project.ID, project.Secret
 	cfg.DataDir = filepath.Join(p.cfg.DataDir, "projects", project.ID)
 	cfg.ActionsRepository, cfg.ActionsDefaultRef, cfg.ActionsRef = project.Repository, project.DefaultRef, project.DefaultRef

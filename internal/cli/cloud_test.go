@@ -158,6 +158,78 @@ func TestCloudConfigRequiresProtectedSecretsAndExplicitQuota(t *testing.T) {
 	}
 }
 
+func TestCloudConfigLoadsOnlyProtectedHostedStorageTemplates(t *testing.T) {
+	root := t.TempDir()
+	legacy, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(root, "legacy.json")
+	if err := config.Save(legacyPath, legacy); err != nil {
+		t.Fatal(err)
+	}
+	pool := legacy
+	pool.Role, pool.ProjectID = "team", "hosted-template"
+	pool.CloudPostgresURL = "postgres://fixture:fixture-password@127.0.0.1/cache?search_path=public&sslmode=disable"
+	pool.CloudS3Endpoint, pool.CloudS3Bucket, pool.CloudS3Region = "https://example.r2.cloudflarestorage.com", "fixture-cache", "auto"
+	pool.CloudS3AccessKey, pool.CloudS3SecretKey = "fixture-key", "fixture-secret"
+	poolPath := filepath.Join(root, "r2.json")
+	if err := config.Save(poolPath, pool); err != nil {
+		t.Fatal(err)
+	}
+	secret, key, path := filepath.Join(root, "oauth"), filepath.Join(root, "key"), filepath.Join(root, "cloud.json")
+	if err := os.WriteFile(secret, []byte("fixture-oauth"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, bytes.Repeat([]byte{42}, 32), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file := cloudFile{
+		Listen: "127.0.0.1:8080", Origin: "https://cloud.example", DataDir: filepath.Join(root, "data"),
+		GitHubClientID: "client", TeamCreatorIDs: []string{"123"}, GitHubClientSecretFile: secret, SessionKeyFile: key,
+		ProjectTemplateFile: legacyPath, StoragePool: server.StoragePoolConfig{Path: root, MaxBytes: 1 << 30},
+		HostedStoragePools: map[string]hostedStoragePoolFile{"r2-primary": {ProjectTemplateFile: poolPath}},
+		StoragePlans:       map[string]portal.StoragePlan{"beta": {PoolID: "r2-primary", ProjectMaxBytes: 1024, TeamMaxBytes: 2048, MaxProjects: 2}},
+		DefaultStoragePlan: "beta", TeamCreatorStoragePlans: map[string]string{"123": "beta"},
+	}
+	save := func() {
+		data, err := json.Marshal(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	_, loaded, err := loadCloud(path)
+	if err != nil || loaded.DefaultStoragePlan != "beta" || loaded.HostedStoragePools["r2-primary"].CloudS3Region != "auto" || loaded.TeamCreatorStoragePlans["123"] != "beta" {
+		t.Fatalf("hosted operator policy not loaded: %v", err)
+	}
+	for _, mode := range []os.FileMode{0644, 0660} {
+		if err := os.Chmod(poolPath, mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := loadCloud(path); err == nil {
+			t.Fatal("accepted a publicly readable hosted template")
+		}
+	}
+	if err := os.Chmod(poolPath, 0600); err != nil {
+		t.Fatal(err)
+	}
+	file.HostedStoragePools["r2-primary"] = hostedStoragePoolFile{ProjectTemplateFile: "relative.json"}
+	save()
+	if _, _, err := loadCloud(path); err == nil {
+		t.Fatal("accepted a relative hosted template path")
+	}
+	file.HostedStoragePools["r2-primary"] = hostedStoragePoolFile{ProjectTemplateFile: poolPath}
+	file.DefaultStoragePlan = "missing"
+	save()
+	if _, _, err := loadCloud(path); err == nil || strings.Contains(err.Error(), "fixture-password") || strings.Contains(err.Error(), "fixture-secret") {
+		t.Fatal("invalid storage policy was accepted or disclosed a secret")
+	}
+}
+
 func TestCloudGETNeverForwardsGitHubCredentialAcrossRedirect(t *testing.T) {
 	reached := false
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached = true; w.WriteHeader(200) }))
