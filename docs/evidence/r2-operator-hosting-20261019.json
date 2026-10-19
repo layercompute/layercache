@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "r2-operator-hosting-v1",
+  "checkedAt": "2026-10-19T21:50:16.010702528Z",
+  "publicOrigin": "https://r2-cache.services.ziahamza.com",
+  "runtime": {
+    "sourceRevision": "08d3df8cdff7ce859378109226c13a629ef52296",
+    "reviewedMainRevision": "d4e53ea8414126e2d9ee2017da90a68abab44212",
+    "coreSourcePathsIdentical": true,
+    "imageId": "sha256:7060f6d5d15da72cc665c4b5367903720433067b4b4c742a92005dec3cbceef1",
+    "postgresImage": "postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171",
+    "apiAndPostgresOnExistingCloudHost": true,
+    "artifactBytesInPrivateR2": true
+  },
+  "resources": {
+    "privateProjects": 2,
+    "privateStoragePools": 2,
+    "projectQuotaBytes": 5368709120,
+    "projectSoftBytes": 1073741824,
+    "localFilesystemCeilingBytes": 12884901888,
+    "localReserveBytes": 5368709120,
+    "hostReserveBytes": 8589934592,
+    "retainedArtifactsEnabled": false
+  },
+  "qualification": {
+    "protocols": [
+      "turbo",
+      "gradle",
+      "nx"
+    ],
+    "opaquePayloadSizes": [
+      4096,
+      8388608
+    ],
+    "sameCanaryPlanAcrossPhases": true,
+    "privateHelperSourceSHA256": "23bd4d3fffaa4d0dfb3b236a0c022b4f00404aa960e7b992ad2db1da67559bc1",
+    "privateHelperBinarySHA256": "d11746f58d9202f6a418eae7db9343c81ff3131eafab6e4c982462bbbf7929eb",
+    "phases": [
+      {
+        "phase": "loopback-initial",
+        "checkedAt": "2026-10-19T21:46:45.308990169Z",
+        "receiptSHA256": "6e26a96644e0e8c91410c305f3f8e6cab4a612d41a3a74ab802e7da2b690cce8",
+        "realGitHubIdentityExchanges": 2,
+        "nativePUTAttempts": 18,
+        "acknowledgedPublications": 12,
+        "deniedReadOnlyPublications": 6,
+        "completeVerifiedReads": 12,
+        "observations": 74
+      },
+      {
+        "phase": "after-api-restart",
+        "checkedAt": "2026-10-19T21:47:17.589944541Z",
+        "receiptSHA256": "676e9b58e0e71e6ae4ce8e838b077a468ca7d44f3d308179e289dd6956b7bdec",
+        "realGitHubIdentityExchanges": 2,
+        "nativePUTAttempts": 0,
+        "acknowledgedPublications": 0,
+        "deniedReadOnlyPublications": 0,
+        "completeVerifiedReads": 12,
+        "observations": 44
+      },
+      {
+        "phase": "after-postgres-restart",
+        "checkedAt": "2026-10-19T21:48:14.045000531Z",
+        "receiptSHA256": "2ef6d28361b979557c1d325e8f7a2afb30568ef201874b73e44838352ed45939",
+        "realGitHubIdentityExchanges": 2,
+        "nativePUTAttempts": 0,
+        "acknowledgedPublications": 0,
+        "deniedReadOnlyPublications": 0,
+        "completeVerifiedReads": 12,
+        "observations": 44
+      },
+      {
+        "phase": "public-tls-restore",
+        "checkedAt": "2026-10-19T21:50:16.010702528Z",
+        "receiptSHA256": "fd4b68f3d6733d9df35cf1cd4be419a18e856b3dbea0df0fc3cd42bbc8b46a3e",
+        "realGitHubIdentityExchanges": 2,
+        "nativePUTAttempts": 0,
+        "acknowledgedPublications": 0,
+        "deniedReadOnlyPublications": 0,
+        "completeVerifiedReads": 12,
+        "observations": 44
+      }
+    ],
+    "trustedTLSHealth": 200,
+    "anonymousForeignProjectAndProfileDenials": true,
+    "restorePhasesNativePUTs": 0
+  },
+  "preservation": {
+    "existingServiceConfigurationsUnchanged": 21,
+    "onlyReviewedPlatformIncludeAdded": true,
+    "operatorCanReadCompleteModel": true,
+    "priorIngressFilesMatchedActiveConfiguration": true,
+    "existingIngressRoutesUnchanged": true
+  },
+  "limits": [
+    "Synthetic opaque HTTP protocol canaries, not real native build-client archives or application CI savings.",
+    "All deployed canaries originated on the service host; a fresh external machine or GitHub runner is a separate acceptance gate.",
+    "Writers use real human GitHub exchange; read-only consumers are operator-minted with production signing code. Live GitHub Actions OIDC was not exercised.",
+    "API and SQL remain on the existing host. This does not establish high availability, offsite database recovery or moving all compute off that host.",
+    "Named managed plans are source-qualified; this operator endpoint uses explicit project configuration. Signup, billing and plan migration are not activated.",
+    "Existing cache namespaces and application endpoints were not migrated. Required application handoffs stay on GitHub artifacts."
+  ]
+}
