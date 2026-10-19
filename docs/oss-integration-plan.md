@@ -120,8 +120,8 @@ installed Nx Cloud/storage plugins can take precedence over this HTTP client.
 A disposable compiled-client probe verified 200 restore/log replay, 404 miss,
 409 immutability, 403 read-only writes, rejected unauthorized/outage responses,
 concurrent first-writer behavior and a miss after deletion. This exercised a
-loopback fixture server, not LayerCache or application performance. Temporary
-evidence is `/tmp/layercache-nx-contract-lkd1fnhi/evidence.json`.
+loopback fixture server, not LayerCache or application performance. The temporary
+fixture evidence is not a public or durable reproduction dependency.
 
 The adapter in #31 adds scoped GET/PUT handling over the bounded artifact
 store, immutable first-writer behavior, native status/error mapping and private

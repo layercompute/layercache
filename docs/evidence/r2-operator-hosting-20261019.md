@@ -2,8 +2,9 @@
 
 The operator endpoint is live at `https://r2-cache.services.ziahamza.com`.
 Acceptance completed October 19, 2026 at 21:50 UTC. The
-[sanitized receipt](r2-operator-hosting-20261019.json) records exact runtime pins,
-resource bounds and four acceptance phases.
+[public summary](r2-operator-hosting-20261019.json) records source pins, resource
+bounds and four acceptance phases. Private helper, local image and individual
+receipt fingerprints stay in protected operator evidence.
 
 Two explicitly provisioned private projects use separate R2 buckets, database
 roles, databases and signing identities. Each has a 5 GiB committed quota and
@@ -16,8 +17,8 @@ Runtime source `08d3df8cdff7ce859378109226c13a629ef52296` is byte-identical in
 `cmd`, `internal`, `Dockerfile`, `go.mod` and `go.sum` to reviewed main
 `d4e53ea8414126e2d9ee2017da90a68abab44212`, merged in
 [PR #61](https://github.com/ziahamza/layercache/pull/61) with all fifteen checks
-green. The deployed image ID is recorded in the receipt. The independently
-reviewed [host configuration](https://github.com/ziahamza/config/pull/29) keeps
+green. The deployed image ID is recorded in protected operator evidence. The
+independently reviewed [host configuration](https://github.com/ziahamza/config/pull/29) keeps
 the API, database, mount and ingress lifecycle explicit.
 
 Real human GitHub authentication succeeded for both projects in every phase.
