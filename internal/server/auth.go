@@ -140,7 +140,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 		http.NotFound(writer, request)
 		return
 	}
-	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit" && input.Integration != "nx" && input.Integration != "gradle" && input.Integration != "retained") ||
+	if (input.Integration != "actions" && input.Integration != "turbo" && input.Integration != "buildkit" && input.Integration != "nx" && input.Integration != "gradle" && input.Integration != "bazel" && input.Integration != "retained") ||
 		input.TTLSeconds < 0 || input.TTLSeconds > 3600 ||
 		(input.Integration != "retained" && (input.Mode != "" || input.GitHubToken != "")) ||
 		(input.Integration == "actions" && input.TTLSeconds != 0) ||
@@ -222,7 +222,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	// archives. A PR must not poison main's cache, including pull_request_target
 	// tokens whose ref is main. Missing/unknown event claims fail closed to reads.
 	trustedEvent := identity.EventName == "push" || identity.EventName == "workflow_dispatch" || identity.EventName == "schedule"
-	if (input.Integration == "buildkit" || input.Integration == "turbo" || input.Integration == "nx" || input.Integration == "gradle") &&
+	if (input.Integration == "buildkit" || input.Integration == "turbo" || input.Integration == "nx" || input.Integration == "gradle" || input.Integration == "bazel") &&
 		(identity.Ref != server.config.ActionsDefaultRef || !trustedEvent) {
 		capabilities = []access.Capability{access.CapabilityRead}
 	}

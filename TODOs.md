@@ -5,7 +5,8 @@ mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
 
-The next milestone is reliable Phone handoffs and fewer repeated executions or
+The next milestone is hosted private cache sharing with R2-backed persistent
+storage, alongside reliable Phone handoffs and fewer repeated executions or
 copies across local machines and CI. Build a general compute and storage product
 through established build/test/model clients. Prioritize expensive immutable
 outputs, bounded native stores and run-owned generated data. Measure net benefit
@@ -13,6 +14,26 @@ before adding another integration. Transparent sharing of arbitrary mutable
 workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
+
+- [ ] **Launch hosted private caches with R2-backed storage pools.**
+  Owner: LayerCache cloud/storage. The October 19 user priority is a usable
+  hosted service so teams can accumulate compatible results and restore them
+  quickly across local machines and CI. Reuse the existing PostgreSQL metadata,
+  S3-compatible byte store, project gateway and access model. Default managed
+  storage to Cloudflare R2; keep storage placement separate from Personal/Team
+  visibility and trusted-publisher Public access. Bind projects explicitly to
+  persistent storage pools and enforce plan capacity/admission independently
+  of Local Cache size. Separate operator-provisioned beta access from public
+  signup, paid entitlement/billing and launched self-serve claims.
+  First inspect existing pool/provisioning support and actual deployed state;
+  prepare an isolated, reviewable candidate before changing operator services.
+  Acceptance: authenticated producer and independent read-only consumer, exact
+  native bytes after gateway restart, project/owner isolation and revocation,
+  enforced pool/project quotas, supported retention/eviction, upgrade/rollback,
+  and real request/metadata/byte-transfer timings. Qualify direct transfers or
+  nearby read-through only through existing integrity and authority contracts.
+  Unknown publication must reconcile without duplicate work. GitHub artifacts
+  remain required until application retained-handoff acceptance passes.
 
 - [x] **Expose an honest local storage inventory.**
   Owner: LayerCache. User outcome: identify the owners of disk growth before
@@ -548,25 +569,46 @@ workspaces and filesystem migration are outside the current product scope.
   cache remains outside LayerCache's byte budget until its lifecycle is bounded.
   Public Nx stays disabled until separately qualified.
 
+- [ ] **Support native Bazel caching through an isolated OSS engine.**
+  Owner: LayerCache. User outcome: share native Bazel build/test results across
+  local machines and authorized CI without duplicating Bazel's build graph or
+  requiring non-Bazel applications to migrate. The October 19 user decision
+  advances this integration into P1; required retained handoffs remain P0.
+  First slice in progress: an opt-in native HTTP endpoint backed by a dedicated
+  pinned `bazel-remote` executable. Bind its project and compatibility explicitly,
+  preserve current membership and server-enforced read-only authority, and reject
+  Public access. Use a separate bounded engine volume; LayerCache's artifact
+  quota does not cap sidecar bytes. Instance labels alone do not isolate CAS.
+  See the [Bazel comparison](docs/research/bazel-and-layercache-20261019.md).
+  Acceptance: real native producer and independent empty read-only consumer,
+  exact outputs, changed-input/profile misses, failed-test reruns, revoked and
+  foreign-project denial, incomplete-CAS fallback, quota/eviction and restart
+  behavior. Record whole-command time and allocated storage including setup and
+  transfers. Distinguish source qualification from installation, deployment and
+  application adoption. Local forwarding, gRPC, remote execution and trusted
+  Public publication need separate qualification. Follow the
+  [OSS plan](docs/oss-integration-plan.md).
+
+- [ ] **Qualify Swift compilation replay through Xcode 26's native cache seam.**
+  Owner: LayerCache native integration. Existing Clang/C-family replay and graph
+  retention are qualified; the mixed-language fixture does not establish Swift
+  source compilation hits. Audit the actual Apple plugin/socket integration and
+  native Swift action identity before choosing an implementation. Reuse the
+  toolchain's provided plugin and upstream protocol where available. Acceptance:
+  clean producer and independent consumer with fresh DerivedData/native CAS,
+  attributable Swift compilation replay, exact executable, changed-source and
+  incompatible-toolchain misses, bounded graph retention and truthful counters.
+  Preserve application compiler compatibility; do not enable unsupported flags
+  merely to obtain hits. SwiftPM support, native network transport and full
+  application/signed-release economics remain separate targets.
+
 ## P2: broaden after measured value
 
-- [ ] **Qualify an isolated pinned bazel-remote sidecar, then sccache.**
-  Owner: LayerCache. User outcome: share native Bazel build/test results across
-  local machines and CI without duplicating Bazel's build graph or requiring
-  existing non-Bazel projects to migrate. Research the overlap, Apple migration
-  costs and service boundary in the [Bazel comparison](docs/research/bazel-and-layercache-20261019.md).
-  Bazel support remains unimplemented; research establishes no performance
-  advantage or application qualification. Next: select a real personal workload
-  already using Bazel and pin the engine.
-  Preserve per-project/profile isolation;
-  an instance-name label alone is not an access boundary. Reuse permissively
-  licensed engines and native clients. Follow [the OSS plan](docs/oss-integration-plan.md).
-  Acceptance: real native client producer/empty consumer, changed-input and
-  toolchain misses, server-enforced read-only access, revoked/foreign-project
-  denial, incomplete-CAS misses, quota/eviction and restart behavior, plus
-  whole-command time and total allocated storage after setup/transfer costs.
-  A Bazel cache backend is separate from remote execution, retained handoffs
-  and any application's build-system migration.
+- [ ] **Qualify sccache when a measured workload justifies it.**
+  Owner: LayerCache. Reuse its native compiler identity and permissively licensed
+  engine. Preserve bounded storage, private authority and honest whole-command
+  evidence; keep unsupported compiler/toolchain cases explicit.
+
 - [x] **Qualify the existing operator gateway upgrade.**
   Owner: LayerCache/operator. Exact source `53ec27443a406a508b7e8faeab3f46292e0ba07b`
   passed the 91-check hardened image rehearsal, then 170 checks against a full

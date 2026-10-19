@@ -88,6 +88,20 @@ jobs:
           path: ${{ runner.temp }}/gradle-native-evidence.json
           if-no-files-found: warn
           retention-days: 30
+      - name: Gate the native Bazel HTTP protocol on Linux
+        if: (steps.scope.outputs.mode != 'docs') && (runner.os == 'Linux')
+        env:
+          LAYERCACHE_BIN: ${{ runner.temp }}/layercache-native-test
+          BAZEL_QA_EVIDENCE: ${{ runner.temp }}/bazel-native-evidence.json
+        run: node qa/bazel-native/run.mjs
+      - name: Preserve sanitized Bazel evidence
+        if: (steps.scope.outputs.mode != 'docs') && (always() && runner.os == 'Linux')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bazel-native-evidence-linux
+          path: ${{ runner.temp }}/bazel-native-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
       - name: Verify shipped JavaScript matches TypeScript
         if: steps.scope.outputs.mode != 'docs'
         run: git diff --exit-code -- native/dist action/native/dist internal/dashboard/assets/app.js internal/portal/assets/app.js

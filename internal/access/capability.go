@@ -120,7 +120,7 @@ func normalizeClaims(claims Claims, now time.Time) (Claims, error) {
 	if claims.Subject == "" || claims.Project == "" || claims.ExpiresAt.IsZero() || !claims.ExpiresAt.After(now) {
 		return Claims{}, ErrInvalidToken
 	}
-	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" && claims.Integration != "retained" {
+	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" && claims.Integration != "bazel" && claims.Integration != "retained" {
 		return Claims{}, ErrInvalidToken
 	}
 	if claims.Integration == "retained" {

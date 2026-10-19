@@ -1,6 +1,6 @@
 # Native OSS integrations and three visibility tiers
 
-## Current implementation status, 2026-10-14
+## Current implementation status, 2026-10-19
 
 Owner-only Personal Cache projects merged in
 [#28](https://github.com/ziahamza/layercache/pull/28). Permanent Turbo conflict
@@ -24,9 +24,12 @@ not activate the hosted self-serve service.
 independently reusable test groups and exact LLM result replay now precede
 broader protocol adoption. Native Gradle's first hosted Android correctness
 gate now passes; qualify net benefit, retained handoffs and Local-to-private
-forwarding before adding protocols. An isolated pinned `bazel-remote` sidecar
-and sccache remain options when a real workload needs them. Keep native clients
-responsible for task hashing, execution and packing.
+forwarding remain outstanding. The user has prioritized native Bazel support;
+the first [HTTP integration](bazel-cache.md) uses an isolated pinned
+`bazel-remote` engine without requiring application migration. Source, deployed
+gateway and application qualification remain separate. sccache still needs a
+measured workload. Keep native clients responsible for task hashing, execution
+and packing.
 
 The protocol research below began at repository baseline
 `1d7ebdffafb81fa00e81721113264122bbb0aa65` on 2026-10-14. Its pinned-source
@@ -71,7 +74,10 @@ endpoints through the native client. Beta.5 installation and the existing gatewa
 rollout have [separate qualification](evidence/gateway-beta5-rollout-20261016.json);
 the [first hosted Android producer/full-reader gate](evidence/gradle-android-hosted-20261016.md)
 now passes with fresh runtime assertions. Net economic acceptance remains open.
-Bazel and sccache remain future work. Neither Nx nor Gradle
+The source adds opt-in private Bazel HTTP routing to a dedicated per-project/profile
+engine, with its own bounded volume. It is not in beta.5 or the existing gateway
+deployment. Bazel Local-to-private forwarding, gRPC, remote execution and Public
+publication remain unsupported. sccache remains future work. Neither Nx nor Gradle
 currently forwards Local writes or misses to a private endpoint; those bridges
 need their own durable publication and confirmation qualification.
 

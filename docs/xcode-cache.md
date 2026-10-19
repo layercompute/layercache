@@ -1,6 +1,6 @@
 # Xcode compilation cache adapter
 
-`layercache xcode run` serves LLVM's CAS and compilation action-index protocols on a private Unix socket for one Xcode build. It uses the existing verified artifact store with a project/toolchain namespace and bounded quota. Xcode's Clang, Objective-C, module and PCH requests can reuse objects from a previous build. Swift's native local CAS should be persisted alongside this store; this adapter does not provide a Swift CAS plugin dynamic library.
+`layercache xcode run` integrates with Xcode 26's native compilation cache. It enables Apple's bundled CAS plugin and serves LLVM's CAS and compilation action-index protocols on a private Unix socket for one Xcode build. The verified artifact store supplies project/toolchain namespaces and a bounded quota. Clang, Objective-C, module and PCH replay is qualified. External Swift compilation replay remains unqualified; the mixed-language fixture still compiles its Swift source on the warm consumer. Persisting Swift's local CAS is a separate reuse path and does not prove that external replay works. See the [support audit](research/xcode26-compilation-cache-20261019.md) for exact coverage and evidence.
 
 ```sh
 layercache xcode run \
@@ -50,7 +50,7 @@ Build the Darwin arm64 binary on Linux with `GOOS=darwin GOARCH=arm64 CGO_ENABLE
 
 ## Qualification
 
-[Hosted replay](https://github.com/ziahamza/layercache/actions/runs/38152661755/job/114510218849) built a mixed Swift/Objective-C command-line tool twice using fresh DerivedData. The native local CAS was deleted between invocations; only the closed Layer Cache store survived. The consumer recorded 69 of 71 action lookups as hits and replayed 70 CAS objects. This proves LLVM protocol compatibility on Xcode 26.6; it is not an app release speed benchmark.
+[Hosted replay and pressure qualification](https://github.com/ziahamza/layercache/actions/runs/39072238914/job/117512286300) passed on 2026-10-17 at source `90b07ca0e83117a638604bb7a7944ad89483ff3e`, using Xcode 26.6 build 17F113. The mixed Swift/Objective-C command-line tool builds with fresh DerivedData. The native local CAS is deleted between invocations; only the closed Layer Cache store survives. The warm consumer recorded 69 of 71 action lookups as hits and replayed 70 CAS objects. Its two Swift source compilation tasks still reported replay misses. This proves LLVM protocol compatibility; it is not complete Swift replay or an app release speed benchmark.
 
 The dedicated workflow cross-compiles on Linux and repeats this replay with real Xcode. Its Linux runner defaults to GitHub Ubuntu until the repository has Ubicloud installed and `LAYERCACHE_UBICLOUD_ENABLED=true`; reruns use Ubuntu for recovery. Go protocol tests additionally exercise immutable action collisions, project/toolchain misses, file/inline identity, a fresh store consumer and compiler failure/uncached retry behavior.
 
@@ -59,9 +59,9 @@ under a 1,024-byte quota. It proves the promised root and leaf remain readable,
 oversubscribed writes are rejected, and committed usage stays bounded. Store
 tests cover shared descendants, expiry without read renewal, atomic admission,
 interrupted queries, namespace caps, collector races and exclusive restart cleanup.
-These protocol proofs do not qualify real Xcode behavior under storage pressure.
-That remains the native acceptance gate in
-[#25](https://github.com/ziahamza/layercache/issues/25).
+These protocol proofs alone do not qualify real Xcode behavior under storage
+pressure. The hosted native pressure gate described below also passed in the
+2026-10-17 qualification. Application-scale adoption remains separate.
 
 The mandatory pressure phase uses a QA-only proxy in front of the candidate's
 Unix socket. It holds a real compiler action hit, writes unrelated CAS objects
@@ -87,10 +87,11 @@ pressure duration and query-to-first/last-promised-read time.
 
 The native-format protocol regression fails against the revision which only
 recognized `CASID`. A separate root-only retention fixture proves an evicted,
-unconsumed native descendant fails the post-pressure inspection. Hosted Apple
-results must pass before treating the
-native pressure gate as qualified. Full application restore timing, including
-detached action queries, still requires the application's own evidence.
+unconsumed native descendant fails the post-pressure inspection. The hosted
+pressure consumer fetched both promised external objects after forced eviction,
+with zero cache errors, fallback or retry and committed usage below quota.
+Full application restore timing, including detached action queries, still
+requires the application's own evidence.
 
 The vendored protocol and license are documented in [the protocol README](../internal/xcodecache/proto/README.md).
 

@@ -8,8 +8,9 @@ Bazel already supplies much of the build/test reuse that LayerCache wants to
 make accessible across local machines and CI. For a well-modeled Bazel project,
 LayerCache should preserve its native graph and offer a compatible backend.
 There is no evidence that LayerCache is a better build engine or a faster Bazel
-cache today. Bazel support remains unimplemented in the
-[current integration status](../oss-integration-plan.md#what-already-plugs-in).
+cache today. Bazel support was unimplemented at that baseline. The subsequent
+[native HTTP integration](../bazel-cache.md) records the first source slice;
+installation, application adoption and remote execution remain separate gates.
 
 ## What Bazel already caches
 
@@ -91,8 +92,10 @@ from adding a compatible cache backend.
 Our useful scope is a common compute and storage service across existing
 toolchains. Native clients still decide task identity and execution. Current
 integrations include Turbo, Nx, Gradle and local Xcode Clang CAS with closed-store
-CI snapshots. Our [Xcode adapter](../xcode-cache.md) supplies no Swift CAS plugin
-or shared native network endpoint. Bazel's Swift action caching uses a different
+CI snapshots. Our [Xcode adapter](../xcode-cache.md) has no qualified external
+Swift compilation replay or shared native network endpoint. Swift already loads
+Apple's bundled plugin; the [language-specific evidence](xcode26-compilation-cache-20261019.md)
+does not establish why its source tasks miss. Bazel's Swift action caching uses a different
 interface. Nx/Gradle Local-to-private forwarding is still missing. Self-serve
 hosted cloud is not launched. The [README](../../README.md) and
 [integration plan](../oss-integration-plan.md) distinguish delivered behavior
@@ -117,8 +120,11 @@ and cache visibility alone cannot establish differentiation.
 
 ## Recommended integration and acceptance
 
-Reuse the Apache-2.0 `bazel-remote` executable, initially pinned to
-`1605e32b5921d05e373407b98b3c021e40c277da`, behind an authorization gateway.
+Reuse the Apache-2.0 `bazel-remote` executable behind an authorization gateway.
+The research examined source `1605e32b5921d05e373407b98b3c021e40c277da`.
+The first [HTTP integration](../bazel-cache.md) instead pins the released 2.6.3
+executable, avoiding an import of the newer engine's Go 1.26 module into the
+Go 1.25 CLI.
 It already provides HTTP/gRPC caching, bounded LRU storage and compressed CAS.
 Its Go library APIs have no stability guarantee. CAS instance names are ignored;
 action-key mangling does not isolate CAS. Use authenticated project routing and

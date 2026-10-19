@@ -83,6 +83,7 @@ type Server struct {
 	cloudHealthy      bool
 	telemetry         *telemetry.Runtime
 	telemetryDegraded bool
+	bazelTransport    *http.Transport
 }
 
 func New(ctx context.Context, cfg config.Config) (*Server, error) {
@@ -103,6 +104,13 @@ type ProjectAuthority interface {
 }
 
 func NewWithProjectAuthority(ctx context.Context, cfg config.Config, authority ProjectAuthority) (*Server, error) {
+	if err := cfg.ValidateBazelRemote(); err != nil {
+		return nil, err
+	}
+	if cfg.BazelRemote != nil {
+		backend := *cfg.BazelRemote
+		cfg.BazelRemote = &backend
+	}
 	policy, err := retention.Normalize(cfg.EvictionPolicy)
 	if err != nil {
 		return nil, err
@@ -272,11 +280,21 @@ func NewWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 	if server.cloudStore != nil {
 		server.startCloudMaintenance()
 	}
+	if cfg.BazelRemote != nil {
+		server.bazelTransport = &http.Transport{
+			DisableCompression: true, MaxIdleConns: 16, MaxIdleConnsPerHost: 16,
+			MaxConnsPerHost: 16, IdleConnTimeout: 30 * time.Second,
+			ResponseHeaderTimeout: cfg.BazelRemote.RequestTimeout,
+		}
+	}
 	server.routes()
 	return server, nil
 }
 
 func (server *Server) Close() error {
+	if server.bazelTransport != nil {
+		server.bazelTransport.CloseIdleConnections()
+	}
 	server.closeUploadQueue()
 	server.stopCloudMaintenance()
 	var closeErrors []error
@@ -367,6 +385,7 @@ func (server *Server) routes() {
 	server.mux.Handle("/v8/artifacts/{hash}", server.requireToken(http.HandlerFunc(server.turboArtifact)))
 	server.mux.Handle("/v1/cache/{hash}", server.requireNxToken(http.HandlerFunc(server.nxArtifact)))
 	server.mux.Handle("/v1/gradle-cache/{hash}", server.requireGradleToken(http.HandlerFunc(server.gradleArtifact)))
+	server.mux.Handle(bazelCachePrefix, server.requireBazelToken(http.HandlerFunc(server.bazelArtifact)))
 	server.publicRoutes()
 	server.publicBuildRoutes()
 	if server.actionsHandler != nil {
