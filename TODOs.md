@@ -574,7 +574,7 @@ workspaces and filesystem migration are outside the current product scope.
   local machines and authorized CI without duplicating Bazel's build graph or
   requiring non-Bazel applications to migrate. The October 19 user decision
   advances this integration into P1; required retained handoffs remain P0.
-  First slice in progress: an opt-in native HTTP endpoint backed by a dedicated
+  First source slice: an opt-in native HTTP endpoint backed by a dedicated
   pinned `bazel-remote` executable. Bind its project and compatibility explicitly,
   preserve current membership and server-enforced read-only authority, and reject
   Public access. Use a separate bounded engine volume; LayerCache's artifact
@@ -588,6 +588,15 @@ workspaces and filesystem migration are outside the current product scope.
   application adoption. Local forwarding, gRPC, remote execution and trusted
   Public publication need separate qualification. Follow the
   [OSS plan](docs/oss-integration-plan.md).
+  [Source qualification](docs/evidence/bazel-native-private-20261019.json) passes
+  ten real Bazel 9.3.0 commands at `d3f9bda`, including empty/restart readers,
+  source/tool/environment misses, repeated failing tests and incomplete CAS.
+  A 1 GiB logical engine accepts 1,050 MiB of unique CAS writes under eviction;
+  read-only rebuild remains correct. This does not reach the 2 GiB hard fence
+  or establish an application speedup. The source passes the Go suite, focused
+  race tests, vet and independent Standards/Spec reviews. Hosted CI/landing,
+  published installation, cloud deployment, actual Bazel application adoption
+  and account/CLI credential-helper onboarding remain separate gates.
 
 - [ ] **Qualify Swift compilation replay through Xcode 26's native cache seam.**
   Owner: LayerCache native integration. Existing Clang/C-family replay and graph

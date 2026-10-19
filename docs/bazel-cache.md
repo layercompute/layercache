@@ -138,6 +138,26 @@ separate cold publication, empty read-only restore, restart, source/tool/env
 misses, failed tests and protocol controls. Fixtures establish correctness,
 not application-scale speed, Mac-minute or monthly cost savings.
 
+The [source receipt](evidence/bazel-native-private-20261019.json) passes all ten
+native commands at `d3f9bda1106b6461b22dde7f6fa052c3c307a190`. The producer
+acknowledges four native PUTs; empty and restarted readers each restore the
+exact output with one native remote hit, no local fixture action and zero PUTs.
+Missing CAS and changed source, environment or tool inputs rebuild. The failing
+test executes twice; its successful preparation action can still be reused.
+Read-only, foreign authority, revocation, wrong digest and partial-body controls
+remain separate from those native outcomes.
+
+The pressure phase accepts 1,050 unique 1 MiB CAS objects, evicts the earlier
+result and verifies correct read-only rebuild. Measured engine allocation is
+1,076,903,936 bytes including directory blocks, against its 1 GiB logical LRU
+target. The configured 2 GiB hard fence was not reached. Complete owned scratch
+stays below 1.5 GiB and is removed after stopping the fixture. These values do
+not cap other stores or the host filesystem. Normal Linux CI runs the core
+fixture; the pressure phase is an explicit opt-in qualification.
+
+The first interface is for operators and CI. Ordinary `layercache login` does
+not yet issue Bazel-scoped credentials or install a native credential helper.
+
 Outstanding product gates remain in [TODOs.md](../TODOs.md). A native Bazel
 cache backend does not qualify an application's migration from Xcode, Gradle
 or Turbo; see the [build-system comparison](research/bazel-and-layercache-20261019.md).

@@ -1,0 +1,532 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-19T21:07:36.635Z",
+  "qualification": "isolated-source-only",
+  "scope": "Linux amd64 real Bazel HTTP AC/CAS, dedicated loopback bazel-remote, private read/write capabilities",
+  "clients": {
+    "bazel": {
+      "version": "9.3.0",
+      "sha256": "d302d22ed77ee5658b87857249baa579db84300ecebe0a1e9a357b5b20f80eb8",
+      "url": "https://github.com/bazelbuild/bazel/releases/download/9.3.0/bazel-9.3.0-linux-x86_64"
+    },
+    "engine": {
+      "version": "2.6.3",
+      "source": "985cc081b1d5299e9d651ab01a605362f6bb170c",
+      "sha256": "65427624c288e29b17c7b0e189cf1d03ae1d8745354d9effc432f75c4361159a",
+      "url": "https://github.com/buchgr/bazel-remote/releases/download/v2.6.3/bazel-remote-2.6.3-linux-amd64"
+    }
+  },
+  "candidateBinarySha256": "12a955eb3244ca884540da69995a82438b5976119998fd4b3b6e0ca4b92d8a1d",
+  "sourceRevision": "d3f9bda1106b6461b22dde7f6fa052c3c307a190",
+  "sourceKind": "candidate-working-tree",
+  "sourceDigests": {
+    "internal/server/bazel.go": "6a7a23146b9799628a4b568b96e4098e3c971bb256d3f915bbc48482acbca10e",
+    "internal/config/config.go": "41f769c4174d97ab16024c6006c1be493f4b62afde5367fca62de7c8c97a8de1",
+    "qa/bazel-native/run.mjs": "0e4715bbbfd84ab66cb74c818f2ac1fd24a06df65e82b4309f13de2ff7e8eb9e",
+    "qa/fixtures/bazel-native/fixture.bzl": "5409d476de21eb4207e3a7c4d1eb8a2375198d5b6d73ab2ace0dd568cf902fee",
+    "qa/fixtures/bazel-native/tool.sh": "2ac6bed4d4fac68664117a67fd9cf2e79069fdc95e952bdf166a68874e05e584"
+  },
+  "stages": [
+    {
+      "name": "cold-writer",
+      "status": 0,
+      "commandMs": 12355.579267999998,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "internal",
+          "count": 1
+        },
+        {
+          "name": "local",
+          "count": 1,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 5,
+        "puts": 4,
+        "acPuts": 1,
+        "casPuts": 3,
+        "acHits": 0,
+        "casHits": 0,
+        "uploadBytes": 667,
+        "downloadBytes": 38,
+        "statuses": {
+          "200": 4,
+          "404": 1
+        },
+        "responseHeadersMs": 103.80662200000006,
+        "requestCompleteMs": 105.5233829999961
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "3ad651f4e9205faf8091390649ebe672adee5c7c898a1cc1a2971a54ebadd914",
+      "outputBytes": 40,
+      "scratchAllocatedBytes": 250482688
+    },
+    {
+      "name": "empty-reader",
+      "status": 0,
+      "commandMs": 8064.188144,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "remote cache hit",
+          "count": 1,
+          "execKind": "Remote"
+        },
+        {
+          "name": "internal",
+          "count": 1
+        }
+      ],
+      "http": {
+        "requests": 2,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 1,
+        "casHits": 1,
+        "uploadBytes": 0,
+        "downloadBytes": 365,
+        "statuses": {
+          "200": 2
+        },
+        "responseHeadersMs": 2.3897739999956684,
+        "requestCompleteMs": 2.737889999996696
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "3ad651f4e9205faf8091390649ebe672adee5c7c898a1cc1a2971a54ebadd914",
+      "outputBytes": 40,
+      "scratchAllocatedBytes": 250843136
+    },
+    {
+      "name": "restart-reader",
+      "status": 0,
+      "commandMs": 7867.875746999998,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "remote cache hit",
+          "count": 1,
+          "execKind": "Remote"
+        },
+        {
+          "name": "internal",
+          "count": 1
+        }
+      ],
+      "http": {
+        "requests": 2,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 1,
+        "casHits": 1,
+        "uploadBytes": 0,
+        "downloadBytes": 365,
+        "statuses": {
+          "200": 2
+        },
+        "responseHeadersMs": 3.573876000002201,
+        "requestCompleteMs": 3.931012000000919
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "3ad651f4e9205faf8091390649ebe672adee5c7c898a1cc1a2971a54ebadd914",
+      "outputBytes": 40,
+      "scratchAllocatedBytes": 251113472
+    },
+    {
+      "name": "missing-cas-reader",
+      "status": 0,
+      "commandMs": 7755.637490000001,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "internal",
+          "count": 1
+        },
+        {
+          "name": "local",
+          "count": 1,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 1,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 0,
+        "casHits": 0,
+        "uploadBytes": 0,
+        "downloadBytes": 38,
+        "statuses": {
+          "404": 1
+        },
+        "responseHeadersMs": 1.8542940000043018,
+        "requestCompleteMs": 1.995457000004535
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "3ad651f4e9205faf8091390649ebe672adee5c7c898a1cc1a2971a54ebadd914",
+      "outputBytes": 40,
+      "scratchAllocatedBytes": 251478016
+    },
+    {
+      "name": "changed-source",
+      "status": 0,
+      "commandMs": 8340.075510000002,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "internal",
+          "count": 1
+        },
+        {
+          "name": "local",
+          "count": 1,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 1,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 0,
+        "casHits": 0,
+        "uploadBytes": 0,
+        "downloadBytes": 38,
+        "statuses": {
+          "404": 1
+        },
+        "responseHeadersMs": 1.445216000000073,
+        "requestCompleteMs": 1.5895890000028885
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "4974066d2c1f89735a27024ae47f092461661ee285bcd3ef02ea94a74c4f56b9",
+      "outputBytes": 32,
+      "scratchAllocatedBytes": 251838464
+    },
+    {
+      "name": "changed-environment",
+      "status": 0,
+      "commandMs": 7782.103262999997,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "internal",
+          "count": 1
+        },
+        {
+          "name": "local",
+          "count": 1,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 1,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 0,
+        "casHits": 0,
+        "uploadBytes": 0,
+        "downloadBytes": 38,
+        "statuses": {
+          "404": 1
+        },
+        "responseHeadersMs": 1.3452740000066115,
+        "requestCompleteMs": 1.4764670000004116
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "a0ea347c13eed60f5b69c86d0fc73f078e5fa6ae57e039a5f5d5846b040cc0a5",
+      "outputBytes": 39,
+      "scratchAllocatedBytes": 252203008
+    },
+    {
+      "name": "changed-tool",
+      "status": 0,
+      "commandMs": 7865.888476000007,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "internal",
+          "count": 1
+        },
+        {
+          "name": "local",
+          "count": 1,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 1,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 0,
+        "casHits": 0,
+        "uploadBytes": 0,
+        "downloadBytes": 38,
+        "statuses": {
+          "404": 1
+        },
+        "responseHeadersMs": 1.3571549999905983,
+        "requestCompleteMs": 1.47941699999501
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "734bdf542d3ac397243a3b93dd499d9f8cc0826b2887bd6b53d382c902bc5e93",
+      "outputBytes": 40,
+      "scratchAllocatedBytes": 252559360
+    },
+    {
+      "name": "failed-test-first",
+      "status": 3,
+      "commandMs": 10496.224550999992,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 7
+        },
+        {
+          "name": "internal",
+          "count": 6
+        },
+        {
+          "name": "local",
+          "count": 2,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 6,
+        "puts": 4,
+        "acPuts": 1,
+        "casPuts": 3,
+        "acHits": 0,
+        "casHits": 0,
+        "uploadBytes": 2889,
+        "downloadBytes": 76,
+        "statuses": {
+          "200": 4,
+          "404": 2
+        },
+        "responseHeadersMs": 724.7985370000388,
+        "requestCompleteMs": 725.8221860000049
+      },
+      "emptyOutputRoot": true,
+      "nativeTestResults": [
+        {
+          "status": "FAILED",
+          "cachedLocally": false,
+          "cachedRemotely": false
+        }
+      ],
+      "scratchAllocatedBytes": 388632576
+    },
+    {
+      "name": "failed-test-second",
+      "status": 3,
+      "commandMs": 9600.233292999998,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 7
+        },
+        {
+          "name": "remote cache hit",
+          "count": 1,
+          "execKind": "Remote"
+        },
+        {
+          "name": "internal",
+          "count": 6
+        },
+        {
+          "name": "local",
+          "count": 1,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 3,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 1,
+        "casHits": 1,
+        "uploadBytes": 0,
+        "downloadBytes": 942,
+        "statuses": {
+          "200": 2,
+          "404": 1
+        },
+        "responseHeadersMs": 2.6458779999957187,
+        "requestCompleteMs": 3.0207339999906253
+      },
+      "emptyOutputRoot": true,
+      "nativeTestResults": [
+        {
+          "status": "FAILED",
+          "cachedLocally": false,
+          "cachedRemotely": false
+        }
+      ],
+      "scratchAllocatedBytes": 390287360
+    },
+    {
+      "name": "post-pressure-reader",
+      "status": 0,
+      "commandMs": 8234.195364,
+      "nativeRunners": [
+        {
+          "name": "total",
+          "count": 2
+        },
+        {
+          "name": "internal",
+          "count": 1
+        },
+        {
+          "name": "local",
+          "count": 1,
+          "execKind": "Local"
+        }
+      ],
+      "http": {
+        "requests": 1,
+        "puts": 0,
+        "acPuts": 0,
+        "casPuts": 0,
+        "acHits": 0,
+        "casHits": 0,
+        "uploadBytes": 0,
+        "downloadBytes": 38,
+        "statuses": {
+          "404": 1
+        },
+        "responseHeadersMs": 1.096559999990859,
+        "requestCompleteMs": 1.2638630000001285
+      },
+      "emptyOutputRoot": true,
+      "outputSha256": "3ad651f4e9205faf8091390649ebe672adee5c7c898a1cc1a2971a54ebadd914",
+      "outputBytes": 40,
+      "scratchAllocatedBytes": 1464365056
+    }
+  ],
+  "controls": [
+    {
+      "name": "read-only-put",
+      "status": 403
+    },
+    {
+      "name": "foreign-project",
+      "status": 401
+    },
+    {
+      "name": "foreign-profile",
+      "status": 401
+    },
+    {
+      "name": "foreign-integration",
+      "status": 401
+    },
+    {
+      "name": "wrong-digest-put",
+      "status": 500
+    },
+    {
+      "name": "wrong-digest-not-published",
+      "status": 404
+    },
+    {
+      "name": "oversize-put",
+      "status": 413
+    },
+    {
+      "name": "partial-put-not-published",
+      "status": 404
+    },
+    {
+      "name": "revoked-membership",
+      "status": 401
+    },
+    {
+      "name": "revoked-token",
+      "status": 401
+    }
+  ],
+  "pressure": {
+    "exercised": true,
+    "attemptedObjects": 1050,
+    "successfulBytes": 1101004800,
+    "statuses": {
+      "200": 1050
+    },
+    "commandMs": 18492.504325,
+    "allocatedBytes": 1076903936,
+    "nativeFallback": true
+  },
+  "controlHTTP": {
+    "requests": 1064,
+    "puts": 1054,
+    "acPuts": 0,
+    "casPuts": 1054,
+    "acHits": 1,
+    "casHits": 1,
+    "uploadBytes": 1102053428,
+    "downloadBytes": 650,
+    "statuses": {
+      "200": 1052,
+      "401": 5,
+      "403": 1,
+      "404": 3,
+      "413": 1,
+      "500": 1,
+      "502": 1
+    },
+    "responseHeadersMs": 14723.704803000044,
+    "requestCompleteMs": 14809.739960999766
+  },
+  "storage": {
+    "sidecarLogicalLimitBytes": 1073741824,
+    "sidecarHardLimitBytes": 2147483648,
+    "maximumBlobBytes": 1048576,
+    "sidecarAllocatedBytes": 1076903936,
+    "gatewayAllocatedBytes": 274432,
+    "scratchAllocatedBytes": 1464369152
+  },
+  "limits": [
+    "No application, Apple, remote execution, installed gateway, hosted CI or savings qualification.",
+    "HTTP request timings include gateway and sidecar work; summed overlapping requests are not wall time.",
+    "Capacity pressure is optional and bounded; sidecar limits do not cap other stores or native output roots."
+  ],
+  "qualificationNotes": [
+    "The 1 GiB logical LRU was exercised by 1,050 unique 1 MiB CAS writes; the configured 2 GiB hard fence was not reached.",
+    "An earlier isolated run with equal 1 GiB logical/hard limits declined writes before LRU eviction; it was not exported as a passing qualification.",
+    "The failed test executes fresh twice. Its successful preparation action is independently reusable, so an AC hit in the second failing invocation is not a reused failure verdict.",
+    "Allocated directory/metadata blocks are measured separately from the native engine logical byte limit."
+  ]
+}
