@@ -37,7 +37,9 @@ the same private canary plan and sent zero native PUTs:
 All probes originated on the service host. These are deployed protocol and
 persistence checks, not real native build-client archives, an external runner
 test or application speedup evidence. Readers were operator-minted with the
-production signer; live GitHub Actions OIDC remains separate. The
+production signer. Subsequent [external native Turbo qualification](r2-native-oidc-20261019.md)
+adds real GitHub Actions OIDC and fresh-runner native restores, including after
+an API-only restart. The
 [actual R2 source qualification](r2-private-source-20261019.md) records retained
 publication and bounded transfer timings independently.
 

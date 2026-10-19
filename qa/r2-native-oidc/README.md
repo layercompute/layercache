@@ -34,6 +34,10 @@ alone does not verify their signature. Turbo's current denied-write status is
 unusable credential.
 Zero task-scenario artifact PUTs excludes the deliberately denied authority
 probe. The action's post hook can send filtered reporting POSTs.
+The deployed server requires write authority for native `POST /v8/artifacts/events`
+telemetry. The reader records a completed 401 from that exact method/route as
+`deniedOptionalEvents`; artifact 401s, status-probe 401s and producer event
+denials remain failures. This does not change server permissions.
 
 The native compatibility names the actual Linux x64 runtime, Node, Turbo, pnpm
 and fixture schema. It excludes the source commit, branch, run ID and paths.
@@ -51,6 +55,7 @@ both native task keys, verify both complete output hashes and execute zero tasks
 Source/environment
 changes must alter native keys and execute. A separately scoped OIDC credential
 with changed compatibility must retain those keys but miss its namespace.
+Each miss must include the expected task keys' actual artifact GET 404s.
 The intentionally failed test executes twice; a producer allows remote writes
 for this control and must observe zero artifact PUTs from failed tasks.
 

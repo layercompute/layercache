@@ -34,16 +34,18 @@ workspaces and filesystem migration are outside the current product scope.
   [Operator hosting](docs/evidence/r2-operator-hosting-20261019.md) is live with
   two private R2-backed projects, real GitHub human authentication, exact reads
   after API/SQL restarts and trusted public TLS. Existing services are preserved.
-  Next: a fresh external client and actual workload adoption, supported recovery,
-  scoped migration of existing namespaces, then OAuth signup and paid-plan
-  activation. The API and SQL still run on the existing cloud host. Operator
-  hosting does not activate managed billing or the portal's plan lifecycle.
-  External native acceptance now has an opt-in manual Linux candidate in
-  [the Turbo/OIDC fixture](qa/r2-native-oidc/README.md): separate default-ref
-  producer and non-default-ref read-only consumer, exact native keys/outputs,
-  zero consumer executions, invalidation and failed-test controls. Hosted
-  qualification remains operator-owned and pending; source checks do not
-  establish deployment, application adoption or savings.
+  [External native Turbo acceptance](docs/evidence/r2-native-oidc-20261019.md)
+  now uses real GitHub OIDC and separate fresh hosted runners: default-ref
+  publication, non-default-ref read-only restoration, matching native keys and
+  full output hashes, zero executions or artifact uploads during baseline
+  restores, and keyed invalidation/failed-test controls. It is a small synthetic fixture, not
+  application or economic acceptance. The operator-run
+  [fixture](qa/r2-native-oidc/README.md) preserves service permissions and reports
+  denied optional reader telemetry separately from artifact failures.
+  Next: actual workload adoption, supported recovery, scoped migration of
+  existing namespaces, then OAuth signup and paid-plan activation. The API and
+  SQL still run on the existing cloud host. Operator hosting does not activate
+  managed billing or the portal's plan lifecycle.
   See [hosted storage](docs/hosted-storage.md). Prepare and review the complete
   runtime candidate before changing operator services.
   Acceptance: authenticated producer and independent read-only consumer, exact
@@ -53,6 +55,19 @@ workspaces and filesystem migration are outside the current product scope.
   nearby read-through only through existing integrity and authority contracts.
   Unknown publication must reconcile without duplicate work. GitHub artifacts
   remain required until application retained-handoff acceptance passes.
+
+- [ ] **Release the merged CLI capabilities as beta.6.**
+  Owner: LayerCache release. The immutable beta.5 binary predates native Bazel,
+  storage inspection and hosted storage plans. Qualify the current candidate
+  and downloaded binary with the existing real Bazel client on Linux amd64;
+  keep the ordinary acceptance fixture separate from the large pressure test.
+  Exercise bounded installed `storage inspect` fixtures on Linux amd64/arm64
+  and macOS arm64, including preserved source bytes, allocation accounting and
+  a visibly incomplete scan with nonzero exit. Require the exact release
+  source's hosted-pool PostgreSQL check, reusing its existing dedicated fixture.
+  Publish through the immutable attested pipeline, then qualify fresh installers
+  before changing default installation or Local daemon pins. Server deployment, Swift
+  replay, self-serve signup and required retained handoffs have separate gates.
 
 - [x] **Expose an honest local storage inventory.**
   Owner: LayerCache. User outcome: identify the owners of disk growth before
