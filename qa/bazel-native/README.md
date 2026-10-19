@@ -16,8 +16,10 @@ observational and does not qualify caching of arbitrary undeclared side effects.
 The gateway is a disposable private Team service with explicit membership and
 scoped read/write capabilities. Its dedicated loopback bazel-remote instance has
 HTTP ActionResult validation enabled, gRPC disabled, uncompressed storage, a
-1 MiB blob bound and explicit 1 GiB logical and hard limits. The pinned engine
-parses these capacity flags as integer GiB. Its cache capacity is separate from
+1 MiB blob bound, a 1 GiB logical limit and a 2 GiB hard limit. Hard-limit
+headroom allows LRU eviction to proceed; equal 1 GiB limits reject incoming
+objects before eviction in this pinned engine. Both flags parse integer GiB.
+Its cache capacity is separate from
 LayerCache staging, metadata and the client's output roots.
 
 Acceptance covers acknowledged cold native publication, an independent empty

@@ -33,14 +33,17 @@ For example, run an independently supervised engine with a dedicated volume:
 /absolute/path/bazel-remote \
   --dir /absolute/path/project-bazel-cache \
   --http_address 127.0.0.1:8091 --grpc_address none \
-  --max_size 1 --max_size_hard_limit 1 \
+  --max_size 1 --max_size_hard_limit 2 \
   --max_blob_size 67108864 \
   --http_read_timeout 60s --http_write_timeout 60s
 ```
 
 Leave HTTP action validation enabled. The example has a 1 GiB logical LRU
-target and a 1 GiB hard write-admission limit covering files queued for
-eviction. Neither includes native output trees, filesystem metadata or another
+target and a 2 GiB hard write-admission limit covering files queued for
+eviction. The pinned engine accepts integer GiB limits; equal hard and logical
+limits can fence writes before LRU eviction proceeds. Larger stores can use
+closer relative headroom, such as 10/11 GiB. Neither limit includes native
+output trees, filesystem metadata or another
 volume's files. LayerCache's `maxBytes` controls its existing artifact store
 and upload staging, not this engine's committed bytes. Budget the two stores
 and client outputs together. Engine eviction is allowed; this is not retained

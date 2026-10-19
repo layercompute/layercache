@@ -248,7 +248,7 @@ try {
   const gatewayAddress = await address();
   const backendURL = `http://${backendAddress}`;
   const gatewayURL = `http://${gatewayAddress}`;
-  const engineArgs = ['--dir', join(root, 'engine-cache'), '--max_size', '1', '--max_size_hard_limit', '1',
+  const engineArgs = ['--dir', join(root, 'engine-cache'), '--max_size', '1', '--max_size_hard_limit', '2',
     '--max_blob_size', '1048576', '--storage_mode', 'uncompressed', '--http_address', backendAddress,
     '--grpc_address', 'none', '--access_log_level', 'none'];
   engine = await launch(engineBinary, engineArgs, 'engine', `${backendURL}/status`);
@@ -416,7 +416,7 @@ try {
     sourceDigests: Object.fromEntries(['internal/server/bazel.go', 'internal/config/config.go', 'qa/bazel-native/run.mjs',
       'qa/fixtures/bazel-native/fixture.bzl', 'qa/fixtures/bazel-native/tool.sh'].map(path => [path, sha(readFileSync(join(repo, path)))])),
     stages, controls, pressure: pressureEvidence, controlHTTP: summary(exchanges.slice(controlStart)),
-    storage: { sidecarLogicalLimitBytes: 1024 ** 3, sidecarHardLimitBytes: 1024 ** 3,
+    storage: { sidecarLogicalLimitBytes: 1024 ** 3, sidecarHardLimitBytes: 2 * 1024 ** 3,
       maximumBlobBytes: 1048576, sidecarAllocatedBytes: allocated(join(root, 'engine-cache')),
       gatewayAllocatedBytes: allocated(join(root, 'gateway-cache')), scratchAllocatedBytes: allocated(root) },
     limits: ['No application, Apple, remote execution, installed gateway, hosted CI or savings qualification.',
