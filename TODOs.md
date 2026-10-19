@@ -1,6 +1,6 @@
 # LayerCache TODOs
 
-Last strategic review: 2026-10-17. This file owns outstanding work. Checkboxes
+Last strategic review: 2026-10-19. This file owns outstanding work. Checkboxes
 mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
@@ -512,11 +512,22 @@ workspaces and filesystem migration are outside the current product scope.
   identities; physical iOS devices and EAS Build retain their own contracts.
 
 - [ ] **Measure residual iOS work before extending shared LLVM transport.**
-  Owner: Phone native owner. Two recent RunCloud samples already hit all 1,725
+  Owner: Phone native owner with LayerCache artifact support. Two retained
+  RunCloud samples already hit all 1,725
   cacheable compiler tasks but occupied Macs for 16m44s/18m28s. Time setup,
   packaging, runtime acceptance and receipt misses separately. Qualify released
   graph retention on Phone's exact toolchain/scale before expanded use. Swift
-  replay and signed-build cost remain separate evidence targets.
+  replay and signed-build cost remain separate evidence targets. The
+  [October 19 Linux/Mac research](docs/research/bazel-and-layercache-20261019.md#reduce-mac-work-before-migrating-an-expo-app)
+  prioritizes native-shell reuse with current JS/assets over a full build-system
+  migration. Qualify a compatible JS-only change and a changed-native control,
+  fresh simulator assertions, exact native/toolchain/Hermes/environment identity,
+  and source/provenance checks. Separate native-shell, bundled-app and QA-verdict
+  identities. Measure native seed amortization, actual Apple worker allocation,
+  Linux preparation/repack, transfers and whole-workflow time; a Linux controller
+  does not establish reduced Mac use. Keep store release, experimental signing
+  and simulator QA qualification separate. Turbo can remain the JS orchestrator;
+  consider a bounded Bazel pilot only if residual native action work justifies it.
 
 ## P1: complete supported private protocols
 
@@ -540,10 +551,22 @@ workspaces and filesystem migration are outside the current product scope.
 ## P2: broaden after measured value
 
 - [ ] **Qualify an isolated pinned bazel-remote sidecar, then sccache.**
-  Owner: LayerCache. Next: select a real personal workload and pin the engine.
+  Owner: LayerCache. User outcome: share native Bazel build/test results across
+  local machines and CI without duplicating Bazel's build graph or requiring
+  existing non-Bazel projects to migrate. Research the overlap, Apple migration
+  costs and service boundary in the [Bazel comparison](docs/research/bazel-and-layercache-20261019.md).
+  Bazel support remains unimplemented; research establishes no performance
+  advantage or application qualification. Next: select a real personal workload
+  already using Bazel and pin the engine.
   Preserve per-project/profile isolation;
   an instance-name label alone is not an access boundary. Reuse permissively
   licensed engines and native clients. Follow [the OSS plan](docs/oss-integration-plan.md).
+  Acceptance: real native client producer/empty consumer, changed-input and
+  toolchain misses, server-enforced read-only access, revoked/foreign-project
+  denial, incomplete-CAS misses, quota/eviction and restart behavior, plus
+  whole-command time and total allocated storage after setup/transfer costs.
+  A Bazel cache backend is separate from remote execution, retained handoffs
+  and any application's build-system migration.
 - [x] **Qualify the existing operator gateway upgrade.**
   Owner: LayerCache/operator. Exact source `53ec27443a406a508b7e8faeab3f46292e0ba07b`
   passed the 91-check hardened image rehearsal, then 170 checks against a full
