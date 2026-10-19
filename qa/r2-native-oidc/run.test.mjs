@@ -55,6 +55,16 @@ test('allowlisted native summaries never copy secret, path, selector or command 
   assert.throws(() => taskSummary(source), /invalid-native-task/);
 });
 
+test('an action capability from one origin cannot be retargeted before any request', async () => {
+  let requests = 0, exchanges = 0;
+  await assert.rejects(qualify({ origin: 'https://origin-b.example', project: 'synthetic-selector' }, {
+    TURBO_API: 'https://origin-a.example', TURBO_TEAM: 'synthetic-selector', TURBO_TOKEN: 'already-issued-origin-a-token',
+  }, { requester: () => { requests++; throw new Error('must-not-request'); },
+    exchanger: () => { exchanges++; throw new Error('must-not-exchange'); } }), /pinned-action-environment-required/);
+  assert.equal(requests, 0);
+  assert.equal(exchanges, 0);
+});
+
 test('the HTTPS relay rejects 307/308 without sending credentials or requests to the target', async () => {
   let targetRequests = 0;
   const target = createServer((req, res) => { targetRequests++; req.resume(); res.writeHead(200).end(); });
@@ -92,12 +102,12 @@ test('real locked Turbo producer/reader and failure controls work against a cred
   skip: !existsSync(join(repo, 'qa/fixtures/local-ci-reuse/node_modules/.bin/turbo')),
 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'r2-native-local-control-')), objects = new Map();
-  let acceptedPUTs = 0;
+  let acceptedPUTs = 0, artifactPUTStatus = 200, rejectedPUTs = 0, metadataSuccesses = 0;
   const provider = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const claims = JSON.parse(Buffer.from(req.headers.authorization.split('.')[1], 'base64url'));
-    if (url.pathname.endsWith('/status')) { res.writeHead(200).end('{"status":"enabled"}'); return; }
-    if (url.pathname.endsWith('/events')) { req.resume(); res.writeHead(200).end('{}'); return; }
+    if (url.pathname.endsWith('/status')) { metadataSuccesses++; res.writeHead(200).end('{"status":"enabled"}'); return; }
+    if (url.pathname.endsWith('/events')) { metadataSuccesses++; req.resume(); res.writeHead(200).end('{}'); return; }
     const key = claims.compatibility + url.pathname;
     if (req.method === 'PUT') {
       if (claims.capabilities[0] !== 'write') { req.resume(); res.writeHead(401).end('{}'); return; }
@@ -105,6 +115,7 @@ test('real locked Turbo producer/reader and failure controls work against a cred
       for await (const chunk of req) chunks.push(chunk);
       const bytes = Buffer.concat(chunks);
       assert.ok(bytes.length < 1 << 20);
+      if (artifactPUTStatus !== 200) { rejectedPUTs++; res.writeHead(artifactPUTStatus).end('{}'); return; }
       objects.set(key, bytes); acceptedPUTs++; res.writeHead(200).end('{}'); return;
     }
     const bytes = objects.get(key);
@@ -118,11 +129,15 @@ test('real locked Turbo producer/reader and failure controls work against a cred
     port: url.port, path: url.pathname + url.search }, callback);
   const sample = randomBytes(16).toString('hex');
   try {
-    for (const mode of ['producer', 'reader']) {
-      const temp = join(root, mode); mkdirSync(temp);
+    for (const label of ['producer', 'reader', 'rejected-publication']) {
+      const mode = label === 'reader' ? 'reader' : 'producer';
+      artifactPUTStatus = label === 'rejected-publication' ? 404 : 200;
+      rejectedPUTs = 0; metadataSuccesses = 0;
+      const temp = join(root, label); mkdirSync(temp);
       const event = join(temp, 'event.json'); writeFileSync(event, JSON.stringify({ repository: { default_branch: 'main' } }));
       const output = join(temp, 'output'); writeFileSync(output, '');
-      const env = { ...process.env, R2_QA_ENABLED: 'true', R2_QA_MODE: mode, R2_QA_SAMPLE: sample,
+      const env = { ...process.env, R2_QA_ENABLED: 'true', R2_QA_MODE: mode,
+        R2_QA_SAMPLE: label === 'rejected-publication' ? randomBytes(16).toString('hex') : sample,
         R2_QA_ORIGIN: `https://127.0.0.1:${provider.address().port}`, R2_QA_PROJECT: 'synthetic-private-selector',
         GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_EVENT_PATH: event, GITHUB_WORKSPACE: repo,
         GITHUB_SHA: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
@@ -135,6 +150,19 @@ test('real locked Turbo producer/reader and failure controls work against a cred
       })).toString('base64url')}.synthetic-not-a-signature`;
       prepare(cfg, env);
       try {
+        if (label === 'rejected-publication') {
+          let rejection;
+          try {
+            await qualify(cfg, { ...env, TURBO_API: cfg.origin, TURBO_TEAM: cfg.project, TURBO_TOKEN: token(compatibility) },
+              { requester, exchanger: async input => ({ teamToken: token(input.compatibility) }) });
+          } catch (error) { rejection = error; }
+          assert.equal(rejectedPUTs, 2);
+          assert.ok(metadataSuccesses >= 2);
+          assert.ok(rejection, 'two rejected artifact PUTs must not qualify despite successful status/events requests');
+          assert.match(rejection.message, /native-publication-not-acknowledged/);
+          assert.equal(JSON.parse(readFileSync(cfg.output, 'utf8')).passed, false);
+          continue;
+        }
         if (mode === 'producer') {
           const config = join(cfg.workspace, 'turbo.json'), original = readFileSync(config);
           rmSync(config);

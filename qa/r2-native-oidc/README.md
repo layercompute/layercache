@@ -45,8 +45,10 @@ environment variable outside native outputs and native task identity.
 
 Every Turbo invocation disables filesystem task caching explicitly. The
 producer must execute both tasks and receive two native publication
-acknowledgements. The independent reader must restore both native task keys,
-verify both complete output hashes and execute zero tasks. Source/environment
+acknowledgements, each from an HTTP 200 artifact PUT. Successful status/events
+requests cannot establish publication. The independent reader must restore
+both native task keys, verify both complete output hashes and execute zero tasks.
+Source/environment
 changes must alter native keys and execute. A separately scoped OIDC credential
 with changed compatibility must retain those keys but miss its namespace.
 The intentionally failed test executes twice; a producer allows remote writes
@@ -74,8 +76,9 @@ node --test qa/r2-native-oidc/run.test.mjs
 actionlint .github/workflows/r2-native-oidc.yml
 ```
 
-They cover wrong ref/opt-in, wrong issued authority, summary redaction and
-307/308 rejection with zero requests received by a foreign target. After the
+They cover wrong ref/opt-in, wrong issued authority, origin retargeting,
+summary redaction and 307/308 rejection with zero requests received by a foreign
+target. After the
 locked fixture client is installed, they also run real Turbo producer/reader
 and failure controls against a local in-memory protocol model with synthetic
 credentials. They do not qualify live OIDC, R2 persistence or native hosted

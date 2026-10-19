@@ -236,7 +236,10 @@ export async function qualify(cfg, env, { requester = requestHTTPS, exchanger = 
     check(!existsSync(join(cfg.workspace, '.turbo/cache')), 'filesystem-task-cache-created');
     if (cache === 'local:,remote:r' || fail) check(http.artifactPUTs === 0, 'unexpected-artifact-publication');
     if (hit) check(http.verifiedArchiveGETs === 2, 'missing-exact-remote-archives');
-    if (name === 'cold-writer') check(http.artifactPUTs === 2 && http.statuses['200'] >= 2, 'native-publication-not-acknowledged');
+    if (name === 'cold-writer') {
+      const publications = exchanges.filter(row => row.artifact && row.method === 'PUT');
+      check(publications.length === 2 && publications.every(row => row.status === 200), 'native-publication-not-acknowledged');
+    }
     const outputs = [];
     if (!fail) for (const task of ['build', 'test']) {
       const path = join(cfg.workspace, 'packages/app', task === 'build' ? 'dist' : '.test', 'result.json');
