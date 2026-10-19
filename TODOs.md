@@ -38,6 +38,12 @@ workspaces and filesystem migration are outside the current product scope.
   scoped migration of existing namespaces, then OAuth signup and paid-plan
   activation. The API and SQL still run on the existing cloud host. Operator
   hosting does not activate managed billing or the portal's plan lifecycle.
+  External native acceptance now has an opt-in manual Linux candidate in
+  [the Turbo/OIDC fixture](qa/r2-native-oidc/README.md): separate default-ref
+  producer and non-default-ref read-only consumer, exact native keys/outputs,
+  zero consumer executions, invalidation and failed-test controls. Hosted
+  qualification remains operator-owned and pending; source checks do not
+  establish deployment, application adoption or savings.
   See [hosted storage](docs/hosted-storage.md). Prepare and review the complete
   runtime candidate before changing operator services.
   Acceptance: authenticated producer and independent read-only consumer, exact
