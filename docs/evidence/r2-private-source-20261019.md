@@ -2,9 +2,10 @@
 
 Checked October 19, 2026 UTC using runtime and qualification source
 `08d3df8cdff7ce859378109226c13a629ef52296`. The
-[unaltered sanitized receipt](r2-private-source-20261019.json) records 45
-measurements and the exact source digests. The helper binary SHA256 was
-`bbba5f70ac08b3e5b18eacb68f661c151ace8de33f75e16ebdd17f28afd29e42`.
+[public summary](r2-private-source-20261019.json) records all 45 original
+measurements and the exact source digests. Disposable receipt identifiers and
+their exact expiry are omitted. The complete original receipt and helper binary
+fingerprint remain in protected operator evidence.
 
 This used the production cloud store and HTTP handlers, MinIO SDK v7.0.95,
 pgx v5.9.2, an isolated PostgreSQL 16 fixture and two actual private R2 buckets.

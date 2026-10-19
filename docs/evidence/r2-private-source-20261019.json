@@ -320,8 +320,6 @@
     "actual R2 wrong retained bytes never published",
     "real elapsed short TTL expires independently of the larger retained publication"
   ],
-  "retainedId": "381d9d93ed3221f7408c09286e270aa4f6a39923510ba7b104aca41689338ed8",
-  "retainUntil": "2026-10-19T22:28:06.348895Z",
   "limits": [
     "Actual private R2 persistence and synthetic HTTP transport; no public service activation, application build or native-client qualification.",
     "Capabilities are minted locally for isolated qualification; live GitHub OIDC and customer onboarding are not exercised.",
