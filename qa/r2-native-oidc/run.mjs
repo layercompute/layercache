@@ -322,6 +322,9 @@ export async function qualify(cfg, env, { requester = requestHTTPS, exchanger = 
     evidence.passed = true;
   } finally {
     await observer.close();
+    // The always-run action post hook uses the baseline compatibility. Failed
+    // controls may leave a raw summary from another namespace or input set.
+    if (!evidence.passed) rmSync(join(cfg.workspace, '.turbo/runs'), { recursive: true, force: true });
     writeFileSync(cfg.output, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
     rmSync(cfg.counter, { force: true });
   }

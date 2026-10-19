@@ -73,7 +73,9 @@ task keys, statuses, execution counts, output digests and aggregate measurements
 It omits project selectors, capability/OIDC bodies, service identities, URLs,
 local paths, raw Turbo summaries and command logs. Original summaries remain
 on the disposable runner; only the baseline is submitted by the pinned action's
-post hook. This is optional cache acceptance. Required application handoffs
+post hook. A qualification failure removes all owned raw summaries before that
+hook runs, preserving the partial public summary with `passed=false`.
+This is optional cache acceptance. Required application handoffs
 continue using GitHub artifacts; there is no application or cost-saving claim.
 
 Credential-free controls run locally and before any hosted authentication:
