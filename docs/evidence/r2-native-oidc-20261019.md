@@ -4,7 +4,7 @@ Qualification completed October 19, 2026 UTC. A default-branch publisher and two
 fresh read-only GitHub-hosted Linux x64 runners used the
 [operator R2 endpoint](r2-operator-hosting-20261019.md). Both readers restored the
 publisher's two native task results with zero task executions, zero local-cache
-hits and zero artifact uploads. The second reader ran after an API-only restart.
+hits and zero artifact uploads during baseline restoration. The second reader ran after an API-only restart.
 This is a small synthetic fixture, not application or economic acceptance.
 
 ## Provenance and authority
@@ -90,7 +90,7 @@ Body counts include metadata and error responses; they exclude TLS overhead
 and backend R2 traffic. Request durations overlap and cannot be added to native
 command time or interpreted as bandwidth. Observation time starts after the
 native process exits and waits up to five seconds for real response completion.
-These tiny workloads and independent VMs establish no causal speedup, Phone
+These tiny workloads and independent VMs establish no causal speedup, application
 benefit, signed-build result or monthly/invoice saving.
 
 The earlier [producer attempt](https://github.com/ziahamza/layercache/actions/runs/39337648180)

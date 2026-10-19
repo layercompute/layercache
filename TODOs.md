@@ -37,8 +37,8 @@ workspaces and filesystem migration are outside the current product scope.
   [External native Turbo acceptance](docs/evidence/r2-native-oidc-20261019.md)
   now uses real GitHub OIDC and separate fresh hosted runners: default-ref
   publication, non-default-ref read-only restoration, matching native keys and
-  full output hashes, zero consumer executions or artifact uploads, and keyed
-  invalidation/failed-test controls. It is a small synthetic fixture, not
+  full output hashes, zero executions or artifact uploads during baseline
+  restores, and keyed invalidation/failed-test controls. It is a small synthetic fixture, not
   application or economic acceptance. The operator-run
   [fixture](qa/r2-native-oidc/README.md) preserves service permissions and reports
   denied optional reader telemetry separately from artifact failures.

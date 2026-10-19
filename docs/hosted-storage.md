@@ -103,8 +103,9 @@ is live for two explicit private projects with real human GitHub authentication,
 restart persistence and trusted HTTPS. It keeps API/SQL on the existing host.
 [External native Turbo acceptance](evidence/r2-native-oidc-20261019.md) now uses
 real GitHub OIDC with a cold publisher and independent read-only hosted runner.
-Native keys and full output hashes match with zero consumer task executions or
-artifact uploads. This small fixture establishes no application savings.
+Native keys and full output hashes match, with zero task executions or artifact
+uploads during baseline consumer restores. This small fixture establishes no
+application savings.
 Actual workload adoption, recovery, namespace migration, OAuth signup and
 managed plan activation remain separate gates in [TODOs.md](../TODOs.md).
 
