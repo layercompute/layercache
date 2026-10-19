@@ -33,77 +33,119 @@ const (
 )
 
 type Config struct {
-	Version                    int               `json:"version"`
-	InstallationID             string            `json:"installationId,omitempty"`
-	Role                       string            `json:"role"`
-	DataDir                    string            `json:"dataDir"`
-	Listen                     string            `json:"listen"`
-	MaxBytes                   int64             `json:"maxBytes"`
-	EvictionPolicy             retention.Policy  `json:"evictionPolicy,omitempty"`
-	MinFreeBytes               int64             `json:"minFreeBytes"` // Upward override for the fixed and percentage filesystem reserve.
-	ProjectID                  string            `json:"projectId,omitempty"`
-	ProjectRoot                string            `json:"projectRoot,omitempty"`
-	TeamURL                    string            `json:"teamUrl,omitempty"`
-	TeamToken                  string            `json:"teamToken,omitempty"`
-	TeamTokenExpiresAt         time.Time         `json:"teamTokenExpiresAt,omitempty"`
-	PublicURL                  string            `json:"publicUrl,omitempty"`
-	PublicAccessToken          string            `json:"publicAccessToken,omitempty"`
-	PublicAccessTokenExpiresAt time.Time         `json:"publicAccessTokenExpiresAt,omitempty"`
-	PublicTrustKey             string            `json:"publicTrustKey,omitempty"`
-	PublicTrustSequence        uint64            `json:"publicTrustSequence,omitempty"`
-	PublicPrivateKey           string            `json:"publicPrivateKey,omitempty"`
-	PublisherToken             string            `json:"publisherToken,omitempty"` // Deprecated migration input. Never authorize both worker and collector with it.
-	PublicBuildWorkerToken     string            `json:"publicBuildWorkerToken,omitempty"`
-	PublicCollectorToken       string            `json:"publicCollectorToken,omitempty"`
-	PublicBuildRepositories    []string          `json:"publicBuildRepositories,omitempty"`
-	PublicBuildApprovedRefs    []string          `json:"publicBuildApprovedRefs,omitempty"`
-	PublicBuildRecipeDigests   []string          `json:"publicBuildRecipeDigests,omitempty"`
-	PublicBuildKernelPath      string            `json:"publicBuildKernelPath,omitempty"`
-	PublicBuildKernelSHA256    string            `json:"publicBuildKernelSha256,omitempty"`
-	PublicBuildRootFSPath      string            `json:"publicBuildRootfsPath,omitempty"`
-	PublicBuildRootFSSHA256    string            `json:"publicBuildRootfsSha256,omitempty"`
-	PublicBuildGuestContract   string            `json:"publicBuildGuestContract,omitempty"`
-	PublicBuildContractSHA256  string            `json:"publicBuildContractSha256,omitempty"`
-	PublicBuildCgroupRoot      string            `json:"publicBuildCgroupRoot,omitempty"`
-	PublicBuildWorkRoot        string            `json:"publicBuildWorkRoot,omitempty"`
-	PublicBuildMaxScratchBytes int64             `json:"publicBuildMaxScratchBytes,omitempty"`
-	PublicBuildSandboxUID      uint32            `json:"publicBuildSandboxUid,omitempty"`
-	PublicBuildSandboxGID      uint32            `json:"publicBuildSandboxGid,omitempty"`
-	ActionsRepository          string            `json:"actionsRepository"`
-	ActionsRef                 string            `json:"actionsRef"`
-	ActionsDefaultRef          string            `json:"actionsDefaultRef"`
-	ActionsPublicRecipeDigest  string            `json:"actionsPublicRecipeDigest,omitempty"`
-	ActionsPublicBuilder       string            `json:"actionsPublicBuilder,omitempty"`
-	ActionsArchiveBaseURL      string            `json:"actionsArchiveBaseUrl,omitempty"`
-	BuildkitBuilder            string            `json:"buildkitBuilder"`
-	BuildkitTeamRepository     string            `json:"buildkitTeamRepository,omitempty"`
-	BuildkitPublicRepository   string            `json:"buildkitPublicRepository,omitempty"`
-	BuildkitBranch             string            `json:"buildkitBranch,omitempty"`
-	BuildkitGCBytes            int64             `json:"buildkitGcBytes,omitempty"`
-	GitHubCredentialAccount    string            `json:"githubCredentialAccount,omitempty"`
-	GitHubCLIPath              string            `json:"githubCliPath,omitempty"`
-	GitHubAPIURL               string            `json:"githubApiUrl,omitempty"`
-	GitHubOIDCIssuer           string            `json:"githubOidcIssuer,omitempty"`
-	TeamMembers                map[string]string `json:"teamMembers,omitempty"`
-	CloudPostgresURL           string            `json:"cloudPostgresUrl,omitempty"`
-	RetainedArtifactsEnabled   bool              `json:"retainedArtifactsEnabled,omitempty"`
-	CloudS3Endpoint            string            `json:"cloudS3Endpoint,omitempty"`
-	CloudS3Bucket              string            `json:"cloudS3Bucket,omitempty"`
-	CloudS3Region              string            `json:"cloudS3Region,omitempty"`
-	CloudS3AccessKey           string            `json:"cloudS3AccessKey,omitempty"`
-	CloudS3SecretKey           string            `json:"cloudS3SecretKey,omitempty"`
-	CloudS3UsePathStyle        bool              `json:"cloudS3UsePathStyle,omitempty"`
-	CloudStageTTL              time.Duration     `json:"cloudStageTtl,omitempty"`
-	CloudBlobGrace             time.Duration     `json:"cloudBlobGrace,omitempty"`
-	CacheIdleTTL               time.Duration     `json:"cacheIdleTtl,omitempty"`
-	CacheUnreusedTTL           time.Duration     `json:"cacheUnreusedTtl,omitempty"`
-	CacheSoftBytes             int64             `json:"cacheSoftBytes,omitempty"`
-	RemoteMetadataTimeout      time.Duration     `json:"remoteMetadataTimeout,omitempty"`
-	RemoteTransferIdleTimeout  time.Duration     `json:"remoteTransferIdleTimeout,omitempty"`
-	BypassAdapters             []string          `json:"bypassAdapters"`
-	LocalToken                 string            `json:"localToken"`
-	CompatibilityID            string            `json:"compatibilityId"`
-	CreatedAt                  time.Time         `json:"createdAt"`
+	Version                    int                `json:"version"`
+	InstallationID             string             `json:"installationId,omitempty"`
+	Role                       string             `json:"role"`
+	DataDir                    string             `json:"dataDir"`
+	Listen                     string             `json:"listen"`
+	MaxBytes                   int64              `json:"maxBytes"`
+	EvictionPolicy             retention.Policy   `json:"evictionPolicy,omitempty"`
+	MinFreeBytes               int64              `json:"minFreeBytes"` // Upward override for the fixed and percentage filesystem reserve.
+	ProjectID                  string             `json:"projectId,omitempty"`
+	ProjectRoot                string             `json:"projectRoot,omitempty"`
+	TeamURL                    string             `json:"teamUrl,omitempty"`
+	TeamToken                  string             `json:"teamToken,omitempty"`
+	TeamTokenExpiresAt         time.Time          `json:"teamTokenExpiresAt,omitempty"`
+	PublicURL                  string             `json:"publicUrl,omitempty"`
+	PublicAccessToken          string             `json:"publicAccessToken,omitempty"`
+	PublicAccessTokenExpiresAt time.Time          `json:"publicAccessTokenExpiresAt,omitempty"`
+	PublicTrustKey             string             `json:"publicTrustKey,omitempty"`
+	PublicTrustSequence        uint64             `json:"publicTrustSequence,omitempty"`
+	PublicPrivateKey           string             `json:"publicPrivateKey,omitempty"`
+	PublisherToken             string             `json:"publisherToken,omitempty"` // Deprecated migration input. Never authorize both worker and collector with it.
+	PublicBuildWorkerToken     string             `json:"publicBuildWorkerToken,omitempty"`
+	PublicCollectorToken       string             `json:"publicCollectorToken,omitempty"`
+	PublicBuildRepositories    []string           `json:"publicBuildRepositories,omitempty"`
+	PublicBuildApprovedRefs    []string           `json:"publicBuildApprovedRefs,omitempty"`
+	PublicBuildRecipeDigests   []string           `json:"publicBuildRecipeDigests,omitempty"`
+	PublicBuildKernelPath      string             `json:"publicBuildKernelPath,omitempty"`
+	PublicBuildKernelSHA256    string             `json:"publicBuildKernelSha256,omitempty"`
+	PublicBuildRootFSPath      string             `json:"publicBuildRootfsPath,omitempty"`
+	PublicBuildRootFSSHA256    string             `json:"publicBuildRootfsSha256,omitempty"`
+	PublicBuildGuestContract   string             `json:"publicBuildGuestContract,omitempty"`
+	PublicBuildContractSHA256  string             `json:"publicBuildContractSha256,omitempty"`
+	PublicBuildCgroupRoot      string             `json:"publicBuildCgroupRoot,omitempty"`
+	PublicBuildWorkRoot        string             `json:"publicBuildWorkRoot,omitempty"`
+	PublicBuildMaxScratchBytes int64              `json:"publicBuildMaxScratchBytes,omitempty"`
+	PublicBuildSandboxUID      uint32             `json:"publicBuildSandboxUid,omitempty"`
+	PublicBuildSandboxGID      uint32             `json:"publicBuildSandboxGid,omitempty"`
+	ActionsRepository          string             `json:"actionsRepository"`
+	ActionsRef                 string             `json:"actionsRef"`
+	ActionsDefaultRef          string             `json:"actionsDefaultRef"`
+	ActionsPublicRecipeDigest  string             `json:"actionsPublicRecipeDigest,omitempty"`
+	ActionsPublicBuilder       string             `json:"actionsPublicBuilder,omitempty"`
+	ActionsArchiveBaseURL      string             `json:"actionsArchiveBaseUrl,omitempty"`
+	BuildkitBuilder            string             `json:"buildkitBuilder"`
+	BuildkitTeamRepository     string             `json:"buildkitTeamRepository,omitempty"`
+	BuildkitPublicRepository   string             `json:"buildkitPublicRepository,omitempty"`
+	BuildkitBranch             string             `json:"buildkitBranch,omitempty"`
+	BuildkitGCBytes            int64              `json:"buildkitGcBytes,omitempty"`
+	GitHubCredentialAccount    string             `json:"githubCredentialAccount,omitempty"`
+	GitHubCLIPath              string             `json:"githubCliPath,omitempty"`
+	GitHubAPIURL               string             `json:"githubApiUrl,omitempty"`
+	GitHubOIDCIssuer           string             `json:"githubOidcIssuer,omitempty"`
+	TeamMembers                map[string]string  `json:"teamMembers,omitempty"`
+	CloudPostgresURL           string             `json:"cloudPostgresUrl,omitempty"`
+	RetainedArtifactsEnabled   bool               `json:"retainedArtifactsEnabled,omitempty"`
+	BazelRemote                *BazelRemoteConfig `json:"bazelRemote,omitempty"`
+	CloudS3Endpoint            string             `json:"cloudS3Endpoint,omitempty"`
+	CloudS3Bucket              string             `json:"cloudS3Bucket,omitempty"`
+	CloudS3Region              string             `json:"cloudS3Region,omitempty"`
+	CloudS3AccessKey           string             `json:"cloudS3AccessKey,omitempty"`
+	CloudS3SecretKey           string             `json:"cloudS3SecretKey,omitempty"`
+	CloudS3UsePathStyle        bool               `json:"cloudS3UsePathStyle,omitempty"`
+	CloudStageTTL              time.Duration      `json:"cloudStageTtl,omitempty"`
+	CloudBlobGrace             time.Duration      `json:"cloudBlobGrace,omitempty"`
+	CacheIdleTTL               time.Duration      `json:"cacheIdleTtl,omitempty"`
+	CacheUnreusedTTL           time.Duration      `json:"cacheUnreusedTtl,omitempty"`
+	CacheSoftBytes             int64              `json:"cacheSoftBytes,omitempty"`
+	RemoteMetadataTimeout      time.Duration      `json:"remoteMetadataTimeout,omitempty"`
+	RemoteTransferIdleTimeout  time.Duration      `json:"remoteTransferIdleTimeout,omitempty"`
+	BypassAdapters             []string           `json:"bypassAdapters"`
+	LocalToken                 string             `json:"localToken"`
+	CompatibilityID            string             `json:"compatibilityId"`
+	CreatedAt                  time.Time          `json:"createdAt"`
+}
+
+// BazelRemoteConfig binds a dedicated native engine to one private project and
+// profile. Its storage and eviction budget are operated separately from Local
+// Cache; MaxBlobBytes also bounds LayerCache's temporary upload staging.
+type BazelRemoteConfig struct {
+	ProjectID       string        `json:"projectId"`
+	CompatibilityID string        `json:"compatibilityId"`
+	URL             string        `json:"url"`
+	MaxBlobBytes    int64         `json:"maxBlobBytes"`
+	RequestTimeout  time.Duration `json:"requestTimeout"`
+}
+
+// ValidateBazelRemote is also called by the runtime constructor: copying a
+// project template must never silently reuse another project's native engine.
+func (cfg Config) ValidateBazelRemote() error {
+	backend := cfg.BazelRemote
+	if backend == nil {
+		return nil
+	}
+	if (cfg.Role != "local" && cfg.Role != "team") || backend.ProjectID == "" ||
+		backend.ProjectID != cfg.ProjectID || backend.CompatibilityID != cfg.CompatibilityID || compatibility.Validate(backend.CompatibilityID) != nil {
+		return errors.New("bazelRemote requires an exact private project and compatibility binding")
+	}
+	parsed, err := url.Parse(backend.URL)
+	if err != nil || parsed.Scheme != "http" || parsed.Opaque != "" || parsed.User != nil ||
+		parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
+		(parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "::1") {
+		return errors.New("bazelRemote url must be a bare literal loopback HTTP origin")
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port < 1 || port > 65535 || strconv.Itoa(port) != parsed.Port() || parsed.String() != backend.URL {
+		return errors.New("bazelRemote url requires an explicit port from 1 through 65535")
+	}
+	if backend.MaxBlobBytes <= 0 || backend.MaxBlobBytes >= int64(1<<63-1) || backend.MaxBlobBytes > cfg.MaxBytes {
+		return errors.New("bazelRemote maxBlobBytes must be positive and cannot exceed maxBytes")
+	}
+	if backend.RequestTimeout <= 0 || backend.RequestTimeout > 30*time.Minute {
+		return errors.New("bazelRemote requestTimeout must be positive and no more than 30 minutes")
+	}
+	return nil
 }
 
 func Defaults() (Config, error) {
@@ -305,6 +347,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.RetainedArtifactsEnabled && (cfg.Role != "team" || cfg.CloudPostgresURL == "") {
 		return errors.New("retained artifacts require a private Team runtime with PostgreSQL/S3 persistence")
+	}
+	if err := cfg.ValidateBazelRemote(); err != nil {
+		return err
 	}
 	if cfg.Listen == "" {
 		return errors.New("listen is required")

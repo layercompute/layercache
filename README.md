@@ -22,8 +22,14 @@ self-serve service is not live yet. Storage hosting does not change the three
 visibility tiers or allow private artifacts to enter Public Cache.
 
 This repository contains working implementations for Turborepo, GitHub Actions
-cache v1, Docker Buildx/BuildKit, Xcode's LLVM compilation-cache protocol, and
-[Nx's native private HTTP cache](docs/nx-cache.md). The Nx adapter supports Local
+cache v1, Docker Buildx/BuildKit, Xcode 26's LLVM compilation-cache protocol, and
+[Nx's native private HTTP cache](docs/nx-cache.md). Xcode's qualified external
+replay covers Clang/C-family work; Swift source compilation replay remains
+[unqualified](docs/research/xcode26-compilation-cache-20261019.md).
+The source also adds an opt-in [native Bazel HTTP cache](docs/bazel-cache.md)
+through an isolated `bazel-remote` engine. It is separate from the published
+beta.5 CLI and existing gateway installation.
+The Nx adapter supports Local
 and direct private endpoints; remote read-through and queued Nx publication are
 not implemented.
 It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
@@ -34,7 +40,7 @@ permanent-conflict pin retirement, and complete Xcode graph retention qualified
 under quota pressure. Successful local Turbo results can be confirmed for CI
 reuse. Nx Local-to-private forwarding remains future work.
 Public Builds are not qualified by this beta, and the hosted self-serve cloud
-requires a separate deployment. npm/CDN mirrors, Bazel, Vite, Next.js, Windows,
+requires a separate deployment. npm/CDN mirrors, Vite, Next.js, Windows,
 Actions cache v2, and a general adapter SDK remain out of scope.
 
 Release and deployment instructions are in the [verified installer](scripts/README.md), [GitHub runner setup](action/setup/README.md), and [Team Cache deployment guide](docs/deployment.md). See [quota administration](docs/cache-administration.md), [retention policies](docs/retention.md), [trust-key rotation](docs/public-trust.md), and [performance qualification](docs/performance.md) for operations. The beta release qualifies native Local/Team Cache clients; it does not establish a hosted cloud service or qualify Public Builds.

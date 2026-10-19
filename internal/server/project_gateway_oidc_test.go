@@ -33,7 +33,7 @@ func TestProjectGatewayOIDCSharedNamespaceScope(t *testing.T) {
 		project.config.GitHubOIDCIssuer = issuer.URL
 	}
 	now := time.Now().UTC()
-	for _, integration := range []string{"turbo", "buildkit", "nx", "gradle"} {
+	for _, integration := range []string{"turbo", "buildkit", "nx", "gradle", "bazel"} {
 		for _, event := range []string{"push", "workflow_dispatch", "schedule", "pull_request", "pull_request_target", "workflow_run", ""} {
 			for _, ref := range []string{"refs/heads/main", "refs/heads/feature", "refs/pull/1/merge"} {
 				idToken := signOIDCTestToken(t, key, "gateway", map[string]any{

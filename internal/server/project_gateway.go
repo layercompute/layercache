@@ -67,6 +67,7 @@ func NewProjectGateway(ctx context.Context, cfg ProjectGatewayConfig) (_ *Projec
 		}
 	}()
 	secrets := map[string]bool{}
+	bazelBackends := map[string]bool{}
 	for alias, project := range cfg.Projects {
 		if !cfg.StoragePool.contains(project.DataDir) {
 			return nil, errors.New("project data must be inside the bounded storage pool")
@@ -80,6 +81,12 @@ func NewProjectGateway(ctx context.Context, cfg ProjectGatewayConfig) (_ *Projec
 		project.ActionsArchiveBaseURL = cfg.Origin
 		if err := project.Validate(); err != nil {
 			return nil, fmt.Errorf("invalid project %s configuration: %w", alias, err)
+		}
+		if project.BazelRemote != nil {
+			if bazelBackends[project.BazelRemote.URL] {
+				return nil, errors.New("projects must have dedicated Bazel cache backends")
+			}
+			bazelBackends[project.BazelRemote.URL] = true
 		}
 		instance, openErr := NewWithProjectAuthority(ctx, project, cfg.Authority)
 		if openErr != nil {
@@ -177,6 +184,9 @@ func (gateway *ProjectGateway) AddProject(ctx context.Context, alias string, cfg
 	for _, current := range gateway.projects {
 		if current.config.LocalToken == cfg.LocalToken {
 			return errors.New("project signing secrets must be distinct")
+		}
+		if cfg.BazelRemote != nil && current.config.BazelRemote != nil && cfg.BazelRemote.URL == current.config.BazelRemote.URL {
+			return errors.New("projects must have dedicated Bazel cache backends")
 		}
 	}
 	cfg.ActionsArchiveBaseURL = gateway.origin

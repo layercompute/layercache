@@ -1,0 +1,9 @@
+load(":fixture.bzl", "fixture_action", "fixture_test")
+
+fixture_action(
+    name = "message",
+    src = "source.txt",
+    tool = "tool.sh",
+)
+
+fixture_test(name = "failure")

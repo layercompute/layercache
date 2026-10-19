@@ -25,7 +25,7 @@ func requestReadDeadlineHandler(next http.Handler) http.Handler {
 		if boundedRequestBody(request) {
 			_ = controller.SetReadDeadline(time.Now().Add(boundedRequestBodyTimeout))
 		} else {
-			reset := func() { _ = controller.SetReadDeadline(time.Now().Add(streamRequestIdleTimeout)) }
+			reset := response.resetRead
 			reset()
 			request.Body = &progressDeadlineBody{body: request.Body, progress: reset}
 		}
@@ -36,7 +36,9 @@ func requestReadDeadlineHandler(next http.Handler) http.Handler {
 
 type progressDeadlineResponseWriter struct {
 	http.ResponseWriter
-	controller *http.ResponseController
+	controller           *http.ResponseController
+	maximumWriteDeadline time.Time
+	maximumReadDeadline  time.Time
 }
 
 func newProgressDeadlineResponseWriter(writer http.ResponseWriter) *progressDeadlineResponseWriter {
@@ -60,8 +62,32 @@ func (writer *progressDeadlineResponseWriter) Unwrap() http.ResponseWriter {
 	return writer.ResponseWriter
 }
 
+// A route may impose a complete-response deadline tighter than the default
+// idle timeout. Progress must not extend that explicit bound.
+func (writer *progressDeadlineResponseWriter) SetWriteDeadline(deadline time.Time) error {
+	writer.maximumWriteDeadline = deadline
+	return writer.controller.SetWriteDeadline(deadline)
+}
+
+func (writer *progressDeadlineResponseWriter) SetReadDeadline(deadline time.Time) error {
+	writer.maximumReadDeadline = deadline
+	return writer.controller.SetReadDeadline(deadline)
+}
+
+func (writer *progressDeadlineResponseWriter) resetRead() {
+	deadline := time.Now().Add(streamRequestIdleTimeout)
+	if !writer.maximumReadDeadline.IsZero() && writer.maximumReadDeadline.Before(deadline) {
+		deadline = writer.maximumReadDeadline
+	}
+	_ = writer.controller.SetReadDeadline(deadline)
+}
+
 func (writer *progressDeadlineResponseWriter) reset() {
-	_ = writer.controller.SetWriteDeadline(time.Now().Add(streamResponseIdleTimeout))
+	deadline := time.Now().Add(streamResponseIdleTimeout)
+	if !writer.maximumWriteDeadline.IsZero() && writer.maximumWriteDeadline.Before(deadline) {
+		deadline = writer.maximumWriteDeadline
+	}
+	_ = writer.controller.SetWriteDeadline(deadline)
 }
 
 func (writer *progressDeadlineResponseWriter) clear() {
