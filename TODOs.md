@@ -512,11 +512,22 @@ workspaces and filesystem migration are outside the current product scope.
   identities; physical iOS devices and EAS Build retain their own contracts.
 
 - [ ] **Measure residual iOS work before extending shared LLVM transport.**
-  Owner: Phone native owner. Two recent RunCloud samples already hit all 1,725
+  Owner: Phone native owner with LayerCache artifact support. Two retained
+  RunCloud samples already hit all 1,725
   cacheable compiler tasks but occupied Macs for 16m44s/18m28s. Time setup,
   packaging, runtime acceptance and receipt misses separately. Qualify released
   graph retention on Phone's exact toolchain/scale before expanded use. Swift
-  replay and signed-build cost remain separate evidence targets.
+  replay and signed-build cost remain separate evidence targets. The
+  [October 19 Linux/Mac research](docs/research/bazel-and-layercache-20261019.md#reduce-mac-work-before-migrating-an-expo-app)
+  prioritizes native-shell reuse with current JS/assets over a full build-system
+  migration. Qualify a compatible JS-only change and a changed-native control,
+  fresh simulator assertions, exact native/toolchain/Hermes/environment identity,
+  and source/provenance checks. Separate native-shell, bundled-app and QA-verdict
+  identities. Measure native seed amortization, actual Apple worker allocation,
+  Linux preparation/repack, transfers and whole-workflow time; a Linux controller
+  does not establish reduced Mac use. Keep store release, experimental signing
+  and simulator QA qualification separate. Turbo can remain the JS orchestrator;
+  consider a bounded Bazel pilot only if residual native action work justifies it.
 
 ## P1: complete supported private protocols
 
