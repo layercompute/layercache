@@ -136,17 +136,34 @@ test('body truncation, stalls, byte limits and wrong digests retain strict relay
   }
 });
 
+test('only a completed reader POST events denial is optional', () => {
+  const row = { kind: 'events', method: 'POST', artifact: false, status: 401, completeMs: 1, headersMs: 1,
+    uploadBytes: 0, downloadBytes: 2, digestVerified: false, failed: false, rejectedRedirect: false };
+  assert.equal(httpSummary([row], 'reader').deniedOptionalEvents, 1);
+  assert.throws(() => httpSummary([row], 'producer'), /unexpected-native-http-status/);
+  for (const patch of [{ method: 'GET' }, { kind: 'status', method: 'GET' }, { kind: 'artifact', artifact: true }, { status: 403 }]) {
+    assert.throws(() => httpSummary([{ ...row, ...patch }], 'reader'), /unexpected-native-http-status/);
+  }
+  for (const patch of [{ completeMs: 0 }, { failed: true }, { rejectedRedirect: true }]) {
+    assert.throws(() => httpSummary([{ ...row, ...patch }], 'reader'), /native-transport-failed/);
+  }
+});
+
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 test('real locked Turbo waits for delayed alternate-profile events and preserves producer/reader controls', {
   skip: !existsSync(join(repo, 'qa/fixtures/local-ci-reuse/node_modules/.bin/turbo')),
 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'r2-native-local-control-')), objects = new Map();
-  let acceptedPUTs = 0, artifactPUTStatus = 200, rejectedPUTs = 0, metadataSuccesses = 0, failAlternateBody = false;
+  let acceptedPUTs = 0, artifactPUTStatus = 200, rejectedPUTs = 0, metadataSuccesses = 0, failAlternateBody = false, modelCase = '';
   const provider = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const claims = JSON.parse(Buffer.from(req.headers.authorization.split('.')[1], 'base64url'));
-    if (url.pathname.endsWith('/status')) { metadataSuccesses++; res.writeHead(200).end('{"status":"enabled"}'); return; }
+    if (url.pathname.endsWith('/status')) {
+      if (modelCase === 'reader-status401') { res.writeHead(401).end('{}'); return; }
+      metadataSuccesses++; res.writeHead(200).end('{"status":"enabled"}'); return;
+    }
     if (url.pathname.endsWith('/events')) {
+      if (claims.capabilities[0] === 'read' || modelCase === 'producer-events401') { req.resume(); res.writeHead(401).end('{}'); return; }
       metadataSuccesses++; req.resume();
       res.writeHead(200, { 'Content-Length': 2 }); res.flushHeaders();
       if (claims.compatibility.endsWith('-other') && failAlternateBody) {
@@ -165,6 +182,7 @@ test('real locked Turbo waits for delayed alternate-profile events and preserves
       if (artifactPUTStatus !== 200) { rejectedPUTs++; res.writeHead(artifactPUTStatus).end('{}'); return; }
       objects.set(key, bytes); acceptedPUTs++; res.writeHead(200).end('{}'); return;
     }
+    if (modelCase === 'reader-artifact401') { res.writeHead(401).end('{}'); return; }
     const bytes = objects.get(key);
     if (!bytes) { res.writeHead(404).end('{}'); return; }
     res.writeHead(200, { 'content-length': bytes.length,
@@ -176,8 +194,9 @@ test('real locked Turbo waits for delayed alternate-profile events and preserves
     port: url.port, path: url.pathname + url.search }, callback);
   const sample = randomBytes(16).toString('hex');
   try {
-    for (const label of ['producer', 'reader', 'failed-alternate-body', 'rejected-publication']) {
-      const mode = label === 'reader' ? 'reader' : 'producer';
+    for (const label of ['producer', 'reader', 'failed-alternate-body', 'rejected-publication', 'reader-artifact401', 'reader-status401', 'producer-events401']) {
+      const mode = label === 'reader' || label.startsWith('reader-') ? 'reader' : 'producer';
+      modelCase = label;
       artifactPUTStatus = label === 'rejected-publication' ? 404 : 200;
       failAlternateBody = label === 'failed-alternate-body';
       rejectedPUTs = 0; metadataSuccesses = 0;
@@ -200,6 +219,13 @@ test('real locked Turbo waits for delayed alternate-profile events and preserves
       const summaries = () => existsSync(join(cfg.workspace, '.turbo/runs'))
         ? readdirSync(join(cfg.workspace, '.turbo/runs')).filter(name => name.endsWith('.json')) : [];
       try {
+        if (label.endsWith('401')) {
+          await assert.rejects(qualify(cfg, { ...env, TURBO_API: cfg.origin, TURBO_TEAM: cfg.project, TURBO_TOKEN: token(compatibility) },
+            { requester, exchanger: async input => ({ teamToken: token(input.compatibility) }) }), /unexpected-native-http-status|native-command-result-mismatch/);
+          assert.equal(JSON.parse(readFileSync(cfg.output, 'utf8')).passed, false);
+          assert.deepEqual(summaries(), []);
+          continue;
+        }
         if (label === 'failed-alternate-body') {
           await assert.rejects(qualify(cfg, { ...env, TURBO_API: cfg.origin, TURBO_TEAM: cfg.project, TURBO_TOKEN: token(compatibility) },
             { requester, exchanger: async input => ({ teamToken: token(input.compatibility) }) }), /native-transport-failed/);
@@ -243,14 +269,20 @@ test('real locked Turbo waits for delayed alternate-profile events and preserves
         assert.equal(summaries().length, 1, 'successful qualification retains only its baseline for the post hook');
         assert.ok(summary.scenarios.every(scenario => Number.isFinite(scenario.observationMs) && scenario.observationMs >= 0));
         assert.equal(summary.scenarios[0].executedTasks, mode === 'producer' ? 2 : 0);
-        if (mode === 'reader') assert.equal(summary.deniedReadOnlyPUTStatus, 401);
+        for (const scenario of summary.scenarios) {
+          assert.equal(scenario.http.artifactGETMisses, scenario.name === 'independent-reader' ? 0 : scenario.tasks.length);
+        }
+        if (mode === 'reader') {
+          assert.equal(summary.deniedReadOnlyPUTStatus, 401);
+          assert.ok(summary.scenarios[0].http.deniedOptionalEvents > 0);
+        }
         const text = JSON.stringify(summary);
         for (const secret of [cfg.project, sample, cfg.origin, cfg.workspace, env.TURBO_TOKEN || 'synthetic-not-a-signature']) {
           assert.ok(!text.includes(secret));
         }
       } finally { rmSync(cfg.workspace, { recursive: true, force: true }); }
     }
-    assert.equal(acceptedPUTs, 4);
+    assert.equal(acceptedPUTs, 6);
   } finally {
     await new Promise(resolve => { provider.close(resolve); provider.closeAllConnections(); });
     rmSync(root, { recursive: true, force: true });

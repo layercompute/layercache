@@ -101,7 +101,9 @@ export async function observe(origin, token, requester = requestHTTPS) {
         ['GET', 'HEAD', 'PUT', 'POST'].includes(request.method), 'invalid-native-url');
       check(request.headers.authorization === `Bearer ${token}`, 'wrong-native-token');
     } catch { request.resume(); response.writeHead(400).end(); return; }
-    const row = { method: request.method, artifact: /^[a-f0-9]{16,64}$/.test(url.pathname.split('/').at(-1)),
+    const name = url.pathname.split('/').at(-1), artifact = /^[a-f0-9]{16,64}$/.test(name);
+    const row = { method: request.method, kind: artifact ? 'artifact' : name, artifact,
+      nativeKey: artifact ? name : undefined,
       status: 0, uploadBytes: 0, downloadBytes: 0, headersMs: 0, completeMs: 0,
       digestVerified: false, rejectedRedirect: false, failed: false };
     rows.push(row);
@@ -202,9 +204,13 @@ export function taskSummary(document) {
   }).sort((a, b) => a.task.localeCompare(b.task));
 }
 
-export function httpSummary(rows) {
+export function httpSummary(rows, mode) {
   check(rows.every(row => row.status > 0 && row.status < 600 && row.completeMs > 0 && !row.rejectedRedirect && !row.failed), 'native-transport-failed');
+  const deniedEvents = row => mode === 'reader' && row.kind === 'events' && row.method === 'POST' && row.status === 401;
+  check(rows.every(row => row.status === 200 || row.status === 404 || deniedEvents(row)), 'unexpected-native-http-status');
   return { requests: rows.length, artifactPUTs: rows.filter(row => row.artifact && row.method === 'PUT').length,
+    artifactGETMisses: rows.filter(row => row.artifact && row.method === 'GET' && row.status === 404).length,
+    deniedOptionalEvents: rows.filter(deniedEvents).length,
     uploadedBodyBytes: rows.reduce((n, row) => n + row.uploadBytes, 0),
     downloadedBodyBytes: rows.reduce((n, row) => n + row.downloadBytes, 0),
     verifiedArchiveGETs: rows.filter(row => row.digestVerified).length,
@@ -265,8 +271,7 @@ export async function qualify(cfg, env, { requester = requestHTTPS, exchanger = 
     check(fresh.length === 1, 'missing-native-summary');
     const tasks = taskSummary(JSON.parse(readFileSync(join(runs, fresh[0]), 'utf8')));
     check(tasks.length === (fail ? 1 : 2) && new Set(tasks.map(task => task.task)).size === tasks.length, 'incomplete-native-task-set');
-    const exchanges = observer.rows.slice(httpStart), http = httpSummary(exchanges);
-    check(exchanges.every(row => row.status === 200 || row.status === 404), 'unexpected-native-http-status');
+    const exchanges = observer.rows.slice(httpStart), http = httpSummary(exchanges, cfg.mode);
     check(count() - startCounter === executed, 'execution-counter-mismatch');
     check(tasks.every(task => !task.localHit && task.remoteHit === hit && task.cache === (hit ? 'HIT' : 'MISS')), 'native-cache-result-mismatch');
     check(tasks.every(task => expected.some(item => item.task === task.task && item.nativeKey === task.nativeKey)), 'native-plan-key-mismatch');
@@ -277,6 +282,11 @@ export async function qualify(cfg, env, { requester = requestHTTPS, exchanger = 
     check(!existsSync(join(cfg.workspace, '.turbo/cache')), 'filesystem-task-cache-created');
     if (cache === 'local:,remote:r' || fail) check(http.artifactPUTs === 0, 'unexpected-artifact-publication');
     if (hit) check(http.verifiedArchiveGETs === 2, 'missing-exact-remote-archives');
+    else {
+      const misses = exchanges.filter(row => row.artifact && row.method === 'GET' && row.status === 404);
+      check(misses.length === tasks.length && new Set(misses.map(row => row.nativeKey)).size === tasks.length &&
+        tasks.every(task => misses.some(row => row.nativeKey === task.nativeKey)), 'native-miss-not-observed');
+    }
     if (name === 'cold-writer') {
       const publications = exchanges.filter(row => row.artifact && row.method === 'PUT');
       check(publications.length === 2 && publications.every(row => row.status === 200), 'native-publication-not-acknowledged');
