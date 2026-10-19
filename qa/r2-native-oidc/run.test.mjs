@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createServer, request } from 'node:http';
 import { assertAuthority, compatibility, configuration, httpSummary, observe, prepare, qualify, taskSummary } from './run.mjs';
 
@@ -97,17 +98,63 @@ test('the HTTPS relay rejects 307/308 without sending credentials or requests to
   }
 });
 
+test('body truncation, stalls, byte limits and wrong digests retain strict relay failures', async () => {
+  for (const mode of ['truncated', 'stalled', 'oversize', 'wrong-digest']) {
+    const upstream = createServer((req, res) => {
+      req.resume();
+      if (mode === 'wrong-digest') {
+        res.writeHead(200, { 'x-layercache-digest': `sha256:${'0'.repeat(64)}` }).end('fixture'); return;
+      }
+      if (mode === 'oversize') { res.writeHead(200).end(Buffer.alloc((8 << 20) + 1)); return; }
+      res.writeHead(200, { 'Content-Length': 10 }); res.flushHeaders(); res.write('partial');
+      if (mode === 'truncated') setTimeout(() => res.destroy(), 20);
+    });
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    const requester = (url, options, callback) => request({ ...options, hostname: url.hostname,
+      port: url.port, path: url.pathname + url.search }, callback);
+    const observer = await observe(`https://127.0.0.1:${upstream.address().port}`, 'synthetic', requester);
+    try {
+      // Like Turbo's optional event response, close after headers. The relay
+      // still has to consume the real upstream body or record a hard failure.
+      await new Promise((resolve, reject) => {
+        const client = request(`${observer.origin}/v8/artifacts/${'a'.repeat(16)}`,
+          { headers: { Authorization: 'Bearer synthetic' } }, response => { response.destroy(); resolve(); });
+        client.once('error', reject); client.end();
+      });
+      if (mode === 'stalled') await assert.rejects(observer.settle(40), /native-observation-timeout/);
+      else await observer.settle();
+      assert.ok(observer.rows.every(row => !row.digestVerified));
+      if (mode === 'wrong-digest') assert.equal(httpSummary(observer.rows).verifiedArchiveGETs, 0);
+      else {
+        assert.throws(() => httpSummary(observer.rows), /native-transport-failed/);
+        assert.ok(observer.rows.every(row => row.completeMs === 0));
+      }
+    } finally {
+      await observer.close();
+      await new Promise(resolve => { upstream.close(resolve); upstream.closeAllConnections(); });
+    }
+  }
+});
+
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-test('real locked Turbo producer/reader and failure controls work against a credential-free local model', {
+test('real locked Turbo waits for delayed alternate-profile events and preserves producer/reader controls', {
   skip: !existsSync(join(repo, 'qa/fixtures/local-ci-reuse/node_modules/.bin/turbo')),
 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'r2-native-local-control-')), objects = new Map();
-  let acceptedPUTs = 0, artifactPUTStatus = 200, rejectedPUTs = 0, metadataSuccesses = 0;
+  let acceptedPUTs = 0, artifactPUTStatus = 200, rejectedPUTs = 0, metadataSuccesses = 0, failAlternateBody = false;
   const provider = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const claims = JSON.parse(Buffer.from(req.headers.authorization.split('.')[1], 'base64url'));
     if (url.pathname.endsWith('/status')) { metadataSuccesses++; res.writeHead(200).end('{"status":"enabled"}'); return; }
-    if (url.pathname.endsWith('/events')) { metadataSuccesses++; req.resume(); res.writeHead(200).end('{}'); return; }
+    if (url.pathname.endsWith('/events')) {
+      metadataSuccesses++; req.resume();
+      res.writeHead(200, { 'Content-Length': 2 }); res.flushHeaders();
+      if (claims.compatibility.endsWith('-other') && failAlternateBody) {
+        res.write('{'); await delay(20); res.destroy(); return;
+      }
+      if (claims.compatibility.endsWith('-other')) await delay(1000);
+      res.end('{}'); return;
+    }
     const key = claims.compatibility + url.pathname;
     if (req.method === 'PUT') {
       if (claims.capabilities[0] !== 'write') { req.resume(); res.writeHead(401).end('{}'); return; }
@@ -129,15 +176,16 @@ test('real locked Turbo producer/reader and failure controls work against a cred
     port: url.port, path: url.pathname + url.search }, callback);
   const sample = randomBytes(16).toString('hex');
   try {
-    for (const label of ['producer', 'reader', 'rejected-publication']) {
+    for (const label of ['producer', 'reader', 'failed-alternate-body', 'rejected-publication']) {
       const mode = label === 'reader' ? 'reader' : 'producer';
       artifactPUTStatus = label === 'rejected-publication' ? 404 : 200;
+      failAlternateBody = label === 'failed-alternate-body';
       rejectedPUTs = 0; metadataSuccesses = 0;
       const temp = join(root, label); mkdirSync(temp);
       const event = join(temp, 'event.json'); writeFileSync(event, JSON.stringify({ repository: { default_branch: 'main' } }));
       const output = join(temp, 'output'); writeFileSync(output, '');
       const env = { ...process.env, R2_QA_ENABLED: 'true', R2_QA_MODE: mode,
-        R2_QA_SAMPLE: label === 'rejected-publication' ? randomBytes(16).toString('hex') : sample,
+        R2_QA_SAMPLE: ['producer', 'reader'].includes(label) ? sample : randomBytes(16).toString('hex'),
         R2_QA_ORIGIN: `https://127.0.0.1:${provider.address().port}`, R2_QA_PROJECT: 'synthetic-private-selector',
         GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_EVENT_PATH: event, GITHUB_WORKSPACE: repo,
         GITHUB_SHA: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
@@ -149,7 +197,18 @@ test('real locked Turbo producer/reader and failure controls work against a cred
         capabilities: [mode === 'producer' ? 'write' : 'read'], expiresAt: new Date(Date.now() + 60_000).toISOString(),
       })).toString('base64url')}.synthetic-not-a-signature`;
       prepare(cfg, env);
+      const summaries = () => existsSync(join(cfg.workspace, '.turbo/runs'))
+        ? readdirSync(join(cfg.workspace, '.turbo/runs')).filter(name => name.endsWith('.json')) : [];
       try {
+        if (label === 'failed-alternate-body') {
+          await assert.rejects(qualify(cfg, { ...env, TURBO_API: cfg.origin, TURBO_TEAM: cfg.project, TURBO_TOKEN: token(compatibility) },
+            { requester, exchanger: async input => ({ teamToken: token(input.compatibility) }) }), /native-transport-failed/);
+          const partial = JSON.parse(readFileSync(cfg.output, 'utf8'));
+          assert.equal(partial.passed, false);
+          assert.deepEqual(partial.scenarios.map(scenario => scenario.name), ['cold-writer', 'changed-source', 'changed-environment']);
+          assert.deepEqual(summaries(), [], 'failed alternate-profile controls must leave nothing for the baseline post hook');
+          continue;
+        }
         if (label === 'rejected-publication') {
           let rejection;
           try {
@@ -161,6 +220,7 @@ test('real locked Turbo producer/reader and failure controls work against a cred
           assert.ok(rejection, 'two rejected artifact PUTs must not qualify despite successful status/events requests');
           assert.match(rejection.message, /native-publication-not-acknowledged/);
           assert.equal(JSON.parse(readFileSync(cfg.output, 'utf8')).passed, false);
+          assert.deepEqual(summaries(), []);
           continue;
         }
         if (mode === 'producer') {
@@ -172,6 +232,7 @@ test('real locked Turbo producer/reader and failure controls work against a cred
           assert.equal(failed.status, 1, 'invalid dry plan must close the relay and exit without hanging');
           assert.match(failed.stderr, /native-dry-plan-failed/);
           assert.ok(!failed.stderr.includes(cfg.project) && !failed.stderr.includes(cfg.workspace));
+          assert.deepEqual(summaries(), []);
           writeFileSync(config, original); rmSync(cfg.output, { force: true });
         }
         await qualify(cfg, { ...env, TURBO_API: cfg.origin, TURBO_TEAM: cfg.project, TURBO_TOKEN: token(compatibility) },
@@ -179,6 +240,8 @@ test('real locked Turbo producer/reader and failure controls work against a cred
         const summary = JSON.parse(readFileSync(cfg.output, 'utf8'));
         assert.equal(summary.passed, true);
         assert.equal(summary.scenarios.length, 6);
+        assert.equal(summaries().length, 1, 'successful qualification retains only its baseline for the post hook');
+        assert.ok(summary.scenarios.every(scenario => Number.isFinite(scenario.observationMs) && scenario.observationMs >= 0));
         assert.equal(summary.scenarios[0].executedTasks, mode === 'producer' ? 2 : 0);
         if (mode === 'reader') assert.equal(summary.deniedReadOnlyPUTStatus, 401);
         const text = JSON.stringify(summary);
@@ -187,7 +250,7 @@ test('real locked Turbo producer/reader and failure controls work against a cred
         }
       } finally { rmSync(cfg.workspace, { recursive: true, force: true }); }
     }
-    assert.equal(acceptedPUTs, 2);
+    assert.equal(acceptedPUTs, 4);
   } finally {
     await new Promise(resolve => { provider.close(resolve); provider.closeAllConnections(); });
     rmSync(root, { recursive: true, force: true });
