@@ -14,6 +14,12 @@ Alternatively install `deploy/layercache.service` after creating a dedicated `la
 
 On the shared development host, consult its platform documentation before registering a public hostname. A published GitHub runner needs a reachable HTTPS endpoint; a developer-only VPN URL is insufficient unless the runner joins that network.
 
+For managed hosting, [hosted storage pools and capacity plans](hosted-storage.md)
+bind projects to persistent S3-compatible pools, with Cloudflare R2 as the
+default managed provider. Storage placement does not grant project access.
+Keep all provider keys and database credentials in protected runtime files;
+public examples contain placeholders only.
+
 ## GitHub Actions migration
 
 Publish an immutable Layer Cache release before migrating workflows. Install the repository's `action/setup` by immutable commit before Turbo commands, and pass the published release repository/version plus the Team endpoint. Use GitHub OIDC with `id-token: write` so the job gets a project-, repository-, ref-, and integration-scoped credential. `action/cache` obtains its own Actions credential. Never distribute the server's administrator `localToken` to CI.
@@ -36,7 +42,7 @@ acceptance pass. A Local acknowledgement does not provide this guarantee.
 ## Backup and restore
 
 1. Back up PostgreSQL using the provider's snapshots and point-in-time recovery. Include project metadata, memberships, audit, retained receipts/reservations/claims and expiry state, publication tombstones, and Public Build coordination tables. Test restoration into a separate database.
-2. Enable S3 versioning or replication and retain objects longer than the database recovery window. A database restored to an earlier point may still reference objects collected later. Back up OCI registry storage separately using its supported method.
+2. Configure an object backup or replication mechanism supported by the provider and retain objects longer than the database recovery window. Use S3 versioning only where supported; R2 does not provide S3 bucket versioning or Object Lock. A database restored to an earlier point may still reference objects collected later. External lifecycle rules must not delete objects protected by LayerCache retention. Back up OCI registry storage separately using its supported method. See [R2's S3 compatibility table](https://developers.cloudflare.com/r2/api/s3/api/).
 3. Protect service configuration and Public Cache signing keys in a secret manager with its own recovery policy. Never place them in this Git repository or ordinary QA output.
 4. For a consistent manual recovery point, stop writers and background collection before taking database and object snapshots. Record the database snapshot and object/registry snapshot IDs together.
 5. Restore into isolated services with no CI traffic. Verify `status`, authentication, a known Turbo restore, an Actions archive, and an immutable BuildKit pull. Corrupt or missing evictable cache artifacts must return a miss. Required retained artifacts fail explicitly; verify their unchanged producer identity, complete bytes, deadline and retention claims. Check revocation/tombstone records before enabling Public Cache reads.

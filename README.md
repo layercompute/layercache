@@ -583,4 +583,4 @@ See [qa/README.md](qa/README.md) for installed-binary smoke tests with real Turb
 
 ## Self-serve cloud
 
-Connect your CLI to a hosted team project with `layercache connect --cloud URL --project ID --github-cli`. The hosted dashboard provides GitHub sign-in, team invitations and roles, project creation, and cache activity. See [self-serve cloud setup and limits](docs/self-serve-cloud.md) for the engineer workflow and operator deployment.
+Connect your CLI to a configured team project with `layercache connect --cloud URL --project ID --github-cli`. The dashboard implementation provides GitHub sign-in, team invitations and roles, project creation, and cache activity. See [self-serve cloud setup and limits](docs/self-serve-cloud.md) for the engineer workflow and [hosted storage pools](docs/hosted-storage.md) for persistent S3/R2 placement and operator-assigned capacity. Public signup, billing and service activation remain separate launch gates.
