@@ -6,6 +6,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createServer, request } from 'node:http';
 import { assertAuthority, compatibility, configuration, httpSummary, observe, prepare, qualify, taskSummary } from './run.mjs';
 
@@ -97,8 +98,46 @@ test('the HTTPS relay rejects 307/308 without sending credentials or requests to
   }
 });
 
+test('body truncation, stalls, byte limits and wrong digests retain strict relay failures', async () => {
+  for (const mode of ['truncated', 'stalled', 'oversize', 'wrong-digest']) {
+    const upstream = createServer((req, res) => {
+      req.resume();
+      if (mode === 'wrong-digest') {
+        res.writeHead(200, { 'x-layercache-digest': `sha256:${'0'.repeat(64)}` }).end('fixture'); return;
+      }
+      if (mode === 'oversize') { res.writeHead(200).end(Buffer.alloc((8 << 20) + 1)); return; }
+      res.writeHead(200, { 'Content-Length': 10 }); res.flushHeaders(); res.write('partial');
+      if (mode === 'truncated') setTimeout(() => res.destroy(), 20);
+    });
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    const requester = (url, options, callback) => request({ ...options, hostname: url.hostname,
+      port: url.port, path: url.pathname + url.search }, callback);
+    const observer = await observe(`https://127.0.0.1:${upstream.address().port}`, 'synthetic', requester);
+    try {
+      // Like Turbo's optional event response, close after headers. The relay
+      // still has to consume the real upstream body or record a hard failure.
+      await new Promise((resolve, reject) => {
+        const client = request(`${observer.origin}/v8/artifacts/${'a'.repeat(16)}`,
+          { headers: { Authorization: 'Bearer synthetic' } }, response => { response.destroy(); resolve(); });
+        client.once('error', reject); client.end();
+      });
+      if (mode === 'stalled') await assert.rejects(observer.settle(40), /native-observation-timeout/);
+      else await observer.settle();
+      assert.ok(observer.rows.every(row => !row.digestVerified));
+      if (mode === 'wrong-digest') assert.equal(httpSummary(observer.rows).verifiedArchiveGETs, 0);
+      else {
+        assert.throws(() => httpSummary(observer.rows), /native-transport-failed/);
+        assert.ok(observer.rows.every(row => row.completeMs === 0));
+      }
+    } finally {
+      await observer.close();
+      await new Promise(resolve => { upstream.close(resolve); upstream.closeAllConnections(); });
+    }
+  }
+});
+
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-test('real locked Turbo producer/reader and failure controls work against a credential-free local model', {
+test('real locked Turbo waits for delayed alternate-profile events and preserves producer/reader controls', {
   skip: !existsSync(join(repo, 'qa/fixtures/local-ci-reuse/node_modules/.bin/turbo')),
 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'r2-native-local-control-')), objects = new Map();
@@ -107,7 +146,12 @@ test('real locked Turbo producer/reader and failure controls work against a cred
     const url = new URL(req.url, 'http://localhost');
     const claims = JSON.parse(Buffer.from(req.headers.authorization.split('.')[1], 'base64url'));
     if (url.pathname.endsWith('/status')) { metadataSuccesses++; res.writeHead(200).end('{"status":"enabled"}'); return; }
-    if (url.pathname.endsWith('/events')) { metadataSuccesses++; req.resume(); res.writeHead(200).end('{}'); return; }
+    if (url.pathname.endsWith('/events')) {
+      metadataSuccesses++; req.resume();
+      res.writeHead(200, { 'Content-Length': 2 }); res.flushHeaders();
+      if (claims.compatibility.endsWith('-other')) await delay(1000);
+      res.end('{}'); return;
+    }
     const key = claims.compatibility + url.pathname;
     if (req.method === 'PUT') {
       if (claims.capabilities[0] !== 'write') { req.resume(); res.writeHead(401).end('{}'); return; }
@@ -179,6 +223,7 @@ test('real locked Turbo producer/reader and failure controls work against a cred
         const summary = JSON.parse(readFileSync(cfg.output, 'utf8'));
         assert.equal(summary.passed, true);
         assert.equal(summary.scenarios.length, 6);
+        assert.ok(summary.scenarios.every(scenario => Number.isFinite(scenario.observationMs) && scenario.observationMs >= 0));
         assert.equal(summary.scenarios[0].executedTasks, mode === 'producer' ? 2 : 0);
         if (mode === 'reader') assert.equal(summary.deniedReadOnlyPUTStatus, 401);
         const text = JSON.stringify(summary);

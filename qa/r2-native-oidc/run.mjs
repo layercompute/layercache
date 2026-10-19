@@ -6,6 +6,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { exchangeTurbo } from '../../action/setup/auth.ts';
 
 export const compatibility = 'linux-x64-node24.13.0-turbo2.10.12-pnpm10.34.5-r2-native-v1';
@@ -90,7 +91,7 @@ export function assertAuthority(token, cfg, env, profile = compatibility) {
 }
 
 export async function observe(origin, token, requester = requestHTTPS) {
-  const rows = [];
+  const rows = [], pending = new Set(), upstreams = new Set(), replies = new Set();
   const server = createServer((request, response) => {
     let url;
     try {
@@ -101,21 +102,30 @@ export async function observe(origin, token, requester = requestHTTPS) {
       check(request.headers.authorization === `Bearer ${token}`, 'wrong-native-token');
     } catch { request.resume(); response.writeHead(400).end(); return; }
     const row = { method: request.method, artifact: /^[a-f0-9]{16,64}$/.test(url.pathname.split('/').at(-1)),
-      status: 0, uploadBytes: 0, downloadBytes: 0, headersMs: 0, completeMs: 0, digestVerified: false, rejectedRedirect: false };
+      status: 0, uploadBytes: 0, downloadBytes: 0, headersMs: 0, completeMs: 0,
+      digestVerified: false, rejectedRedirect: false, failed: false };
     rows.push(row);
     const started = performance.now();
     if (rows.length > 256) { response.writeHead(429).end(); request.resume(); return; }
+    let resolveComplete;
+    const complete = new Promise(resolve => { resolveComplete = resolve; });
+    pending.add(complete);
+    const finish = failed => {
+      row.failed ||= failed;
+      pending.delete(complete); resolveComplete();
+    };
     const headers = { authorization: `Bearer ${token}` };
     for (const name of ['content-length', 'content-type', 'x-artifact-duration', 'x-artifact-tag',
       'x-artifact-client-ci', 'x-artifact-source-sha', 'x-artifact-dirty-hash']) {
       if (typeof request.headers[name] === 'string') headers[name] = request.headers[name];
     }
     const upstream = requester(url, { method: request.method, headers, signal: AbortSignal.timeout(45_000) }, reply => {
+      replies.add(reply); reply.once('close', () => replies.delete(reply));
       row.status = reply.statusCode;
       row.headersMs = performance.now() - started;
       if (reply.statusCode >= 300 && reply.statusCode < 400) {
         row.rejectedRedirect = true;
-        reply.resume(); response.writeHead(502).end(); return;
+        finish(true); reply.resume(); response.writeHead(502).end(); return;
       }
       const selected = {};
       for (const name of ['content-length', 'content-type', 'cache-control', 'x-artifact-duration', 'x-artifact-tag', 'x-layercache-digest']) {
@@ -125,30 +135,58 @@ export async function observe(origin, token, requester = requestHTTPS) {
       const digest = createHash('sha256');
       reply.on('data', chunk => {
         row.downloadBytes += chunk.length; digest.update(chunk);
-        if (row.downloadBytes > 8 << 20) { reply.destroy(); response.destroy(); }
+        if (row.downloadBytes > 8 << 20) { finish(true); reply.destroy(); response.destroy(); }
       });
       reply.once('end', () => {
+        if (row.failed) return;
         row.completeMs = performance.now() - started;
         row.digestVerified = row.method === 'GET' && row.artifact && row.status === 200 &&
           reply.headers['x-layercache-digest'] === `sha256:${digest.digest('hex')}`;
+        finish(false);
       });
-      reply.once('error', () => response.destroy());
-      reply.pipe(response);
+      reply.once('error', () => { finish(true); response.destroy(); });
+      reply.once('aborted', () => { finish(true); response.destroy(); });
+      reply.once('close', () => { if (!reply.readableEnded) finish(true); });
+      // Turbo can finish after telemetry headers without consuming its body.
+      // Drain the real upstream stream even when that downstream has closed.
+      if (response.destroyed) reply.resume();
+      else {
+        reply.pipe(response);
+        response.once('close', () => reply.resume());
+      }
     });
+    upstreams.add(upstream);
+    upstream.once('close', () => upstreams.delete(upstream));
     upstream.once('error', () => {
-      row.status = 502;
+      row.status = 502; finish(true);
       if (!response.headersSent) response.writeHead(502).end(); else response.destroy();
     });
     request.on('data', chunk => {
       row.uploadBytes += chunk.length;
-      if (row.uploadBytes > 8 << 20) { upstream.destroy(); request.destroy(); }
+      if (row.uploadBytes > 8 << 20) { finish(true); upstream.destroy(); request.destroy(); }
     });
     request.once('aborted', () => upstream.destroy());
     request.pipe(upstream);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   return { rows, origin: `http://127.0.0.1:${server.address().port}`,
-    close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }) };
+    settle: async (timeoutMs = 5000) => {
+      await nextTurn();
+      if (!pending.size) return;
+      let timer;
+      try {
+        const completed = async () => { while (pending.size) await Promise.all([...pending]); };
+        await Promise.race([completed(), new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('native-observation-timeout')), timeoutMs);
+        })]);
+      } finally { clearTimeout(timer); }
+      check(pending.size === 0, 'native-observation-timeout');
+    },
+    close: () => new Promise(resolve => {
+      server.close(resolve); server.closeAllConnections();
+      for (const upstream of upstreams) upstream.destroy();
+      for (const reply of replies) reply.destroy();
+    }) };
 }
 
 export function taskSummary(document) {
@@ -165,7 +203,7 @@ export function taskSummary(document) {
 }
 
 export function httpSummary(rows) {
-  check(rows.every(row => row.status > 0 && row.status < 600 && row.completeMs > 0 && !row.rejectedRedirect), 'native-transport-failed');
+  check(rows.every(row => row.status > 0 && row.status < 600 && row.completeMs > 0 && !row.rejectedRedirect && !row.failed), 'native-transport-failed');
   return { requests: rows.length, artifactPUTs: rows.filter(row => row.artifact && row.method === 'PUT').length,
     uploadedBodyBytes: rows.reduce((n, row) => n + row.uploadBytes, 0),
     downloadedBodyBytes: rows.reduce((n, row) => n + row.downloadBytes, 0),
@@ -219,6 +257,9 @@ export async function qualify(cfg, env, { requester = requestHTTPS, exchanger = 
       result = { status: error.code, stdout: String(error.stdout || '') };
     }
     const commandMs = performance.now() - started;
+    const observationStart = performance.now();
+    await observer.settle();
+    const observationMs = performance.now() - observationStart;
     check(result.status === (fail ? 7 : 0), 'native-command-result-mismatch');
     const fresh = readdirSync(runs).filter(name => name.endsWith('.json') && !before.has(name));
     check(fresh.length === 1, 'missing-native-summary');
@@ -248,7 +289,7 @@ export async function qualify(cfg, env, { requester = requestHTTPS, exchanger = 
       check(bytes.equals(Buffer.from(expectedBytes)), 'native-output-digest-mismatch');
       outputs.push({ task, bytes: bytes.length, sha256: sha256(bytes) });
     }
-    evidence.scenarios.push({ name, exitCode: result.status, commandMs, executedTasks: executed, tasks, outputs, http });
+    evidence.scenarios.push({ name, exitCode: result.status, commandMs, observationMs, executedTasks: executed, tasks, outputs, http });
     // The action's post hook reports only the baseline under its original
     // compatibility. Controls deliberately use other native inputs/namespaces.
     if (!['cold-writer', 'independent-reader'].includes(name)) rmSync(join(runs, fresh[0]));

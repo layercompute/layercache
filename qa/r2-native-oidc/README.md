@@ -57,9 +57,16 @@ for this control and must observe zero artifact PUTs from failed tasks.
 A streaming loopback relay forwards only the native artifact protocol to the
 configured HTTPS origin. It never follows redirects, measures complete body
 bytes and request timings, and verifies SHA256 on successful archive reads.
+After each native command, it allows up to five seconds for real pending
+responses to finish. It drains upstream bodies after the native client closes
+its side, including optional telemetry bodies. This avoids treating Turbo's
+early exit after telemetry headers as a transfer failure. A timeout, upstream
+error, truncated/oversized body or redirect still fails qualification.
 This proves the external HTTPS/native transport through that relay, not a
 direct-client performance comparison. Summed overlapping request durations
 are separate from native-command wall time and are not pure bandwidth.
+`commandMs` stops at native process exit; `observationMs` records the separate
+response-drain wait.
 
 Only `r2-native-public-summary.json` is uploaded. It allowlists tool/source pins,
 task keys, statuses, execution counts, output digests and aggregate measurements.
