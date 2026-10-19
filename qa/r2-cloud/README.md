@@ -21,6 +21,15 @@ never passed as argument values, printed or included in evidence. Error output
 contains bounded operation labels and provider error codes. Do not enable HTTP
 or SDK debug logging or capture process memory.
 
+Before any provider work, the runner reserves the new receipt and an adjacent
+mode-0600 `.cleanup.jsonl` journal with exclusive creation. It fsyncs the journal
+and records exact owned bucket/prefix, credential-file reference, container name
+and local scratch path **before** creating or writing each resource. This
+private recovery inventory is never copied into public evidence. It remains on
+failure, including cleanup failures; a completion record distinguishes complete
+cleanup from resources needing operator recovery. Existing output paths fail
+before a provider retry can start.
+
 The runner starts one uniquely named PostgreSQL 16 container, pinned by digest,
 with a 256 MiB tmpfs, 512 MiB memory cap, one CPU and an ephemeral loopback port.
 It never uses an existing database. It runs the actual Go HTTP server and
@@ -28,6 +37,9 @@ production cloud store with the repository-pinned MinIO S3 SDK and pgx versions.
 Two new projects use different R2 buckets; a third project in the primary bucket
 checks same-bucket project isolation. No buckets, existing projects, services,
 worktrees or application workflows are changed.
+Foreign-bucket controls accept explicit provider denials for buckets already
+confirmed by their own credentials; DNS, timeout and provider 5xx errors fail
+qualification instead of counting as denied access.
 
 A 4 KiB direct SDK probe measures PUT, copy with replacement metadata, metadata
 lookup and complete SHA256-verified GET separately. Opaque HTTP cache controls

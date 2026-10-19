@@ -51,6 +51,7 @@ type provider struct {
 	AccessKeyID     string `json:"accessKeyId"`
 	SecretAccessKey string `json:"secretAccessKey"`
 	client          *minio.Client
+	credentialFile  string
 }
 
 type measurement struct {
@@ -86,6 +87,23 @@ type fixture struct {
 	http    *http.Client
 	result  receipt
 	cleanup []func(context.Context) error
+	journal *cleanupJournal
+}
+
+// This protected journal is deliberately separate from public evidence. It
+// preserves exact recovery ownership if provider cleanup or the process fails.
+type cleanupJournal struct{ file *os.File }
+
+func (journal *cleanupJournal) append(event map[string]any) error {
+	event["recordedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err = journal.file.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return journal.file.Sync()
 }
 
 type gateway struct {
@@ -111,8 +129,44 @@ func main() {
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Minute)
 	defer cancel()
-	result, err := qualify(ctx, *primary, *secondary)
+	// Reserve the new receipt and private recovery journal before any provider
+	// operation or container startup. An existing destination fails cheaply.
+	file, err := os.OpenFile(*output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "reserve new qualification receipt before provider work")
+		os.Exit(1)
+	}
+	journalFile, err := os.OpenFile(*output+".cleanup.jsonl", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		_ = file.Close()
+		_ = os.Remove(*output)
+		fmt.Fprintln(os.Stderr, "reserve new protected cleanup journal before provider work")
+		os.Exit(1)
+	}
+	journal := &cleanupJournal{file: journalFile}
+	err = journal.append(map[string]any{"event": "begin", "schemaVersion": "r2-qa-cleanup-v1"})
+	if err == nil {
+		var directory *os.File
+		directory, err = os.Open(filepath.Dir(*output))
+		if err == nil {
+			err = directory.Sync()
+			_ = directory.Close()
+		}
+	}
+	if err != nil {
+		_ = journalFile.Close()
+		_ = file.Close()
+		_ = os.Remove(*output)
+		fmt.Fprintln(os.Stderr, "persist protected cleanup journal before provider work")
+		os.Exit(1)
+	}
+	result, err := qualify(ctx, *primary, *secondary, journal)
+	if closeErr := journalFile.Close(); closeErr != nil {
+		err = errors.Join(err, errors.New("close protected cleanup journal"))
+	}
+	if err != nil {
+		_ = file.Close()
+		_ = os.Remove(*output)
 		// Operation labels and error classes are deliberately bounded. Provider
 		// error strings may contain endpoint, bucket, credentials or signed URLs.
 		fmt.Fprintln(os.Stderr, "R2 qualification failed:", err)
@@ -120,17 +174,14 @@ func main() {
 	}
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
+		_ = file.Close()
 		fmt.Fprintln(os.Stderr, "encode sanitized qualification receipt")
 		os.Exit(1)
 	}
-	file, err := os.OpenFile(*output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "create new qualification receipt")
-		os.Exit(1)
-	}
 	_, writeErr := file.Write(append(data, '\n'))
+	syncErr := file.Sync()
 	closeErr := file.Close()
-	if writeErr != nil || closeErr != nil {
+	if writeErr != nil || syncErr != nil || closeErr != nil {
 		fmt.Fprintln(os.Stderr, "write qualification receipt")
 		os.Exit(1)
 	}
@@ -157,8 +208,8 @@ func check(err error, label string) {
 	}
 }
 
-func qualify(ctx context.Context, first, second string) (result receipt, err error) {
-	f := &fixture{ctx: ctx, http: &http.Client{Timeout: 3 * time.Minute}}
+func qualify(ctx context.Context, first, second string, journal *cleanupJournal) (result receipt, err error) {
+	f := &fixture{ctx: ctx, http: &http.Client{Timeout: 3 * time.Minute}, journal: journal}
 	defer func() {
 		if value := recover(); value != nil {
 			if failed, ok := value.(failure); ok {
@@ -169,15 +220,21 @@ func qualify(ctx context.Context, first, second string) (result receipt, err err
 		}
 		cleanup, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
+		cleanupFailed := false
 		for i := len(f.cleanup) - 1; i >= 0; i-- {
 			if failure := f.cleanup[i](cleanup); failure != nil {
+				cleanupFailed = true
 				err = errors.Join(err, errors.New("owned qualification cleanup incomplete"))
 			}
 		}
-		if f.root != "" {
+		if f.root != "" && !cleanupFailed {
 			if failure := os.RemoveAll(f.root); failure != nil {
+				cleanupFailed = true
 				err = errors.Join(err, errors.New("owned local scratch cleanup incomplete"))
 			}
+		}
+		if journalErr := f.journal.append(map[string]any{"event": "cleanup-finished", "complete": !cleanupFailed, "qualificationPassed": err == nil}); journalErr != nil {
+			err = errors.Join(err, errors.New("persist protected cleanup completion"))
 		}
 		if err == nil {
 			f.result.Cleanup = true
@@ -187,9 +244,10 @@ func qualify(ctx context.Context, first, second string) (result receipt, err err
 	p := loadProvider(first)
 	s := loadProvider(second)
 	require(p.Bucket != s.Bucket && p.AccessKeyID != s.AccessKeyID, "two distinct bucket-scoped credentials required")
-	f.root, err = os.MkdirTemp("", "layercache-r2-qa-")
-	check(err, "create owned qualification scratch")
-	check(os.Chmod(f.root, 0700), "protect owned qualification scratch")
+	localRoot := filepath.Join(os.TempDir(), "layercache-r2-qa-"+randomHex(12))
+	check(f.journal.append(map[string]any{"event": "own-local-scratch", "path": localRoot}), "persist owned scratch recovery path before creation")
+	check(os.Mkdir(localRoot, 0700), "create owned qualification scratch")
+	f.root = localRoot
 	unique := randomHex(12)
 	f.result = receipt{SchemaVersion: "r2-cloud-source-v1", CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		SDK: map[string]string{}, SourceDigests: map[string]string{}, Limits: []string{
@@ -221,10 +279,8 @@ func qualify(ctx context.Context, first, second string) (result receipt, err err
 		check(err, "inspect owned provider bucket")
 		require(exists, "owned provider bucket exists")
 	}
-	exists, denied := p.client.BucketExists(ctx, s.Bucket)
-	require(denied != nil || !exists, "primary bucket-scoped credentials cannot inspect secondary bucket")
-	exists, denied = s.client.BucketExists(ctx, p.Bucket)
-	require(denied != nil || !exists, "secondary bucket-scoped credentials cannot inspect primary bucket")
+	f.bucketDenial(p, s.Bucket, "primary-credential-foreign-bucket-denial")
+	f.bucketDenial(s, p.Bucket, "secondary-credential-foreign-bucket-denial")
 	f.result.Controls = append(f.result.Controls, "both bucket-scoped credentials reject the other existing private bucket")
 	f.sdkProbe(p, "qualification/"+unique+"/")
 	a := f.newGateway(p, "layercache-r2-qa-"+unique+"-a", "primary", 256<<20)
@@ -245,6 +301,7 @@ func loadProvider(path string) *provider {
 	check(err, "open protected provider credential file")
 	defer file.Close()
 	var p provider
+	p.credentialFile = path
 	decoder := json.NewDecoder(io.LimitReader(file, 16385))
 	decoder.DisallowUnknownFields()
 	check(decoder.Decode(&p), "decode protected provider credentials")
@@ -262,6 +319,7 @@ func loadProvider(path string) *provider {
 
 func (f *fixture) startPostgres(unique string) {
 	name := "layercache-r2-qa-" + unique
+	check(f.journal.append(map[string]any{"event": "own-postgres-container", "name": name, "image": postgresImage}), "persist owned container recovery name before startup")
 	f.cleanup = append(f.cleanup, func(ctx context.Context) error {
 		return exec.CommandContext(ctx, "docker", "rm", "-f", name).Run()
 	})
@@ -293,6 +351,7 @@ func (f *fixture) startPostgres(unique string) {
 
 func (f *fixture) ownPrefix(p *provider, prefix string) {
 	require(strings.HasSuffix(prefix, "/") && (strings.HasPrefix(prefix, "projects/") || strings.HasPrefix(prefix, "qualification/")), "bounded QA object prefix required")
+	check(f.journal.append(map[string]any{"event": "own-r2-prefix", "provider": p.Provider, "endpoint": p.Endpoint, "bucket": p.Bucket, "prefix": prefix, "credentialFile": p.credentialFile}), "persist exact owned provider prefix before writing")
 	f.cleanup = append(f.cleanup, func(ctx context.Context) error {
 		for upload := range p.client.ListIncompleteUploads(ctx, p.Bucket, prefix, true) {
 			if upload.Err != nil || !strings.HasPrefix(upload.Key, prefix) {
@@ -312,6 +371,29 @@ func (f *fixture) ownPrefix(p *provider, prefix string) {
 		}
 		return nil
 	})
+}
+
+func bucketDenialResult(exists bool, err error) (status int, code string, valid bool) {
+	if err == nil {
+		// Pinned MinIO BucketExists normalizes NoSuchBucket into false,nil.
+		// The other credential already confirmed that this exact bucket exists.
+		return http.StatusNotFound, "NoSuchBucket", !exists
+	}
+	response := minio.ToErrorResponse(err)
+	valid = !exists && (response.StatusCode == http.StatusForbidden && response.Code == "AccessDenied" ||
+		response.StatusCode == http.StatusNotFound && (response.Code == "NoSuchBucket" || response.Code == "NotFound"))
+	if !valid {
+		return 0, "", false
+	}
+	return response.StatusCode, response.Code, true
+}
+
+func (f *fixture) bucketDenial(p *provider, otherBucket, name string) {
+	started := time.Now()
+	exists, err := p.client.BucketExists(f.ctx, otherBucket)
+	status, code, valid := bucketDenialResult(exists, err)
+	require(valid, "foreign-bucket control requires explicit provider denial, not transport failure")
+	f.result.Measurements = append(f.result.Measurements, measurement{Name: name, Status: status, Code: code, CompleteMS: milliseconds(started)})
 }
 
 func (f *fixture) sdkProbe(p *provider, prefix string) {
