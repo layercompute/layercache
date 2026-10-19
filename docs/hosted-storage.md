@@ -98,8 +98,11 @@ bytes, Personal/Team isolation, quota, read-only access and revocation.
 [Actual private R2 qualification](evidence/r2-private-source-20261019.md) also
 passes production SDK/HTTP persistence, scoped credentials, retained publication,
 restart, quota, expiry and complete verified reads. Its synthetic timings do
-not establish application savings. Service deployment remains a separate gate
-in [TODOs.md](../TODOs.md).
+not establish application savings. [Operator hosting](evidence/r2-operator-hosting-20261019.md)
+is live for two explicit private projects with real human GitHub authentication,
+restart persistence and trusted HTTPS. It keeps API/SQL on the existing host.
+External-client adoption, recovery, namespace migration, OAuth signup and managed
+plan activation remain separate gates in [TODOs.md](../TODOs.md).
 
 Current cloud reads download and verify complete artifacts in bounded local
 staging before returning success. R2 alone therefore establishes no faster-fetch
