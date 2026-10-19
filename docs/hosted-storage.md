@@ -94,9 +94,12 @@ these managed entitlements.
 SQLite and PostgreSQL provisioning tests cover concurrent allocation, restart,
 legacy assignments, invalid configuration and credential-safe identities.
 Runtime tests use PostgreSQL 16 and two independent S3 fixtures to check exact
-bytes, Personal/Team isolation, quota, read-only access and revocation. Actual
-R2 SDK qualification and service deployment remain separate gates in
-[TODOs.md](../TODOs.md).
+bytes, Personal/Team isolation, quota, read-only access and revocation.
+[Actual private R2 qualification](evidence/r2-private-source-20261019.md) also
+passes production SDK/HTTP persistence, scoped credentials, retained publication,
+restart, quota, expiry and complete verified reads. Its synthetic timings do
+not establish application savings. Service deployment remains a separate gate
+in [TODOs.md](../TODOs.md).
 
 Current cloud reads download and verify complete artifacts in bounded local
 staging before returning success. R2 alone therefore establishes no faster-fetch

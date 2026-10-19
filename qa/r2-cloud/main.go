@@ -244,6 +244,7 @@ func qualify(ctx context.Context, first, second string, journal *cleanupJournal)
 	p := loadProvider(first)
 	s := loadProvider(second)
 	require(p.Bucket != s.Bucket && p.AccessKeyID != s.AccessKeyID, "two distinct bucket-scoped credentials required")
+	require(sameProviderNamespace(p.Endpoint, s.Endpoint), "paired bucket-scope proof requires the same canonical HTTPS provider namespace")
 	localRoot := filepath.Join(os.TempDir(), "layercache-r2-qa-"+randomHex(12))
 	check(f.journal.append(map[string]any{"event": "own-local-scratch", "path": localRoot}), "persist owned scratch recovery path before creation")
 	check(os.Mkdir(localRoot, 0700), "create owned qualification scratch")
@@ -386,6 +387,24 @@ func bucketDenialResult(exists bool, err error) (status int, code string, valid 
 		return 0, "", false
 	}
 	return response.StatusCode, response.Code, true
+}
+
+func sameProviderNamespace(first, second string) bool {
+	canonical := func(raw string) (string, bool) {
+		endpoint, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(endpoint.Scheme, "https") || endpoint.Hostname() == "" || endpoint.User != nil ||
+			endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Path != "" && endpoint.Path != "/" {
+			return "", false
+		}
+		port := endpoint.Port()
+		if port == "" {
+			port = "443"
+		}
+		return strings.ToLower(endpoint.Hostname()) + ":" + port, true
+	}
+	a, firstOK := canonical(first)
+	b, secondOK := canonical(second)
+	return firstOK && secondOK && a == b
 }
 
 func (f *fixture) bucketDenial(p *provider, otherBucket, name string) {

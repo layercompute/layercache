@@ -1,0 +1,334 @@
+{
+  "schemaVersion": "r2-cloud-source-v1",
+  "checkedAt": "2026-10-19T21:28:39Z",
+  "sourceRevision": "08d3df8cdff7ce859378109226c13a629ef52296",
+  "sourceDigests": {
+    "go.sum": "afcc2bd2c18e0253d948b32e1197ee971d96308234b934ad9e53dafb37da6e23",
+    "internal/cloud/retained.go": "ea7ea0deadfc6a46b7f8e1508ad20ef437b4541d65f0d1e0702eba6da37fd974",
+    "internal/cloud/s3.go": "900e2b4aa8add07fab2b0c008663f3fb001047122d60193b4965e7d17ccf5a4f",
+    "qa/r2-cloud/main.go": "f0d1ada42cb177be58c0de963cbedab45f6a552adcaa55cabfcde30e8efe78a8"
+  },
+  "sdk": {
+    "github.com/jackc/pgx/v5": "v5.9.2",
+    "github.com/minio/minio-go/v7": "v7.0.95"
+  },
+  "measurements": [
+    {
+      "name": "primary-credential-foreign-bucket-denial",
+      "status": 403,
+      "completeMs": 14.729,
+      "providerCode": "AccessDenied"
+    },
+    {
+      "name": "secondary-credential-foreign-bucket-denial",
+      "status": 403,
+      "completeMs": 13.807,
+      "providerCode": "AccessDenied"
+    },
+    {
+      "name": "sdk-4k-put",
+      "size": 4096,
+      "completeMs": 302.328
+    },
+    {
+      "name": "sdk-4k-copy-replace-metadata",
+      "size": 4096,
+      "completeMs": 374.722
+    },
+    {
+      "name": "sdk-4k-metadata-lookup",
+      "completeMs": 89.783
+    },
+    {
+      "name": "sdk-4k-get-full-verify",
+      "size": 4096,
+      "sha256": "caef6174fb1bfe5ad1fb7626745a41377eea7ea5602b541feaf44f0fd8070db9",
+      "completeMs": 205.402
+    },
+    {
+      "name": "cache-4k-cold-publish",
+      "status": 200,
+      "headersMs": 1429.995,
+      "completeMs": 1429.997
+    },
+    {
+      "name": "cache-4k-read-only-consumer",
+      "status": 200,
+      "size": 4096,
+      "sha256": "6896d9ea3f73a4434f5832bc65714e7d066f177373f36f34dc8a6f735daa41b1",
+      "headersMs": 276.081,
+      "completeMs": 276.121
+    },
+    {
+      "name": "cache-4k-after-gateway-restart",
+      "status": 200,
+      "size": 4096,
+      "sha256": "6896d9ea3f73a4434f5832bc65714e7d066f177373f36f34dc8a6f735daa41b1",
+      "headersMs": 252.202,
+      "completeMs": 252.285
+    },
+    {
+      "name": "read-only-publication-denied",
+      "status": 403,
+      "headersMs": 1.478,
+      "completeMs": 1.493
+    },
+    {
+      "name": "foreign-project-capability-denied",
+      "status": 401,
+      "headersMs": 0.532,
+      "completeMs": 0.547
+    },
+    {
+      "name": "isolated-project-0-cold-miss",
+      "status": 404,
+      "headersMs": 3.169,
+      "completeMs": 3.201
+    },
+    {
+      "name": "isolated-project-0-publish",
+      "status": 200,
+      "headersMs": 1454.098,
+      "completeMs": 1454.1
+    },
+    {
+      "name": "isolated-project-1-cold-miss",
+      "status": 404,
+      "headersMs": 2.74,
+      "completeMs": 2.751
+    },
+    {
+      "name": "isolated-project-1-publish",
+      "status": 200,
+      "headersMs": 1295.516,
+      "completeMs": 1295.518
+    },
+    {
+      "name": "primary-winner-after-other-projects",
+      "status": 200,
+      "size": 4096,
+      "sha256": "6896d9ea3f73a4434f5832bc65714e7d066f177373f36f34dc8a6f735daa41b1",
+      "headersMs": 259.944,
+      "completeMs": 260.048
+    },
+    {
+      "name": "gradle-duplicate-retains-winner",
+      "status": 200,
+      "headersMs": 853.935,
+      "completeMs": 853.937
+    },
+    {
+      "name": "winner-after-native-duplicate",
+      "status": 200,
+      "size": 4096,
+      "sha256": "6896d9ea3f73a4434f5832bc65714e7d066f177373f36f34dc8a6f735daa41b1",
+      "headersMs": 165.189,
+      "completeMs": 165.243
+    },
+    {
+      "name": "project-quota-refusal",
+      "status": 413,
+      "headersMs": 2.125,
+      "completeMs": 2.148
+    },
+    {
+      "name": "current-membership-revocation",
+      "status": 401,
+      "headersMs": 0.817,
+      "completeMs": 0.826
+    },
+    {
+      "name": "missing-control-publish",
+      "status": 200,
+      "headersMs": 1317.076,
+      "completeMs": 1317.078
+    },
+    {
+      "name": "missing-blob-rejected-before-success",
+      "status": 404,
+      "headersMs": 79.939,
+      "completeMs": 79.95
+    },
+    {
+      "name": "corrupt-control-publish",
+      "status": 200,
+      "headersMs": 1292.655,
+      "completeMs": 1292.657
+    },
+    {
+      "name": "corrupt-blob-rejected-before-success",
+      "status": 404,
+      "headersMs": 217.926,
+      "completeMs": 217.937
+    },
+    {
+      "name": "retained-over-quota-admission-refused",
+      "status": 507,
+      "headersMs": 3.131,
+      "completeMs": 3.138
+    },
+    {
+      "name": "retained-admission",
+      "status": 200,
+      "headersMs": 3.179,
+      "completeMs": 3.193,
+      "serverTiming": "retained_admission;dur=2.561"
+    },
+    {
+      "name": "retained-124mb-publish-stage-copy-sql-lost-ack",
+      "size": 124078900,
+      "sha256": "f978fca27b12117f73f2acf61391872f7e6db76f0c5e6a7be1a70b090bd86c16",
+      "completeMs": 14163.208
+    },
+    {
+      "name": "retained-unknown-commit-inspect",
+      "status": 200,
+      "headersMs": 2.397,
+      "completeMs": 2.413,
+      "serverTiming": "retained_inspect;dur=1.466"
+    },
+    {
+      "name": "retained-idempotent-reservation",
+      "status": 200,
+      "headersMs": 1.807,
+      "completeMs": 1.814,
+      "serverTiming": "retained_admission;dur=1.232"
+    },
+    {
+      "name": "retained-124mb-r2-committed-metadata-lookup",
+      "completeMs": 67.007
+    },
+    {
+      "name": "retained-deadline-immutable",
+      "status": 409,
+      "headersMs": 2.503,
+      "completeMs": 2.516
+    },
+    {
+      "name": "retained-124mb-independent-read-attempt-1",
+      "status": 200,
+      "size": 124078900,
+      "sha256": "f978fca27b12117f73f2acf61391872f7e6db76f0c5e6a7be1a70b090bd86c16",
+      "headersMs": 314.571,
+      "completeMs": 4211.67,
+      "serverTiming": "retained_open;dur=94.202"
+    },
+    {
+      "name": "retained-read-only-publication-denied-attempt-1",
+      "status": 403,
+      "headersMs": 1.103,
+      "completeMs": 1.114
+    },
+    {
+      "name": "retained-124mb-independent-read-attempt-2",
+      "status": 200,
+      "size": 124078900,
+      "sha256": "f978fca27b12117f73f2acf61391872f7e6db76f0c5e6a7be1a70b090bd86c16",
+      "headersMs": 230.872,
+      "completeMs": 3345.001,
+      "serverTiming": "retained_open;dur=87.484"
+    },
+    {
+      "name": "retained-read-only-publication-denied-attempt-2",
+      "status": 403,
+      "headersMs": 0.704,
+      "completeMs": 0.716
+    },
+    {
+      "name": "retained-foreign-run-hidden",
+      "status": 404,
+      "headersMs": 3.261,
+      "completeMs": 3.274
+    },
+    {
+      "name": "retained-wrong-content-admission",
+      "status": 200,
+      "headersMs": 5.211,
+      "completeMs": 5.225,
+      "serverTiming": "retained_admission;dur=4.474"
+    },
+    {
+      "name": "retained-wrong-content-rejected",
+      "status": 422,
+      "headersMs": 765.983,
+      "completeMs": 765.995
+    },
+    {
+      "name": "retained-wrong-content-not-published",
+      "status": 200,
+      "headersMs": 1.828,
+      "completeMs": 1.837,
+      "serverTiming": "retained_inspect;dur=1.276"
+    },
+    {
+      "name": "retained-short-ttl-admission",
+      "status": 200,
+      "headersMs": 2.684,
+      "completeMs": 2.691,
+      "serverTiming": "retained_admission;dur=2.183"
+    },
+    {
+      "name": "retained-short-ttl-publish",
+      "status": 200,
+      "headersMs": 1231.36,
+      "completeMs": 1231.38,
+      "serverTiming": "retained_publish;dur=1229.385"
+    },
+    {
+      "name": "retained-short-ttl-before-expiry",
+      "status": 200,
+      "size": 4096,
+      "sha256": "9ce2519c0561bb0b06617143d723160ce3a095ce9fa2bada3403d84d32045e47",
+      "headersMs": 354.554,
+      "completeMs": 354.954,
+      "serverTiming": "retained_open;dur=162.067"
+    },
+    {
+      "name": "retained-short-ttl-expired-state",
+      "status": 200,
+      "headersMs": 4.893,
+      "completeMs": 4.927,
+      "serverTiming": "retained_inspect;dur=3.775"
+    },
+    {
+      "name": "retained-short-ttl-content-denied",
+      "status": 410,
+      "headersMs": 4.424,
+      "completeMs": 4.437
+    },
+    {
+      "name": "retained-one-hour-receipt-isolated-from-short-expiry",
+      "status": 200,
+      "headersMs": 2.32,
+      "completeMs": 2.336,
+      "serverTiming": "retained_inspect;dur=1.663"
+    }
+  ],
+  "controls": [
+    "both bucket-scoped credentials reject the other existing private bucket",
+    "private cache restart and exact read-only bytes",
+    "same-bucket and two-bucket project isolation",
+    "immutable conflict and native Gradle duplicate-winner semantics",
+    "authoritative project quota and membership revocation",
+    "missing/corrupt optional bytes rejected before acceptance",
+    "124078900-byte streamed retained R2 publication with exact receipt",
+    "lost acknowledgement reconciled without duplicate upload",
+    "fixed deadline survives restart and cannot be extended",
+    "retained admission refuses over-quota content before upload and protects quota shrink/optional GC",
+    "read-only same-run consumer and consumer-only later-attempt rerun verify full bytes",
+    "foreign run hidden and retained read-only publication denied",
+    "actual R2 wrong retained bytes never published",
+    "real elapsed short TTL expires independently of the larger retained publication"
+  ],
+  "retainedId": "381d9d93ed3221f7408c09286e270aa4f6a39923510ba7b104aca41689338ed8",
+  "retainUntil": "2026-10-19T22:28:06.348895Z",
+  "limits": [
+    "Actual private R2 persistence and synthetic HTTP transport; no public service activation, application build or native-client qualification.",
+    "Capabilities are minted locally for isolated qualification; live GitHub OIDC and customer onboarding are not exercised.",
+    "Large publish time includes streaming SDK staging, server-side copy, PostgreSQL commit and local HTTP overhead; it is not pure transfer bandwidth.",
+    "A separate 10-second receipt exercises elapsed expiry; the 124 MB receipt's one-hour deadline is preserved but not waited out.",
+    "Project quota and persistence are checked; portal storage-plan billing and aggregate pool entitlement are qualified separately.",
+    "GitHub artifacts remain required until application producer/consumer and consumer-only rerun acceptance passes."
+  ],
+  "ownedCleanupComplete": true
+}

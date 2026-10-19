@@ -32,3 +32,25 @@ func TestBucketDenialRequiresProviderEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestPairedProviderNamespace(t *testing.T) {
+	const primary = "https://account-a.r2.example"
+	for _, test := range []struct {
+		name, other string
+		valid       bool
+	}{
+		{name: "same endpoint", other: primary, valid: true},
+		{name: "canonical default port and host", other: "https://ACCOUNT-A.r2.example:443/", valid: true},
+		{name: "different account", other: "https://account-b.r2.example"},
+		{name: "different jurisdiction", other: "https://account-a.eu.r2.example"},
+		{name: "different port", other: "https://account-a.r2.example:8443"},
+		{name: "insecure scheme", other: "http://account-a.r2.example"},
+		{name: "different path", other: "https://account-a.r2.example/another"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sameProviderNamespace(primary, test.other); got != test.valid {
+				t.Fatalf("same provider namespace = %t, want %t", got, test.valid)
+			}
+		})
+	}
+}

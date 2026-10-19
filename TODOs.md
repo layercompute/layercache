@@ -29,7 +29,9 @@ workspaces and filesystem migration are outside the current product scope.
   and project allocations. SQLite/PostgreSQL controls cover atomic admission,
   restart, credential rotation and managed quota enforcement. Two private R2
   buckets and separate bucket-scoped credentials are provisioned outside Git;
-  actual R2 transport and an isolated deployment remain qualification gates.
+  [Actual R2 transport](docs/evidence/r2-private-source-20261019.md) now passes
+  scoped authority, exact bytes, restart, quota, retained publication and expiry.
+  An isolated deployment and live acceptance remain qualification gates.
   See [hosted storage](docs/hosted-storage.md). Prepare and review the complete
   runtime candidate before changing operator services.
   Acceptance: authenticated producer and independent read-only consumer, exact

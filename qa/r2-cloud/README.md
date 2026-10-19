@@ -20,6 +20,8 @@ credentials are mandatory. Credentials are read inside the process; they are
 never passed as argument values, printed or included in evidence. Error output
 contains bounded operation labels and provider error codes. Do not enable HTTP
 or SDK debug logging or capture process memory.
+The paired buckets must use the same canonical HTTPS endpoint, account and
+jurisdiction. A denial from another provider namespace cannot prove bucket scope.
 
 Before any provider work, the runner reserves the new receipt and an adjacent
 mode-0600 `.cleanup.jsonl` journal with exclusive creation. It fsyncs the journal
