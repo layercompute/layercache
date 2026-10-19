@@ -74,7 +74,13 @@ func TestPortalManagedOIDCRejectsRecycledRepositoryName(t *testing.T) {
 	}))
 	defer issuer.Close()
 	q.cfg.ProjectTemplate.GitHubOIDCIssuer = issuer.URL
-	q.p.cfg.ProjectTemplate.GitHubOIDCIssuer = issuer.URL
+	if err := q.p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	q.p, err = New(context.Background(), q.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	alice := q.login("alice")
 	team := q.team(alice, "Team")
 	project := q.project(alice, team, "acme/alpha")
@@ -128,7 +134,7 @@ type browserQA struct {
 	csrf   string
 }
 
-func newPortalQA(t *testing.T) *portalQA {
+func newPortalQA(t *testing.T, configure ...func(*Config)) *portalQA {
 	t.Helper()
 	q := &portalQA{t: t, admin: true}
 	q.github = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -183,8 +189,11 @@ func newPortalQA(t *testing.T) *portalQA {
 		t.Fatal(err)
 	}
 	template.MaxBytes = 8 << 20
-	template.MinFreeBytes = 0
+	template.MinFreeBytes = 5 << 30
 	q.cfg = Config{Origin: "https://cloud.example", DataDir: t.TempDir(), SessionKey: []byte(strings.Repeat("k", 32)), GitHubClientID: "oauth-id", GitHubClientSecret: "oauth-secret", TeamCreatorIDs: []string{"1"}, GitHubAPIURL: q.github.URL, GitHubAuthorizeURL: q.github.URL + "/authorize", GitHubTokenURL: q.github.URL + "/token", ProjectTemplate: template}
+	for _, configure := range configure {
+		configure(&q.cfg)
+	}
 	q.p, err = New(context.Background(), q.cfg)
 	if err != nil {
 		t.Fatal(err)

@@ -23,6 +23,18 @@ _Avoid_: Team when describing a machine, build runner when describing storage
 Cache capacity operated by Layer Cache for an authorized Cloud account. Hosting is separate from Personal, Team and Public visibility.
 _Avoid_: Cloud visibility tier, Public Cache when describing hosting
 
+**Hosted storage pool**:
+A named destination for persistent hosted cache bytes. Projects keep their assigned pool when the service restarts; sharing a pool does not grant access to another project's artifacts.
+_Avoid_: Visibility tier, local filesystem pool
+
+**Storage plan**:
+An operator-assigned entitlement defining hosted capacity and project limits. A plan grants storage, not access to another owner's or team's cache.
+_Avoid_: Visibility tier, payment receipt
+
+**Project allocation**:
+The portion of a storage plan's capacity reserved for one project's cache. Allocated capacity differs from bytes currently stored or billed.
+_Avoid_: Current usage, reclaimed storage
+
 **Local Cache**:
 A bounded cache on one machine that stores reusable artifacts from authorized visibility tiers.
 _Avoid_: Local Store, local tier

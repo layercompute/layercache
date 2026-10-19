@@ -25,8 +25,15 @@ workspaces and filesystem migration are outside the current product scope.
   persistent storage pools and enforce plan capacity/admission independently
   of Local Cache size. Separate operator-provisioned beta access from public
   signup, paid entitlement/billing and launched self-serve claims.
-  First inspect existing pool/provisioning support and actual deployed state;
-  prepare an isolated, reviewable candidate before changing operator services.
+  Named pools and operator-assigned capacity plans now persist backend identity
+  and project allocations. SQLite/PostgreSQL controls cover atomic admission,
+  restart, credential rotation and managed quota enforcement. Two private R2
+  buckets and separate bucket-scoped credentials are provisioned outside Git;
+  [Actual R2 transport](docs/evidence/r2-private-source-20261019.md) now passes
+  scoped authority, exact bytes, restart, quota, retained publication and expiry.
+  An isolated deployment and live acceptance remain qualification gates.
+  See [hosted storage](docs/hosted-storage.md). Prepare and review the complete
+  runtime candidate before changing operator services.
   Acceptance: authenticated producer and independent read-only consumer, exact
   native bytes after gateway restart, project/owner isolation and revocation,
   enforced pool/project quotas, supported retention/eviction, upgrade/rollback,
@@ -594,8 +601,10 @@ workspaces and filesystem migration are outside the current product scope.
   A 1 GiB logical engine accepts 1,050 MiB of unique CAS writes under eviction;
   read-only rebuild remains correct. This does not reach the 2 GiB hard fence
   or establish an application speedup. The source passes the Go suite, focused
-  race tests, vet and independent Standards/Spec reviews. Hosted CI/landing,
-  published installation, cloud deployment, actual Bazel application adoption
+  race tests, vet and independent Standards/Spec reviews. [PR #60](https://github.com/ziahamza/layercache/pull/60)
+  merged as `42411411ebe50102e9e462fd186be2305961b98e` after all fifteen
+  hosted checks passed, including the real native Bazel client. Published
+  installation, cloud deployment, actual Bazel application adoption
   and account/CLI credential-helper onboarding remain separate gates.
 
 - [ ] **Qualify Swift compilation replay through Xcode 26's native cache seam.**

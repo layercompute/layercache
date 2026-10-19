@@ -40,7 +40,7 @@ type Config struct {
 	Listen                     string             `json:"listen"`
 	MaxBytes                   int64              `json:"maxBytes"`
 	EvictionPolicy             retention.Policy   `json:"evictionPolicy,omitempty"`
-	MinFreeBytes               int64              `json:"minFreeBytes"` // Upward override for the fixed and percentage filesystem reserve.
+	MinFreeBytes               int64              `json:"minFreeBytes"` // Positive values replace the automatic percentage reserve, retaining the 5 GiB floor.
 	ProjectID                  string             `json:"projectId,omitempty"`
 	ProjectRoot                string             `json:"projectRoot,omitempty"`
 	TeamURL                    string             `json:"teamUrl,omitempty"`

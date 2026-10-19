@@ -21,19 +21,27 @@ import (
 )
 
 type cloudFile struct {
-	GitHubAPIURL           string                   `json:"githubApiUrl,omitempty"`
-	GitHubAuthorizeURL     string                   `json:"githubAuthorizeUrl,omitempty"`
-	GitHubTokenURL         string                   `json:"githubTokenUrl,omitempty"`
-	Listen                 string                   `json:"listen"`
-	Origin                 string                   `json:"origin"`
-	DataDir                string                   `json:"dataDir"`
-	PostgresURLFile        string                   `json:"postgresUrlFile,omitempty"`
-	GitHubClientID         string                   `json:"githubClientId"`
-	TeamCreatorIDs         []string                 `json:"teamCreatorIds"`
-	GitHubClientSecretFile string                   `json:"githubClientSecretFile"`
-	SessionKeyFile         string                   `json:"sessionKeyFile"`
-	ProjectTemplateFile    string                   `json:"projectTemplateFile"`
-	StoragePool            server.StoragePoolConfig `json:"storagePool"`
+	GitHubAPIURL            string                           `json:"githubApiUrl,omitempty"`
+	GitHubAuthorizeURL      string                           `json:"githubAuthorizeUrl,omitempty"`
+	GitHubTokenURL          string                           `json:"githubTokenUrl,omitempty"`
+	Listen                  string                           `json:"listen"`
+	Origin                  string                           `json:"origin"`
+	DataDir                 string                           `json:"dataDir"`
+	PostgresURLFile         string                           `json:"postgresUrlFile,omitempty"`
+	GitHubClientID          string                           `json:"githubClientId"`
+	TeamCreatorIDs          []string                         `json:"teamCreatorIds"`
+	GitHubClientSecretFile  string                           `json:"githubClientSecretFile"`
+	SessionKeyFile          string                           `json:"sessionKeyFile"`
+	ProjectTemplateFile     string                           `json:"projectTemplateFile"`
+	StoragePool             server.StoragePoolConfig         `json:"storagePool"`
+	HostedStoragePools      map[string]hostedStoragePoolFile `json:"hostedStoragePools,omitempty"`
+	StoragePlans            map[string]portal.StoragePlan    `json:"storagePlans,omitempty"`
+	DefaultStoragePlan      string                           `json:"defaultStoragePlan,omitempty"`
+	TeamCreatorStoragePlans map[string]string                `json:"teamCreatorStoragePlans,omitempty"`
+}
+
+type hostedStoragePoolFile struct {
+	ProjectTemplateFile string `json:"projectTemplateFile"`
 }
 
 func loadCloud(path string) (cloudFile, portal.Config, error) {
@@ -99,6 +107,26 @@ func loadCloud(path string) (cloudFile, portal.Config, error) {
 	cfg.GitHubClientID = file.GitHubClientID
 	cfg.TeamCreatorIDs = file.TeamCreatorIDs
 	cfg.StoragePool = file.StoragePool
+	cfg.HostedStoragePools = make(map[string]config.Config, len(file.HostedStoragePools))
+	for id, pool := range file.HostedStoragePools {
+		if !filepath.IsAbs(pool.ProjectTemplateFile) {
+			return file, cfg, errors.New("hosted storage template paths must be absolute")
+		}
+		if _, err := readProtectedFile(pool.ProjectTemplateFile); err != nil {
+			return file, cfg, errors.New("hosted storage templates must be protected")
+		}
+		template, err := config.Load(pool.ProjectTemplateFile)
+		if err != nil {
+			return file, cfg, errors.New("invalid hosted storage template")
+		}
+		cfg.HostedStoragePools[id] = template
+	}
+	cfg.StoragePlans = file.StoragePlans
+	cfg.DefaultStoragePlan = file.DefaultStoragePlan
+	cfg.TeamCreatorStoragePlans = file.TeamCreatorStoragePlans
+	if err := portal.ValidateStorageConfiguration(cfg); err != nil {
+		return file, cfg, err
+	}
 	return file, cfg, nil
 }
 func runServeCloud(ctx context.Context, args []string, stderr io.Writer) error {

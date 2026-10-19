@@ -30,20 +30,24 @@ type User struct {
 	Login string `json:"login"`
 }
 type Team struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Role string `json:"role"`
-	Kind string `json:"kind"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Role          string `json:"role"`
+	Kind          string `json:"kind"`
+	StoragePlanID string `json:"storagePlanId"`
 }
 type Project struct {
-	ID           string `json:"id"`
-	TeamID       string `json:"teamId"`
-	Name         string `json:"name"`
-	Repository   string `json:"repository"`
-	RepositoryID string `json:"-"`
-	DefaultRef   string `json:"defaultRef"`
-	Role         string `json:"role,omitempty"`
-	Secret       string `json:"-"`
+	ID                        string `json:"id"`
+	TeamID                    string `json:"teamId"`
+	Name                      string `json:"name"`
+	Repository                string `json:"repository"`
+	RepositoryID              string `json:"-"`
+	DefaultRef                string `json:"defaultRef"`
+	Role                      string `json:"role,omitempty"`
+	Secret                    string `json:"-"`
+	StoragePoolID             string `json:"storagePoolId"`
+	AllocatedCacheBytes       int64  `json:"allocatedCacheBytes"`
+	StorageBackendFingerprint string `json:"-"`
 }
 type Member struct {
 	UserID string `json:"userId"`
@@ -66,7 +70,10 @@ type Session struct {
 
 // Store is the single durable membership authority for managed projects. Team
 // mutations lock the team row, including last-admin checks and invitation accepts.
-type Store struct{ db *sql.DB }
+type Store struct {
+	db      *sql.DB
+	storage *storagePolicy
+}
 
 func OpenStore(ctx context.Context, postgresURL, filename string) (*Store, error) {
 	driver, source := "pgx", postgresURL
@@ -117,6 +124,11 @@ func OpenStore(ctx context.Context, postgresURL, filename string) (*Store, error
 	for _, migration := range []struct{ probe, alter string }{
 		{`SELECT repository_id FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN repository_id TEXT NOT NULL DEFAULT ''`},
 		{`SELECT kind FROM lc_portal_teams LIMIT 0`, `ALTER TABLE lc_portal_teams ADD COLUMN kind TEXT NOT NULL DEFAULT 'team' CHECK(kind IN ('team','personal'))`},
+		{`SELECT storage_plan_id FROM lc_portal_teams LIMIT 0`, `ALTER TABLE lc_portal_teams ADD COLUMN storage_plan_id TEXT NOT NULL DEFAULT 'legacy'`},
+		{`SELECT storage_plan_fingerprint FROM lc_portal_teams LIMIT 0`, `ALTER TABLE lc_portal_teams ADD COLUMN storage_plan_fingerprint TEXT NOT NULL DEFAULT ''`},
+		{`SELECT storage_pool_id FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN storage_pool_id TEXT NOT NULL DEFAULT 'legacy'`},
+		{`SELECT allocated_cache_bytes FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN allocated_cache_bytes BIGINT NOT NULL DEFAULT 0 CHECK(allocated_cache_bytes >= 0)`},
+		{`SELECT storage_backend_fingerprint FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN storage_backend_fingerprint TEXT NOT NULL DEFAULT ''`},
 	} {
 		rows, err := db.QueryContext(ctx, migration.probe)
 		if err == nil {
@@ -162,7 +174,7 @@ func (s *Store) UpsertUser(ctx context.Context, user User) error {
 	return err
 }
 func (s *Store) Teams(ctx context.Context, user string) ([]Team, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT t.id,t.name,m.role,t.kind FROM lc_portal_teams t JOIN lc_portal_members m ON m.team_id=t.id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY t.name,t.id`, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT t.id,t.name,m.role,t.kind,t.storage_plan_id FROM lc_portal_teams t JOIN lc_portal_members m ON m.team_id=t.id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY t.name,t.id`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +182,7 @@ func (s *Store) Teams(ctx context.Context, user string) ([]Team, error) {
 	result := []Team{}
 	for rows.Next() {
 		var t Team
-		if err := rows.Scan(&t.ID, &t.Name, &t.Role, &t.Kind); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Role, &t.Kind, &t.StoragePlanID); err != nil {
 			return nil, err
 		}
 		result = append(result, t)
@@ -213,8 +225,12 @@ func (s *Store) createTeam(ctx context.Context, user, name, kind string) (Team, 
 	if total >= 128 || owned >= 5 {
 		return Team{}, ErrLimit
 	}
-	t := Team{ID: randomID("team-"), Name: name, Role: "admin", Kind: kind}
-	result, err := tx.ExecContext(ctx, `INSERT INTO lc_portal_teams(id,name,created_by,kind) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, t.ID, t.Name, user, kind)
+	planID, planFingerprint := legacyStorageID, ""
+	if s.storage != nil {
+		planID, planFingerprint = s.storage.newTeamPlan(user)
+	}
+	t := Team{ID: randomID("team-"), Name: name, Role: "admin", Kind: kind, StoragePlanID: planID}
+	result, err := tx.ExecContext(ctx, `INSERT INTO lc_portal_teams(id,name,created_by,kind,storage_plan_id,storage_plan_fingerprint) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, t.ID, t.Name, user, kind, planID, planFingerprint)
 	if err != nil {
 		return Team{}, err
 	}
@@ -265,7 +281,7 @@ func requireSharedTeam(ctx context.Context, tx *sql.Tx, team string) error {
 	return nil
 }
 func (s *Store) Projects(ctx context.Context, user string) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.team_id,p.name,p.repository,p.repository_id,p.default_ref,p.secret,m.role FROM lc_portal_projects p JOIN lc_portal_members m ON m.team_id=p.team_id JOIN lc_portal_teams t ON t.id=p.team_id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY p.name,p.id`, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.team_id,p.name,p.repository,p.repository_id,p.default_ref,p.secret,m.role,p.storage_pool_id,p.allocated_cache_bytes,p.storage_backend_fingerprint FROM lc_portal_projects p JOIN lc_portal_members m ON m.team_id=p.team_id JOIN lc_portal_teams t ON t.id=p.team_id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY p.name,p.id`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +289,7 @@ func (s *Store) Projects(ctx context.Context, user string) ([]Project, error) {
 	result := []Project{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret, &p.Role); err != nil {
+		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret, &p.Role, &p.StoragePoolID, &p.AllocatedCacheBytes, &p.StorageBackendFingerprint); err != nil {
 			return nil, err
 		}
 		result = append(result, p)
@@ -281,7 +297,7 @@ func (s *Store) Projects(ctx context.Context, user string) ([]Project, error) {
 	return result, rows.Err()
 }
 func (s *Store) AllProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,team_id,name,repository,repository_id,default_ref,secret FROM lc_portal_projects ORDER BY id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,team_id,name,repository,repository_id,default_ref,secret,storage_pool_id,allocated_cache_bytes,storage_backend_fingerprint FROM lc_portal_projects ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +305,7 @@ func (s *Store) AllProjects(ctx context.Context) ([]Project, error) {
 	result := []Project{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret); err != nil {
+		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret, &p.StoragePoolID, &p.AllocatedCacheBytes, &p.StorageBackendFingerprint); err != nil {
 			return nil, err
 		}
 		result = append(result, p)
@@ -323,9 +339,13 @@ func (s *Store) CreateProject(ctx context.Context, user, team, name, repository,
 	if total >= 128 || teamCount >= 10 {
 		return Project{}, ErrLimit
 	}
+	poolID, allocated, backendFingerprint, err := s.projectStorage(ctx, tx, team, teamCount)
+	if err != nil {
+		return Project{}, err
+	}
 	// Serializable isolation also protects the global count across different teams.
-	p := Project{ID: randomID("project-"), TeamID: team, Name: name, Repository: repository, RepositoryID: repositoryID, DefaultRef: defaultRef, Secret: randomID(""), Role: "admin"}
-	result, err := tx.ExecContext(ctx, `INSERT INTO lc_portal_projects(id,team_id,name,repository,repository_id,default_ref,secret) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(team_id,repository) DO NOTHING`, p.ID, p.TeamID, p.Name, p.Repository, p.RepositoryID, p.DefaultRef, p.Secret)
+	p := Project{ID: randomID("project-"), TeamID: team, Name: name, Repository: repository, RepositoryID: repositoryID, DefaultRef: defaultRef, Secret: randomID(""), Role: "admin", StoragePoolID: poolID, AllocatedCacheBytes: allocated, StorageBackendFingerprint: backendFingerprint}
+	result, err := tx.ExecContext(ctx, `INSERT INTO lc_portal_projects(id,team_id,name,repository,repository_id,default_ref,secret,storage_pool_id,allocated_cache_bytes,storage_backend_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(team_id,repository) DO NOTHING`, p.ID, p.TeamID, p.Name, p.Repository, p.RepositoryID, p.DefaultRef, p.Secret, p.StoragePoolID, p.AllocatedCacheBytes, p.StorageBackendFingerprint)
 	if err != nil {
 		return Project{}, err
 	}
