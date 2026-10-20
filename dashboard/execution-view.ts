@@ -7,7 +7,7 @@ export type ResourceSample = {
   filesystems?: {id: string; roles: string[] | null; capacityBytes: number | null; freeBytes: number | null; availableBytes: number | null}[] | null;
 };
 export type ExecutionEntry = {
-  id: string; ownerId: string; installationId?: string; executionId: string;
+  id: string; ownerId: string; installationId?: string; executionId: string; observedExecutions?: number;
   kind: 'client' | 'githubActions'; provider: 'github' | 'ubicloud' | 'selfHosted' | 'unknown';
   providerEvidence: 'signed' | 'declared' | 'unknown'; runnerEnvironment: 'github-hosted' | 'self-hosted' | 'unknown';
   lastObservedAt: string; phase: 'start' | 'finish'; sample: ResourceSample; cacheActivity: 'unconfirmed' | 'observed';

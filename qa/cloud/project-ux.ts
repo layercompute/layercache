@@ -17,9 +17,16 @@ const projects=[
  {id:'library',teamId:'engineering',name:'Library',repository:'example/library',role:'reader',operatorManaged:true},
  {id:'github.com/example/shared',teamId:'engineering',name:'Shared library',repository:'example/shared',role:'reader',operatorManaged:true},
 ];
-const observedAt='2026-10-20T12:00:00Z';
+const observedAt=new Date().toISOString();
+const priorObservation=new Date(Date.now()-60_000).toISOString(),staleObservation=new Date(Date.now()-48*60*60*1000).toISOString();
 function entry(id:string,executionId:string,kind:'client'|'githubActions',installationId?:string):ExecutionEntry{return {id,ownerId:'github-id:1',installationId,executionId,kind,provider:'unknown',providerEvidence:'unknown',runnerEnvironment:kind==='githubActions'?'self-hosted':'unknown',lastObservedAt:observedAt,phase:'finish',cacheActivity:'observed',sample:{os:'linux',arch:'amd64',cpu:{visibleLogical:8,affinityLogical:2,quotaMilliCPU:2000,effectiveMilliCPU:2000},memory:{visibleTotalBytes:16*1024**3,cgroupLimitBytes:4*1024**3,effectiveLimitBytes:4*1024**3},filesystems:[{id:'volume-a',roles:['workspace','staging'],capacityBytes:100*1024**3,freeBytes:40*1024**3,availableBytes:35*1024**3}]}};}
-const executions:ExecutionInventory={version:1,from:'2026-10-19T12:00:00Z',to:observedAt,updatedAt:observedAt,retentionDays:30,staleAfterSeconds:86400,historyTruncated:false,installations:[entry('client-1','client:first','client','stable-installation'),entry('client-2','client:second','client','stable-installation')],jobs:[entry('job-1','github-actions:123:456:1:789','githubActions'),entry('job-2','github-actions:123:456:1:790','githubActions'),entry('job-3','github-actions:123:456:2:791','githubActions')]};
+function client(id:string,executionId:string,installationId:string,observedExecutions?:number,lastObservedAt=observedAt,phase:'start'|'finish'='finish'):ExecutionEntry{return {...entry(id,executionId,'client',installationId),...(observedExecutions===undefined?{}:{observedExecutions}),lastObservedAt,phase};}
+const executions:ExecutionInventory={version:1,from:new Date(Date.now()-24*60*60*1000).toISOString(),to:observedAt,updatedAt:observedAt,retentionDays:30,staleAfterSeconds:86400,historyTruncated:false,installations:[
+ client('client-1','client:first','stable-installation',2),client('client-2','client:second','stable-installation',2,priorObservation),
+ client('one-off','client:one-off','single-installation',1),client('unknown-count','client:unknown','unknown-installation'),
+ client('stale-client','client:stale','stale-installation',9,staleObservation),
+ client('phase-start','client:same-execution','phase-installation',1,priorObservation,'start'),client('phase-finish','client:same-execution','phase-installation',1),
+],jobs:[entry('job-1','github-actions:123:456:1:789','githubActions'),entry('job-2','github-actions:123:456:1:790','githubActions'),entry('job-3','github-actions:123:456:2:791','githubActions')]};
 const baseSnapshot:Snapshot={scope:'team',updatedAt:observedAt,cache:{state:'connected',reportState:'available',status:{usageBytes:512*1024**2,maxBytes:5*1024**3,artifacts:32,entries:32,role:'admin',visibility:'team',storageBackend:'s3',canPrune:false,storageByIntegration:[{integration:'turbo',usageBytes:256*1024**2,artifacts:16,entries:16},{integration:'actions',usageBytes:128*1024**2,artifacts:8,entries:8},{integration:'shared',usageBytes:128*1024**2,artifacts:8,entries:8}]},report:{eligible:10,hits:7,misses:3,runs:4,degraded:false,netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:4,confidence:'unknown'},bytes:{downloaded:7168,uploaded:2048},timing:{lookupMs:10,downloadMs:200,verificationMs:30,restoreMs:400,uploadMs:50},sources:[{source:'teamCache',hits:7,downloadedBytes:7168,uploadedBytes:2048}],integrations:[{integration:'buildkit',hits:5,eligible:6},{integration:'turbo',hits:2,eligible:4}]}},executions};
 let origin='';
 const snapshots:{project:string;period:string;method:string}[]=[],held:{response:ServerResponse;period:string}[]=[];
@@ -102,6 +109,19 @@ try{
   await navigate('Activity');const xcode=page.getByRole('table',{name:'Cache by type',exact:true}).getByRole('row').filter({hasText:/Xcode/i});assert.match(await xcode.innerText(),/unknown|not (?:yet )?(?:metered|reported)|no (?:reported|measured)/i);await navigate('Overview');
   const popular=page.getByRole('region',{name:'Most reused artifacts',exact:true});await popular.waitFor();assert.match(await popular.innerText(),/unavailable|not (?:yet )?reported|no (?:artifact|per-artifact|key)/i);
  });
+ await check('settings and account pages hide project reporting controls and ignore hidden filter events',async()=>{
+  await navigate('Settings');await page.getByRole('heading',{name:'Connect your CLI',exact:true}).waitFor();
+  await expect(page.locator('.project-toolbar')).toBeHidden();await expect(page.getByLabel('Reporting period')).toBeHidden();
+  const before=snapshots.length,settingsURL=page.url();
+  await page.getByLabel('Reporting period').evaluate((node:HTMLSelectElement)=>{node.value='7d';node.dispatchEvent(new Event('change',{bubbles:true}));});
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  await page.getByRole('heading',{name:'Connect your CLI',exact:true}).waitFor();assert.equal(page.url(),settingsURL);assert.equal(snapshots.length,before);
+  await page.getByRole('link',{name:'Account & team',exact:true}).click();await page.waitForURL(url=>url.pathname==='/teams/engineering/settings');
+  await expect(page.locator('.project-tabs')).toBeHidden();await expect(page.locator('.project-toolbar')).toBeHidden();
+  await page.goto(origin+'/projects/unknown/overview');await page.getByRole('heading',{name:'Page unavailable',exact:true}).waitFor();
+  await expect(page.locator('.project-tabs')).toBeHidden();await expect(page.locator('.project-toolbar')).toBeHidden();
+  await page.getByRole('button',{name:'Phone App',exact:true}).click();await summary().waitFor();await expect(page.locator('.project-toolbar')).toBeVisible();
+ });
  await check('links preserve document identity and history reloads the focused page',async()=>{
   const identity=await page.evaluate(()=>window.uxDocument);await navigate('Settings');assert.equal(await page.evaluate(()=>window.uxDocument),identity);
   await page.getByRole('heading',{name:'Connect your CLI',exact:true}).waitFor();
@@ -116,8 +136,17 @@ try{
   assert.equal(await actions.locator('.infra-run[open]').count(),0,'CI runs start collapsed');
   const first=actions.locator('.infra-run[data-run-id="456"][data-attempt="1"]');assert.equal(await first.locator('.infra-job').count(),2);
   await first.locator(':scope > summary').click();await first.locator('.infra-job > summary').first().click();assert.match(await first.innerText(),/unknown/i);assert.doesNotMatch(await first.innerText(),/Ubicloud/);
-  const clients=page.getByRole('region',{name:'Persistent clients',exact:true});assert.equal(await clients.locator('.infra-client').count(),1,'Same installation should be deduplicated');
+  const clients=page.getByRole('region',{name:'Persistent clients',exact:true});assert.equal(await clients.locator('.infra-client:visible').count(),1,'Only the fresh repeated installation should appear by default');
   assert.equal(await clients.locator('.infra-job').count(),0,'Transient CI jobs must not appear as persistent clients');
+ });
+ await check('one-off unknown and stale clients stay out of the repeated-client default',async()=>{
+  const clients=page.getByRole('region',{name:'Persistent clients',exact:true}),other=page.locator('details.infra-other-clients');
+  assert.equal(await clients.locator('.infra-client:visible').count(),1);assert.equal(await other.getAttribute('open'),null);
+  const stable=clients.locator('.infra-client:visible');assert.match(await stable.locator(':scope > summary').innerText(),/2\+ executions/);assert.match(await stable.locator('.infra-client-recurrence').textContent()??'',/At least 2 reported executions/i);
+  await other.locator(':scope > summary').click();assert.equal(await other.locator('.infra-client').count(),4,'Duplicate phases must remain a single installation');
+  const text=await other.textContent()??'';assert.match(text,/At least 1 reported execution/i);assert.match(text,/9 reported executions/i);assert.match(text,/unknown|unavailable|not (?:yet )?reported/i);
+  assert.equal(await page.locator('.infra-client').count(),5,'Installation rows should deduplicate without promoting two phase rows');
+  await other.locator(':scope > summary').click();assert.equal(await clients.locator('.infra-client:visible').count(),1);
  });
  await check('period updates keep scroll focus controls and previous metrics while loading',async()=>{
   await navigate('Activity');await page.locator('.page-content:not([aria-busy="true"])').waitFor();

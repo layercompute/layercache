@@ -128,7 +128,7 @@ class Workspace {
     this.selector.setAttribute('aria-label', 'Reporting period');
     for (const [id, label] of [['24h', 'Last 24 hours'], ['7d', 'Last 7 days']]) {const option = el('option', label!); option.value = id!; this.selector.append(option);}
     this.selector.onchange = () => {
-      if (this.route.kind !== 'project') return;
+      if (this.route.kind !== 'project' || this.route.page === 'settings') return;
       const href = projectURL(this.route.project, this.route.page, this.selector.value);
       history.replaceState(history.state, '', href); this.updateLinks(); void this.load(true);
     };
@@ -212,7 +212,7 @@ class Workspace {
     footer.append(el('p', 'Personal · Team · Public', 'muted')); this.sidebar.append(footer);
   }
   private async load(preserve: boolean, restoreY?: number): Promise<void> {
-    if (this.route.kind !== 'project') return;
+    if (this.route.kind !== 'project' || this.route.page === 'settings') return;
     const project = this.current.projects?.find(item => item.id === this.routeProject());
     const team = this.current.teams?.find(item => item.id === project?.teamId);
     if (!project || !team) return;

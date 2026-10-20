@@ -22,7 +22,9 @@ workspaces and filesystem migration are outside the current product scope.
   URLs. Period changes update only the selected project without replacing its
   navigation, losing focus or collapsing scroll. Roll GitHub Actions job
   attempts up by authenticated run identity; keep persistent clients separate
-  from disposable CI jobs. Show common artifact hits without uploading task
+  from disposable CI jobs. Default client rows require repeated distinct
+  executions and a fresh sample; one-off and unqualified clients stay collapsed.
+  Show common artifact hits without uploading task
   paths or commands. Expose timing-backed task/critical-path estimates and their
   coverage, leaving CPU-hours and money unknown without matched resource/rate
   evidence. Support explicit capacity adjustments within assigned entitlements,

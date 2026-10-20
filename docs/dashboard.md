@@ -37,9 +37,12 @@ measurement invocations, not GitHub workflow counts.
 
 Infrastructure groups authenticated GitHub Actions jobs by repository, run and
 attempt. Individual jobs and resource samples expand on demand. Persistent
-client installations appear separately from transient CI jobs. An installation
-identity does not establish unique physical hardware or repeated observations.
-Unknown compute providers and resource limits remain unknown.
+client installations appear separately from transient CI jobs. The default list
+shows fresh clients seen in at least two distinct reported executions. One-off,
+stale and unqualified clients stay in a collapsed disclosure. Counts are lower
+bounds from retained primary samples in the selected period; start/finish phases
+of one execution count once. An installation identity does not establish unique
+physical hardware. Unknown compute providers and resource limits remain unknown.
 
 Storage shows a deduplicated artifact-byte breakdown from explicit integration
 metadata. A blob referenced by several integrations belongs to Shared and is

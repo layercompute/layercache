@@ -41,8 +41,11 @@ scope; TODOs.md owns future work.
   blobs once. Turbo-transport snapshots cannot be relabeled as Xcode or Expo.
   Keep missing storage breakdowns separate from an explicitly empty store.
 - Group CI jobs by authenticated repository/run/attempt identity with expandable
-  detail. Persistent clients are separate from CI jobs. Latest samples do not
-  establish recurring observations or unique physical hardware.
+  detail. Persistent clients are separate from CI jobs. Default host rows require
+  at least two distinct reported executions and a fresh resource sample. Keep
+  one-off, stale and unknown-count clients collapsed. Deduplicate start/finish
+  phases and count only timestamped primary observations in the selected period.
+  These bounded observations do not establish unique physical hardware.
 - Capacity changes require current administrator authority and a matching prior
   limit. Stay within the assigned allocation, reject insufficient committed or
   retained/metadata capacity and preserve restart persistence. Changes never
