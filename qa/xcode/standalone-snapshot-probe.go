@@ -45,17 +45,19 @@ type descriptorFlags struct {
 	Flag4 string `json:"flag4"`
 }
 type chunkShape struct {
-	Field                     fieldShape `json:"field"`
-	IsSingleByteOne           bool       `json:"isSingleByteOne"`
-	PayloadBytes              int        `json:"payloadBytes"`
-	AllBytesOne               bool       `json:"allBytesOne"`
-	FollowingLiteralChunks    int        `json:"followingLiteralChunks"`
-	LeadingUniqueMarker       bool       `json:"leadingUniqueMarker"`
-	VectorCardinalityMatches  bool       `json:"vectorCardinalityMatches"`
-	CanonicalOneBased         bool       `json:"canonicalOneBased"`
-	CanonicalZeroBased        bool       `json:"canonicalZeroBased"`
-	DecodedIndexCount         int        `json:"decodedIndexCount"`
-	IndexCountMatchesLiterals bool       `json:"indexCountMatchesLiterals"`
+	Field                         fieldShape `json:"field"`
+	IsSingleByteOne               bool       `json:"isSingleByteOne"`
+	PayloadBytes                  int        `json:"payloadBytes"`
+	AllBytesOne                   bool       `json:"allBytesOne"`
+	FollowingLiteralChunks        int        `json:"followingLiteralChunks"`
+	LeadingUniqueMarker           bool       `json:"leadingUniqueMarker"`
+	VectorCardinalityMatches      bool       `json:"vectorCardinalityMatches"`
+	CanonicalOneBased             bool       `json:"canonicalOneBased"`
+	CanonicalZeroBased            bool       `json:"canonicalZeroBased"`
+	DecodedIndexCount             int        `json:"decodedIndexCount"`
+	IndexCountMatchesLiterals     bool       `json:"indexCountMatchesLiterals"`
+	CanonicalPermutationOneBased  bool       `json:"canonicalPermutationOneBased"`
+	CanonicalPermutationZeroBased bool       `json:"canonicalPermutationZeroBased"`
 }
 type linkedReference struct {
 	TargetOrdinal int  `json:"targetOrdinal"`
@@ -78,6 +80,7 @@ type nodeShape struct {
 	OnlyTopLevelChunks   bool              `json:"onlyTopLevelChunks"`
 	WireReferenceCount   int               `json:"wireReferenceCount"`
 	inlineChunks         []wireInlineChunk
+	referenceOrder       *wireReferenceOrder
 }
 type objectShape struct {
 	Ordinal            int               `json:"ordinal"`
@@ -183,6 +186,39 @@ type wireInlineChunk struct {
 	DataBytes int    `json:"dataBytes"`
 }
 
+type wireReferenceOrder struct {
+	Base    int   `json:"base"`
+	Indices []int `json:"indices"`
+}
+
+func canonicalPermutation(data []byte) *wireReferenceOrder {
+	var indices []int
+	base := 1
+	for len(data) > 0 {
+		value, consumed := protowire.ConsumeVarint(data)
+		if consumed < 0 || consumed != protowire.SizeVarint(value) || value > maxInspectedFields || len(indices) >= maxInspectedFields {
+			return nil
+		}
+		indices = append(indices, int(value))
+		if value == 0 {
+			base = 0
+		}
+		data = data[consumed:]
+	}
+	if len(indices) == 0 {
+		return nil
+	}
+	seen := make([]bool, len(indices))
+	for _, value := range indices {
+		index := value - base
+		if index < 0 || index >= len(indices) || seen[index] {
+			return nil
+		}
+		seen[index] = true
+	}
+	return &wireReferenceOrder{base, indices}
+}
+
 func describeNode(data []byte) *nodeShape {
 	refs, err := xcodecache.NativeNodeReferences(data)
 	result := &nodeShape{Bytes: len(data), StrictAccepted: err == nil, Fields: []fieldShape{}, Descriptors: []descriptorFlags{}, Chunks: []chunkShape{}, OnlyTopLevelChunks: true}
@@ -194,6 +230,7 @@ func describeNode(data []byte) *nodeShape {
 		literalsBefore int
 		payloadBytes   int
 		leading        bool
+		order          *wireReferenceOrder
 	}
 	var markers []marker
 	complete := true
@@ -226,11 +263,19 @@ func describeNode(data []byte) *nodeShape {
 					}
 				}
 				displayIndex := -1
+				var order *wireReferenceOrder
+				if chunk.Number == 2 {
+					order = canonicalPermutation(payload)
+				}
 				if len(result.Chunks) < maxFields {
 					displayIndex = len(result.Chunks)
 					description := chunkShape{Field: chunk, IsSingleByteOne: len(payload) == 1 && payload[0] == 1, PayloadBytes: len(payload), AllBytesOne: allOne}
 					if chunk.Number == 2 {
 						description.DecodedIndexCount, description.CanonicalOneBased, description.CanonicalZeroBased = canonicalIndexSequence(payload)
+						if order != nil {
+							description.CanonicalPermutationOneBased = order.Base == 1
+							description.CanonicalPermutationZeroBased = order.Base == 0
+						}
 					}
 					result.Chunks = append(result.Chunks, description)
 				} else {
@@ -242,7 +287,7 @@ func describeNode(data []byte) *nodeShape {
 					result.inlineChunks = append(result.inlineChunks, wireInlineChunk{hex.EncodeToString(sum[:]), len(payload)})
 				} else {
 					result.MarkerCount++
-					markers = append(markers, marker{displayIndex, result.LiteralChunkCount, len(payload), count == 0})
+					markers = append(markers, marker{displayIndex, result.LiteralChunkCount, len(payload), count == 0, order})
 				}
 			}
 		}
@@ -264,6 +309,9 @@ func describeNode(data []byte) *nodeShape {
 	}
 	result.SequenceComplete = complete
 	for _, marker := range markers {
+		if complete && marker.leading && len(markers) == 1 && marker.order != nil && len(marker.order.Indices) == result.LiteralChunkCount {
+			result.referenceOrder = marker.order
+		}
 		if marker.displayIndex >= 0 {
 			chunk := &result.Chunks[marker.displayIndex]
 			chunk.FollowingLiteralChunks = result.LiteralChunkCount - marker.literalsBefore
@@ -539,12 +587,13 @@ func encodeReport(value report) ([]byte, error) {
 }
 
 type semanticTarget struct {
-	Ordinal                int               `json:"ordinal"`
-	NativeDigestHex        string            `json:"nativeDigestHex"`
-	WireReferenceCount     int               `json:"wireReferenceCount"`
-	WireReferencesComplete bool              `json:"wireReferencesComplete"`
-	WireDataBytes          *int              `json:"wireDataBytes"`
-	WireInlineChunks       []wireInlineChunk `json:"wireInlineChunks"`
+	Ordinal                int                 `json:"ordinal"`
+	NativeDigestHex        string              `json:"nativeDigestHex"`
+	WireReferenceCount     int                 `json:"wireReferenceCount"`
+	WireReferencesComplete bool                `json:"wireReferencesComplete"`
+	WireDataBytes          *int                `json:"wireDataBytes"`
+	WireInlineChunks       []wireInlineChunk   `json:"wireInlineChunks"`
+	WireReferenceOrder     *wireReferenceOrder `json:"wireReferenceOrder"`
 }
 
 func privateManifestDirectory(info os.FileInfo) bool {
@@ -591,7 +640,11 @@ func writeSemanticManifest(path string, value report) error {
 			}
 			totalChunks += len(inline)
 		}
-		manifest.Targets = append(manifest.Targets, semanticTarget{index + 1, hex.EncodeToString(digest), object.Node.WireReferenceCount, object.Node.SequenceComplete, nil, inline})
+		var order *wireReferenceOrder
+		if inline != nil {
+			order = object.Node.referenceOrder
+		}
+		manifest.Targets = append(manifest.Targets, semanticTarget{index + 1, hex.EncodeToString(digest), object.Node.WireReferenceCount, object.Node.SequenceComplete, nil, inline, order})
 	}
 	if len(manifest.Targets) > maxRows {
 		return errors.New("fixture semantic target bound exceeded")

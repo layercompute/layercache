@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Linux controls for evidence interpretation; no Apple compiler claim."""
 import importlib.util
+import copy
 import hashlib
 import http.client
 import http.server
@@ -21,6 +22,12 @@ spec.loader.exec_module(probe)
 
 
 class EvidenceControls(unittest.TestCase):
+    def test_archive_node_version_is_fixed_semver_only(self):
+        self.assertEqual(probe.node_runtime_version("v24.13.0\n"), "v24.13.0")
+        for output in ("v24.13.0 secret", "v24.13.0\n/private/secret", "24.13.0", "v024.13.0", "v24.13.0-canary"):
+            with self.assertRaises(RuntimeError):
+                probe.node_runtime_version(output)
+
     def test_clang_pch_and_source_diagnostics_are_distinct_from_swift(self):
         log = """ProcessPCH /tmp/Prefix.pch.pch /tmp/Prefix.pch normal arm64
 note: replayed cache hit: pch
@@ -185,7 +192,8 @@ _other:
                             "referenceCount": None, "wireReferenceCountMatches": None, "wireDataBytesMatches": None,
                             "comparisonComplete": False, "referenceObjectsChecked": 0, "referenceDataBytes": 0,
                             "inlineReferenceCountMatches": None, "inlineReferencesMatch": None,
-                            "inlineReferenceMultisetMatches": None, "referencedObjectsAreLeaves": None}]})
+                            "inlineReferenceMultisetMatches": None, "referencedObjectsAreLeaves": None,
+                            "indexedOneBasedReferencesMatch": None, "indexedZeroBasedReferencesMatch": None}]})
 
                 with mock.patch.object(fixture, "run", side_effect=run):
                     self.assertTrue(fixture.collect_producer_semantics(store))
@@ -202,6 +210,76 @@ _other:
                 self.assertNotIn("0" * 130, public)
                 self.assertNotIn(str(parent), public)
                 self.assertNotIn(marker.read_text(), public)
+            finally:
+                fixture.close()
+
+    def test_indexed_mapping_gate_requires_every_declared_native_target(self):
+        shapes = {"available": True, "objects": [{"ordinal": 7, "expectedNativeNode": True, "node": {
+            "sequenceComplete": True, "onlyTopLevelChunks": True, "markerCount": 1, "literalChunkCount": 3,
+            "chunks": [{"field": {"number": 2}, "leadingUniqueMarker": True,
+                        "canonicalPermutationOneBased": True, "indexCountMatchesLiterals": True}]}}]}
+        semantics = {"available": True, "workerStopped": True, "objects": [{"ordinal": 7,
+            "available": True, "comparisonComplete": True, "inlineReferenceCountMatches": True,
+            "inlineReferenceMultisetMatches": True, "referencedObjectsAreLeaves": True,
+            "indexedOneBasedReferencesMatch": True, "indexedZeroBasedReferencesMatch": None,
+            "dataBytes": 0, "referenceCount": 3, "referenceObjectsChecked": 3}]}
+        self.assertTrue(probe.semantic_mapping_qualified(shapes, semantics))
+        for key in ("available", "comparisonComplete", "inlineReferenceCountMatches",
+                    "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves", "indexedOneBasedReferencesMatch"):
+            changed = copy.deepcopy(semantics)
+            changed["objects"][0][key] = False
+            self.assertFalse(probe.semantic_mapping_qualified(shapes, changed), key)
+        for key in ("sequenceComplete", "onlyTopLevelChunks"):
+            changed = copy.deepcopy(shapes)
+            changed["objects"][0]["node"][key] = False
+            self.assertFalse(probe.semantic_mapping_qualified(changed, semantics), key)
+        for key in ("leadingUniqueMarker", "canonicalPermutationOneBased", "indexCountMatchesLiterals"):
+            changed = copy.deepcopy(shapes)
+            changed["objects"][0]["node"]["chunks"][0][key] = False
+            self.assertFalse(probe.semantic_mapping_qualified(changed, semantics), key)
+        for value in ([], [semantics["objects"][0]] * 2, [{**semantics["objects"][0], "ordinal": 8}]):
+            self.assertFalse(probe.semantic_mapping_qualified(shapes, {**semantics, "objects": value}))
+        zero = copy.deepcopy(semantics)
+        zero["objects"][0].update(indexedOneBasedReferencesMatch=None, indexedZeroBasedReferencesMatch=True)
+        self.assertFalse(probe.semantic_mapping_qualified(shapes, zero))
+        self.assertFalse(probe.semantic_mapping_qualified({"available": True, "objects": []}, semantics))
+
+    def test_unqualified_mapping_prevents_publication_and_consumer_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = probe.Probe(Path("unused"), Path("unused"), Path(temporary) / "evidence")
+            try:
+                with mock.patch.object(fixture, "fingerprint"), mock.patch.object(fixture, "prepare_project"), \
+                     mock.patch.object(fixture, "team"), mock.patch.object(fixture, "adapter", return_value="producer"), \
+                     mock.patch.object(fixture, "build", return_value={}) as build, \
+                     mock.patch.object(fixture, "stop", return_value={}), \
+                     mock.patch.object(fixture, "collect_producer_semantics", return_value=True), \
+                     mock.patch.object(fixture, "archive") as archive:
+                    with self.assertRaisesRegex(RuntimeError, "indexed leaf mapping is not qualified"):
+                        fixture.qualify()
+                    self.assertEqual(build.call_count, 1)
+                    archive.assert_not_called()
+            finally:
+                fixture.close()
+
+    def test_archive_command_failure_and_timeout_keep_safe_outcomes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = probe.Probe(Path("unused"), Path("unused"), Path(temporary) / "evidence")
+            try:
+                def failure(*args, **kwargs):
+                    kwargs["stdout"].write(b"private failure /private/sdk/path\nSnapshot archive operation failed: integrity-failed\n")
+                    return probe.subprocess.CompletedProcess(args[0], -6)
+                with mock.patch.object(probe.subprocess, "run", side_effect=failure):
+                    with self.assertRaises(RuntimeError):
+                        fixture.run("reader-restore", ["unused"])
+                self.assertEqual(fixture.last_archive_outcome["processOutcome"], "signaled")
+                self.assertEqual(fixture.last_archive_failure_code, "integrity-failed")
+                self.assertNotIn("/private/sdk", json.dumps(fixture.last_archive_outcome))
+                with mock.patch.object(probe.subprocess, "run", side_effect=probe.subprocess.TimeoutExpired("unused", 1)):
+                    with self.assertRaises(probe.subprocess.TimeoutExpired):
+                        fixture.run("reader-restore", ["unused"], timeout=1)
+                self.assertEqual(fixture.last_archive_outcome["processOutcome"], "timed-out")
+                self.assertIsNone(fixture.last_archive_outcome["exitCode"])
+                self.assertIn("reader-restore", fixture.timings)
             finally:
                 fixture.close()
 

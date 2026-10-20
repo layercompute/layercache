@@ -223,7 +223,7 @@ def chunks_for(payloads=CHILD_BYTES):
     return [{"sha256": hashlib.sha256(value).hexdigest(), "dataBytes": len(value)} for value in payloads]
 
 
-def target(ordinal=1, index=0, references=0, complete=True, data_bytes=None, inline_chunks=OMITTED):
+def target(ordinal=1, index=0, references=0, complete=True, data_bytes=None, inline_chunks=OMITTED, reference_order=OMITTED):
     value = {
         "ordinal": ordinal,
         "nativeDigestHex": "00" * 64 + f"{index:02x}",
@@ -233,6 +233,8 @@ def target(ordinal=1, index=0, references=0, complete=True, data_bytes=None, inl
     }
     if inline_chunks is not OMITTED:
         value["wireInlineChunks"] = inline_chunks
+    if reference_order is not OMITTED:
+        value["wireReferenceOrder"] = reference_order
     return value
 
 
@@ -301,7 +303,8 @@ class PluginSemanticsTests(unittest.TestCase):
             self.assertEqual(tuple(item[key] for key in ("dataBytes", "referenceCount", "wireReferenceCountMatches", "wireDataBytesMatches")), values)
             self.assertIs(item["comparisonComplete"], False)
             self.assertEqual((item["referenceObjectsChecked"], item["referenceDataBytes"]), (0, 0))
-            for key in ("inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves"):
+            for key in ("inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves",
+                        "indexedOneBasedReferencesMatch", "indexedZeroBasedReferencesMatch"):
                 self.assertIsNone(item[key])
         self.assertEqual(self.calls().count("G"), 3)
         self.assertEqual(self.calls().count("Q"), 3)
@@ -323,6 +326,8 @@ class PluginSemanticsTests(unittest.TestCase):
                          (True, 3, sum(map(len, CHILD_BYTES))))
         for key in ("inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves"):
             self.assertIs(item[key], True, key)
+        self.assertIsNone(item["indexedOneBasedReferencesMatch"])
+        self.assertIsNone(item["indexedZeroBasedReferencesMatch"])
         self.assertIs(item["wireReferenceCountMatches"], False, "envelope references and semantic references were conflated")
         self.assertEqual((self.calls().count("G"), self.calls().count("H"), self.calls().count("Q"), self.calls().count("B")),
                          (1, 3, 4, 4))
@@ -330,6 +335,60 @@ class PluginSemanticsTests(unittest.TestCase):
         for chunk in chunks:
             self.assertNotIn(chunk["sha256"], json.dumps(result))
         self.assert_private_report(result)
+
+    def test_indexed_reference_orders_use_declared_base_and_direction_without_extra_reads(self):
+        # indices[semantic_index] selects the inline chunk. The three-cycle
+        # distinguishes that convention from its inverse, unlike a swap.
+        rotated = (CHILD_BYTES[2], CHILD_BYTES[0], CHILD_BYTES[1])
+        for scenario, payloads, base, indices, matched in (
+            (26, CHILD_BYTES, 0, [1, 0, 2], True),
+            (26, CHILD_BYTES, 1, [2, 1, 3], True),
+            (20, rotated, 0, [1, 2, 0], True),
+            (20, rotated, 1, [2, 3, 1], True),
+            (20, rotated, 0, [2, 0, 1], False),
+            (20, rotated, 1, [3, 1, 2], False),
+            (21, CHILD_BYTES, 0, [0, 1, 2], False),
+            (21, CHILD_BYTES, 1, [1, 2, 3], False),
+        ):
+            with self.subTest(scenario=scenario, base=base, indices=indices):
+                self.audit.unlink(missing_ok=True)
+                self.write_manifest({"version": 1, "project": PROJECT, "targets": [
+                    target(inline_chunks=chunks_for(payloads), reference_order={"base": base, "indices": indices}),
+                ]})
+                result = PROBE.run_probe(self.library(scenario=scenario), self.cas, self.manifest)
+                self.assertTrue(result["available"], result)
+                item = result["objects"][0]
+                self.assertEqual((item["available"], item["comparisonComplete"], item["referenceObjectsChecked"]), (True, True, 3))
+                self.assertIs(item["inlineReferencesMatch"], False)
+                self.assertIs(item["inlineReferenceMultisetMatches"], scenario != 21)
+                selected = "indexedOneBasedReferencesMatch" if base == 1 else "indexedZeroBasedReferencesMatch"
+                other = "indexedZeroBasedReferencesMatch" if base == 1 else "indexedOneBasedReferencesMatch"
+                self.assertIs(item[selected], matched)
+                self.assertIsNone(item[other], "the undeclared base was guessed")
+                self.assertEqual((self.calls().count("G"), self.calls().count("H"), self.calls().count("Q"),
+                                  self.calls().count("B"), self.calls().count("R"), self.calls().count("N")),
+                                 (1, 3, 4, 4, 4, 4), "indexed comparison added native reads")
+                serialized = json.dumps(result)
+                self.assertNotIn("wireReferenceOrder", serialized)
+                self.assertNotIn('"indices"', serialized)
+                for chunk in chunks_for(payloads):
+                    self.assertNotIn(chunk["sha256"], serialized)
+                self.assert_private_report(result)
+
+    def test_absent_or_null_reference_order_does_not_infer_a_base(self):
+        for order in (OMITTED, None):
+            with self.subTest(order="omitted" if order is OMITTED else "null"):
+                self.audit.unlink(missing_ok=True)
+                self.write_manifest({"version": 1, "project": PROJECT, "targets": [
+                    target(inline_chunks=chunks_for(), reference_order=order),
+                ]})
+                result = PROBE.run_probe(self.library(scenario=20), self.cas, self.manifest)
+                item = result["objects"][0]
+                self.assertIs(item["inlineReferencesMatch"], True)
+                self.assertIs(item["indexedOneBasedReferencesMatch"], None)
+                self.assertIs(item["indexedZeroBasedReferencesMatch"], None)
+                self.assertEqual((self.calls().count("H"), self.calls().count("Q"), self.calls().count("B")), (3, 4, 4))
+                self.assert_private_report(result)
 
     def test_positional_multiset_and_nonleaf_outcomes_remain_distinct(self):
         for scenario, positional, multiset, leaves in (
@@ -354,14 +413,17 @@ class PluginSemanticsTests(unittest.TestCase):
         for scenario, reason, loads, errors in ((23, "notFound", 2, 0), (32, "nativeError", 2, 1), (33, "notFound", 3, 0)):
             with self.subTest(scenario=scenario):
                 self.audit.unlink(missing_ok=True)
-                self.write_manifest({"version": 1, "project": PROJECT, "targets": [target(inline_chunks=chunks_for())]})
+                self.write_manifest({"version": 1, "project": PROJECT, "targets": [
+                    target(inline_chunks=chunks_for(), reference_order={"base": 0, "indices": [0, 1, 2]}),
+                ]})
                 result = PROBE.run_probe(self.library(scenario=scenario), self.cas, self.manifest)
                 item = result["objects"][0]
                 self.assertTrue(result["available"], result)
                 self.assertEqual((item["available"], item["reason"], item["comparisonComplete"]), (False, reason, False))
                 self.assertEqual((item["referenceObjectsChecked"], item["referenceDataBytes"]), (1, len(CHILD_BYTES[0])))
                 self.assertIs(item["inlineReferenceCountMatches"], True)
-                for key in ("inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves"):
+                for key in ("inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves",
+                            "indexedOneBasedReferencesMatch", "indexedZeroBasedReferencesMatch"):
                     self.assertIsNone(item[key])
                 self.assertEqual((self.calls().count("H"), self.calls().count("Q"), self.calls().count("E")), (2, loads, errors))
                 self.assertEqual((self.calls().count("X"), self.calls().count("D")), (1, 1))
@@ -371,7 +433,10 @@ class PluginSemanticsTests(unittest.TestCase):
         for mapping, count_match, positional in ((None, None, None), ([], False, False), (chunks_for()[:2], False, False)):
             with self.subTest(mapping=mapping):
                 self.audit.unlink(missing_ok=True)
-                self.write_manifest({"version": 1, "project": PROJECT, "targets": [target(inline_chunks=mapping)]})
+                order = {"base": 0, "indices": list(range(len(mapping)))} if mapping else OMITTED
+                self.write_manifest({"version": 1, "project": PROJECT, "targets": [
+                    target(inline_chunks=mapping, reference_order=order),
+                ]})
                 result = PROBE.run_probe(self.library(scenario=20), self.cas, self.manifest)
                 item = result["objects"][0]
                 self.assertEqual((item["available"], item["comparisonComplete"], item["referenceObjectsChecked"], item["referenceDataBytes"]),
@@ -379,6 +444,8 @@ class PluginSemanticsTests(unittest.TestCase):
                 self.assertEqual((item["inlineReferenceCountMatches"], item["inlineReferencesMatch"]), (count_match, positional))
                 self.assertIsNone(item["inlineReferenceMultisetMatches"])
                 self.assertIsNone(item["referencedObjectsAreLeaves"])
+                self.assertIsNone(item["indexedOneBasedReferencesMatch"])
+                self.assertIsNone(item["indexedZeroBasedReferencesMatch"])
                 self.assertNotIn("H", self.calls())
                 self.assertEqual(self.calls().count("Q"), 1)
                 self.assert_private_report(result)
@@ -649,6 +716,44 @@ class PluginSemanticsTests(unittest.TestCase):
                 result = PROBE.run_probe(library, self.cas, self.manifest)
                 self.assertEqual((result["available"], result["reason"]), (False, "invalidInput"))
                 self.assertFalse(self.audit.exists(), "invalid inline input loaded native code")
+                self.assert_private_report(result)
+
+    def test_invalid_reference_orders_reject_before_native_load(self):
+        library = self.library(scenario=20)
+        invalid_orders = {
+            "wrong type": [],
+            "missing fields": {},
+            "missing base": {"indices": [0, 1, 2]},
+            "missing indices": {"base": 0},
+            "extra field": {"base": 0, "indices": [0, 1, 2], "raw": "private"},
+            "boolean base": {"base": False, "indices": [0, 1, 2]},
+            "fractional base": {"base": 0.0, "indices": [0, 1, 2]},
+            "negative base": {"base": -1, "indices": [0, 1, 2]},
+            "unknown base": {"base": 2, "indices": [2, 3, 4]},
+            "null indices": {"base": 0, "indices": None},
+            "wrong indices type": {"base": 0, "indices": "012"},
+            "empty permutation": {"base": 0, "indices": []},
+            "short permutation": {"base": 0, "indices": [0, 1]},
+            "long permutation": {"base": 0, "indices": [0, 1, 2, 3]},
+            "duplicate zero based": {"base": 0, "indices": [0, 0, 2]},
+            "duplicate one based": {"base": 1, "indices": [1, 2, 2]},
+            "negative index": {"base": 0, "indices": [-1, 1, 2]},
+            "out of range zero based": {"base": 0, "indices": [1, 2, 3]},
+            "out of range one based": {"base": 1, "indices": [0, 1, 2]},
+            "boolean index": {"base": 0, "indices": [False, 1, 2]},
+            "fractional index": {"base": 0, "indices": [0.0, 1, 2]},
+        }
+        cases = {name: target(inline_chunks=chunks_for(), reference_order=order) for name, order in invalid_orders.items()}
+        order = {"base": 0, "indices": [0, 1, 2]}
+        cases["order without chunks"] = target(reference_order=order)
+        cases["order with null chunks"] = target(inline_chunks=None, reference_order=order)
+        cases["empty order with empty chunks"] = target(inline_chunks=[], reference_order={"base": 0, "indices": []})
+        for name, item in cases.items():
+            with self.subTest(name=name):
+                self.write_manifest({"version": 1, "project": PROJECT, "targets": [item]})
+                result = PROBE.run_probe(library, self.cas, self.manifest)
+                self.assertEqual((result["available"], result["reason"]), (False, "invalidInput"))
+                self.assertFalse(self.audit.exists(), "invalid reference order loaded native code")
                 self.assert_private_report(result)
 
     def test_manifest_permissions_links_and_fifo_reject_before_native_load(self):

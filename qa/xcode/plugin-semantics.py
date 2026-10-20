@@ -96,7 +96,7 @@ def read_manifest(path, cas_path):
     seen, inline_count, inline_bytes = set(), 0, 0
     required = {"ordinal", "nativeDigestHex", "wireReferenceCount", "wireReferencesComplete", "wireDataBytes"}
     for target in targets:
-        if type(target) is not dict or set(target) not in (required, required | {"wireInlineChunks"}):
+        if type(target) is not dict or not required <= set(target) <= required | {"wireInlineChunks", "wireReferenceOrder"}:
             raise ValueError("target fields")
         ordinal, digest = target["ordinal"], target["nativeDigestHex"]
         if not integer(ordinal, 1, MAX_TARGETS) or ordinal in seen or type(digest) is not str or re.fullmatch(r"[0-9a-f]{130}", digest) is None:
@@ -117,6 +117,13 @@ def read_manifest(path, cas_path):
                 inline_bytes += chunk["dataBytes"]
             if inline_count > MAX_CHILD_LOADS or inline_bytes > MAX_OBJECT_BYTES:
                 raise ValueError("inline total bounds")
+        order = target.get("wireReferenceOrder")
+        if order is not None:
+            if chunks is None or not chunks or type(order) is not dict or set(order) != {"base", "indices"} or not integer(order["base"], 0, 1):
+                raise ValueError("reference order")
+            indices, base = order["indices"], order["base"]
+            if type(indices) is not list or len(indices) != len(chunks) or any(not integer(value, base, base + len(chunks) - 1) for value in indices) or len(set(indices)) != len(chunks):
+                raise ValueError("reference permutation")
     return targets
 
 
@@ -185,7 +192,8 @@ class NativeAPI:
                   "dataBytes": None, "referenceCount": None,
                   "wireReferenceCountMatches": None, "wireDataBytesMatches": None,
                   "comparisonComplete": False, "referenceObjectsChecked": 0, "referenceDataBytes": 0,
-                  "inlineReferenceCountMatches": None, "inlineReferencesMatch": None, "inlineReferenceMultisetMatches": None, "referencedObjectsAreLeaves": None}
+                  "inlineReferenceCountMatches": None, "inlineReferencesMatch": None, "inlineReferenceMultisetMatches": None, "indexedOneBasedReferencesMatch": None,
+                  "indexedZeroBasedReferencesMatch": None, "referencedObjectsAreLeaves": None}
         raw = bytes.fromhex(target["nativeDigestHex"])
         storage = (c.c_uint8 * len(raw)).from_buffer_copy(raw)
         error, object_id = c.c_void_p(), ObjectID()
@@ -213,6 +221,7 @@ class NativeAPI:
             result["inlineReferencesMatch"] = False
             return result
         matches, leaves, observed = True, True, Counter()
+        order, indexed_matches = target.get("wireReferenceOrder"), True
         for index, chunk in enumerate(expected):
             if budget["children"] >= MAX_CHILD_LOADS:
                 result.update(available=False, reason="bounds")
@@ -241,9 +250,15 @@ class NativeAPI:
                 digest = hashlib.sha256(c.string_at(child_data.data, child_data.size)).hexdigest()
                 observed[(child_data.size, digest)] += 1
             matches = matches and child_data.size == chunk["dataBytes"] and digest == chunk["sha256"]
+            if order is not None:
+                indexed_chunk = expected[order["indices"][index] - order["base"]]
+                indexed_matches = indexed_matches and child_data.size == indexed_chunk["dataBytes"] and digest == indexed_chunk["sha256"]
         expected_counts = Counter((chunk["dataBytes"], chunk["sha256"]) for chunk in expected)
         result.update(comparisonComplete=True, inlineReferencesMatch=matches,
                       inlineReferenceMultisetMatches=observed == expected_counts, referencedObjectsAreLeaves=leaves)
+        if order is not None:
+            key = "indexedOneBasedReferencesMatch" if order["base"] == 1 else "indexedZeroBasedReferencesMatch"
+            result[key] = indexed_matches
         return result
 
 
@@ -283,7 +298,7 @@ def valid_report(result):
     if type(result["objects"]) is not list or len(result["objects"]) > MAX_TARGETS:
         return False
     for item in result["objects"]:
-        if type(item) is not dict or set(item) != {"ordinal", "available", "reason", "dataBytes", "referenceCount", "wireReferenceCountMatches", "wireDataBytesMatches", "comparisonComplete", "referenceObjectsChecked", "referenceDataBytes", "inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves"}:
+        if type(item) is not dict or set(item) != {"ordinal", "available", "reason", "dataBytes", "referenceCount", "wireReferenceCountMatches", "wireDataBytesMatches", "comparisonComplete", "referenceObjectsChecked", "referenceDataBytes", "inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "indexedOneBasedReferencesMatch", "indexedZeroBasedReferencesMatch", "referencedObjectsAreLeaves"}:
             return False
         if not integer(item["ordinal"], 1, MAX_TARGETS) or type(item["available"]) is not bool or item["reason"] not in REASONS:
             return False
@@ -292,7 +307,7 @@ def valid_report(result):
         for key, maximum in (("dataBytes", MAX_OBJECT_BYTES), ("referenceCount", MAX_REFERENCES)):
             if item[key] is not None and not integer(item[key], 0, maximum):
                 return False
-        for key in ("wireReferenceCountMatches", "wireDataBytesMatches", "inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves"):
+        for key in ("wireReferenceCountMatches", "wireDataBytesMatches", "inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "indexedOneBasedReferencesMatch", "indexedZeroBasedReferencesMatch", "referencedObjectsAreLeaves"):
             if item[key] is not None and type(item[key]) is not bool:
                 return False
     return True

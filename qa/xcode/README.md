@@ -172,4 +172,18 @@ The older `wireReferenceCountMatches` compares outer wire references with the
 compiler API's semantic child count. A difference can reflect inline children;
 it does not establish that a remote object is missing. Inspect the separate
 complete inline mapping and leaf results before interpreting graph coverage.
-These fixture observations do not widen the production parser by themselves.
+Both one-based and zero-based permutation predicates are recorded without
+publishing their indices. The protected manifest can retain an exact canonical
+permutation for an indexed comparison using those same native child reads. The
+standalone gate requires every declared native target to have a complete
+one-based permutation, matching decoded/literal counts, complete indexed content
+matches and terminal native children before archive publication or a consumer
+starts. Zero-based or incomplete evidence cannot qualify the candidate parser.
+Fresh Clang/PCH replay and the changed-source compile remain separate required
+checks after this prerequisite.
+
+An archive subprocess failure records only its fixed exit/signal outcome, log
+size and bounded fixed-contract/fatal-origin markers. The QA-only Node monitor
+does not inspect the error object or replace Node's fatal behavior. The helper
+scans at most 64 KiB of complete prefix/tail lines; raw archive logs remain in
+the private fixture directory and are excluded from uploaded evidence.

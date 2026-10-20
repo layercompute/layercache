@@ -47,6 +47,13 @@ def digest(path):
     return value.hexdigest()
 
 
+def node_runtime_version(output):
+    value = output.strip()
+    require(re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", value) is not None,
+            "archive Node runtime did not return a fixed semver")
+    return value
+
+
 def clang_diagnostics(log):
     """Associate remarks with CompileC/main.m and ProcessPCH, never Swift tasks."""
     result = {name: {"hit": 0, "miss": 0} for name in ("compile", "pch")}
@@ -74,26 +81,45 @@ def validate_output(disassembly, value):
     require(re.search(r"\bret\b", function.group(1)), "compiled function has no return")
 
 
-ARCHIVE_FAILURE_CODES = frozenset("""
-metadata-invalid integrity-failed archive-path-collision archive-path-unsafe
-archive-entry-unsupported archive-permissions-unsupported archive-link-unsafe
-archive-link-cycle archive-empty archive-invalid archive-entry-limit
-cache-budget-exceeded cache-busy filesystem-exists filesystem-missing
-filesystem-permission filesystem-full filesystem-read-only filesystem-path-invalid
-filesystem-busy compression-invalid archive-extraction-failed timeout canceled
-input-unsupported configuration-invalid
-""".split())
+_archive_spec = importlib.util.spec_from_file_location("layercache_archive_outcome", Path(__file__).with_name("archive_command_outcome.py"))
+_archive_module = importlib.util.module_from_spec(_archive_spec)
+_archive_spec.loader.exec_module(_archive_module)
+ARCHIVE_FAILURE_CODES = _archive_module.ARCHIVE_FAILURE_CODES
+archive_failure_code = _archive_module.archive_failure_code
+archive_command_outcome = _archive_module.archive_command_outcome
 
 
-def archive_failure_code(log):
-    # Parse only a fixed native CLI contract, never publish its arbitrary output.
-    for line in log.splitlines():
-        if line == "Snapshot archive operation failed":
-            return "unknown"
-        prefix = "Snapshot archive operation failed: "
-        if line.startswith(prefix) and line[len(prefix):] in ARCHIVE_FAILURE_CODES:
-            return line[len(prefix):]
-    return None
+def semantic_mapping_qualified(shapes, semantics):
+    """A candidate grammar needs actual indexed leaf mapping before replay."""
+    if not isinstance(shapes, dict) or shapes.get("available") is not True or not isinstance(semantics, dict) or semantics.get("available") is not True or semantics.get("workerStopped") is not True:
+        return False
+    declared = {}
+    for item in shapes.get("objects", []):
+        if item.get("expectedNativeNode") is not True:
+            continue
+        ordinal, node = item.get("ordinal"), item.get("node")
+        if type(ordinal) is not int or ordinal in declared or not isinstance(node, dict):
+            return False
+        markers = [chunk for chunk in node.get("chunks", []) if chunk.get("field", {}).get("number") == 2]
+        if node.get("sequenceComplete") is not True or node.get("onlyTopLevelChunks") is not True or node.get("markerCount") != 1 or len(markers) != 1:
+            return False
+        marker = markers[0]
+        if not all(marker.get(key) is True for key in ("leadingUniqueMarker", "canonicalPermutationOneBased", "indexCountMatchesLiterals")):
+            return False
+        declared[ordinal] = node.get("literalChunkCount")
+    if not declared:
+        return False
+    observed = set()
+    for item in semantics.get("objects", []):
+        ordinal = item.get("ordinal")
+        if type(ordinal) is not int or ordinal in observed or ordinal not in declared:
+            return False
+        observed.add(ordinal)
+        if not all(item.get(key) is True for key in ("available", "comparisonComplete", "inlineReferenceCountMatches", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves", "indexedOneBasedReferencesMatch")):
+            return False
+        if item.get("dataBytes") != 0 or type(item.get("referenceCount")) is not int or not 1 <= item["referenceCount"] <= 256 or item["referenceCount"] != declared[ordinal] or item.get("referenceObjectsChecked") != item["referenceCount"]:
+            return False
+    return observed == set(declared)
 
 
 class Audit(http.server.ThreadingHTTPServer):
@@ -208,18 +234,28 @@ class Probe:
         self.diagnostic_store = None
         self.shape_helper = None
         self.last_archive_failure_code = None
+        self.last_archive_outcome = None
+        self.producer_shapes = None
+        self.producer_semantics = None
 
     def run(self, name, args, timeout=120, public=False):
         started = time.monotonic()
         path = (self.root if public else self.private) / f"{name}.log"
-        with path.open("wb") as output:
-            process = subprocess.run([str(value) for value in args], cwd=self.private, env=self.env,
-                                     stdout=output, stderr=subprocess.STDOUT, timeout=timeout, check=False)
-        self.timings[name] = round((time.monotonic() - started) * 1000, 3)
-        if process.returncode != 0 and name in ("writer-save", "reader-restore"):
-            with path.open() as output:
-                self.last_archive_failure_code = archive_failure_code(output.read(4096))
-        require(process.returncode == 0, f"{name} failed; inspect its retained log")
+        returncode, timed_out = None, False
+        try:
+            with path.open("wb") as output:
+                process = subprocess.run([str(value) for value in args], cwd=self.private, env=self.env,
+                                         stdout=output, stderr=subprocess.STDOUT, timeout=timeout, check=False)
+                returncode = process.returncode
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            raise
+        finally:
+            self.timings[name] = round((time.monotonic() - started) * 1000, 3)
+            if name in ("writer-save", "reader-restore") and (returncode != 0 or timed_out):
+                self.last_archive_outcome = archive_command_outcome(path, returncode=returncode, timed_out=timed_out)
+                self.last_archive_failure_code = self.last_archive_outcome["archiveFailureCode"]
+        require(returncode == 0, f"{name} failed; inspect its retained log")
         return path.read_text()
 
     def start(self, name, args):
@@ -259,11 +295,14 @@ class Probe:
                  "hostArchitecture": capture("host-architecture", ["uname", "-m"]),
                  "targetArchitecture": "arm64", "targetPlatform": "ios-simulator", "minimumIOS": "16.4",
                  "configuration": "Release", "clangOptimization": "-O2", "swiftUsed": False}
+        facts["archiveNodeVersion"] = node_runtime_version(capture("node-version", ["node", "--version"]))
         write_json(self.root / "toolchain.json", facts)
+        require(facts["archiveNodeVersion"] == "v24.13.0", "unexpected archive Node runtime")
         require(facts["hostArchitecture"] == "arm64" and facts["xcodeVersion"] == "Xcode 27.0", "expected Xcode 27 arm64 host")
         require(all(facts[key] == value for key, value in EXPECTED.items()), "runner differs from requested Xcode Cloud build/SDK/OS profile")
         require(facts["sdkVersion"] == "27.0" and facts["hostVersion"] == "27.0.1", "unexpected SDK/host version")
-        self.profile = "xcode-standalone-v1-" + hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()
+        compiler_facts = {key: value for key, value in facts.items() if key != "archiveNodeVersion"}
+        self.profile = "xcode-standalone-v1-" + hashlib.sha256(json.dumps(compiler_facts, sort_keys=True).encode()).hexdigest()
 
     def prepare_project(self):
         project = self.private / "project"
@@ -388,7 +427,9 @@ scheme.save_as(project.path, 'Probe', true)
     def archive(self, role, operation, destination):
         with self.audit.lock:
             self.audit.phase = role
-        output = self.run(f"{role}-{operation}", ["node", self.native, operation, "--endpoint", self.endpoint,
+        monitor = Path(__file__).with_name("archive-fatal-monitor.mjs")
+        require(monitor.is_file(), "archive diagnostic monitor unavailable")
+        output = self.run(f"{role}-{operation}", ["node", "--import", monitor, self.native, operation, "--endpoint", self.endpoint,
             "--credential-file", self.private / f"{role}.credential", "--project", PROJECT, "--compatibility", self.profile,
             "--key", GENERATION, "--path", destination, "--cache-dir", self.private / f"{role}-archive-cache",
             "--max-bytes", BUDGET, "--timeout-seconds", "120"], timeout=150)
@@ -435,8 +476,10 @@ scheme.save_as(project.path, 'Probe', true)
             probe = Path(__file__).with_name("plugin-semantics.py")
             require(self.shape_helper and probe.is_file(), "semantic fixture helper unavailable")
             manifest = self.private / "producer-semantic-manifest.json"
-            self.run("producer-semantic-manifest", [self.shape_helper, store, PROJECT, self.profile,
+            shape_output = self.run("producer-semantic-manifest", [self.shape_helper, store, PROJECT, self.profile,
                 "--semantic-manifest", manifest], timeout=15)
+            require(len(shape_output.encode()) <= 256 << 10, "producer shape output exceeds fixed bound")
+            self.producer_shapes = json.loads(shape_output)
             sdk_started = True
             output = self.run("producer-plugin-semantics", [sys.executable, probe, "--plugin", library,
                 "--cas-path", plugin, "--manifest", manifest], timeout=15)
@@ -454,6 +497,7 @@ scheme.save_as(project.path, 'Probe', true)
             value = {**unavailable, "workerStopped": worker_stopped, "reason": "workerFailed" if sdk_started else "invalidInput"}
         write_json(self.root / "native-cas-locations.json", locations)
         write_json(self.root / "plugin-semantics.json", value)
+        self.producer_semantics = value
         return worker_stopped
 
     def qualify(self):
@@ -467,6 +511,8 @@ scheme.save_as(project.path, 'Probe', true)
         self.diagnostic_store = producer_store
         worker_stopped = self.collect_producer_semantics(producer_store)
         require(worker_stopped, "semantic native worker exit is unconfirmed; preserve producer native CAS")
+        require(semantic_mapping_qualified(self.producer_shapes, self.producer_semantics),
+                "producer native indexed leaf mapping is not qualified")
         require(cold_stats["actionWrites"] > 0 and cold_stats["casWrites"] > 0 and cold_stats["cacheErrors"] == 0,
                 "producer did not populate healthy external compiler store")
         require(not any(path.is_socket() for path in producer_store.rglob("*")), "closed snapshot contains a socket")
@@ -534,6 +580,7 @@ scheme.save_as(project.path, 'Probe', true)
         write_json(self.root / "failure-summary.json", {"passed": False,
             "confirmedClosedProducerPreserved": self.diagnostic_store is not None,
             "archiveFailureCode": self.last_archive_failure_code,
+            "archiveCommandOutcome": self.last_archive_outcome,
             "commandElapsedMs": self.timings})
         if hasattr(self, "audit"):
             write_json(self.root / "transfer-audit.json", self.audit.records)

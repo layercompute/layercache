@@ -339,7 +339,8 @@ type manifestOwnerInfo struct {
 func (info manifestOwnerInfo) Sys() any { return info.owner }
 
 func TestSemanticManifestIsPrivateBoundedAndAbsentFromPublicShape(t *testing.T) {
-	target, targetID := fixtureShapeCAS(nativeShapeNode([]byte("private semantic data"), nil, false))
+	targetNode := append(wireBytes(1, wireBytes(2, []byte{1})), nativeShapeNode([]byte("private semantic data"), nil, false)...)
+	target, targetID := fixtureShapeCAS(targetNode)
 	node := nativeShapeNode([]byte("action"), targetID[:], true)
 	data, _ := proto.Marshal(&kv.Value{Entries: map[string][]byte{"value": node}})
 	value := fixtureShapeReport(t, []privateRecord{target, {kind: "kv", data: data}})
@@ -371,6 +372,9 @@ func TestSemanticManifestIsPrivateBoundedAndAbsentFromPublicShape(t *testing.T) 
 	inlineSum := sha256.Sum256([]byte("private semantic data"))
 	if len(item.WireInlineChunks) != 1 || item.WireInlineChunks[0].SHA256 != hex.EncodeToString(inlineSum[:]) || item.WireInlineChunks[0].DataBytes != len("private semantic data") {
 		t.Fatal("private inline manifest hashes/sizes differ from exact literal bytes")
+	}
+	if item.WireReferenceOrder == nil || item.WireReferenceOrder.Base != 1 || len(item.WireReferenceOrder.Indices) != 1 || item.WireReferenceOrder.Indices[0] != 1 {
+		t.Fatal("private reference order differs from canonical marker")
 	}
 	public, err := encodeReport(value)
 	if err != nil || bytes.Contains(public, []byte(item.NativeDigestHex)) || bytes.Contains(public, []byte("private semantic data")) || bytes.Contains(public, []byte(item.WireInlineChunks[0].SHA256)) {
@@ -429,13 +433,59 @@ func TestCanonicalIndexPredicatesNeverPublishValuesOrWidenGrammar(t *testing.T) 
 	}
 	shape := describeNode(node)
 	marker := shape.Chunks[0]
-	if shape.StrictAccepted || !shape.SequenceComplete || !marker.CanonicalOneBased || marker.CanonicalZeroBased || marker.DecodedIndexCount != 130 || !marker.IndexCountMatchesLiterals || marker.VectorCardinalityMatches {
-		t.Fatal("canonical multi-byte indices were confused with byte-count cardinality or accepted by production parser")
+	if !shape.SequenceComplete || !marker.CanonicalOneBased || marker.CanonicalZeroBased || marker.DecodedIndexCount != 130 || !marker.IndexCountMatchesLiterals || marker.VectorCardinalityMatches {
+		t.Fatal("canonical multi-byte indices were confused with byte-count cardinality")
 	}
 	output, err := encodeReport(report{Objects: []objectShape{{Kind: "cas", Node: shape}}})
 	literalSum := sha256.Sum256([]byte("private inline SDK literal"))
 	if err != nil || bytes.Contains(output, []byte("private inline SDK literal")) || bytes.Contains(output, []byte(hex.EncodeToString(literalSum[:]))) {
 		t.Fatal("private literal data/hash escaped index predicates")
+	}
+}
+
+func TestReferencePermutationIsPrivateAndRequiresCompleteLiteralMapping(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		encoded []byte
+		base    int
+		valid   bool
+	}{
+		{"one-based cycle", []byte{2, 3, 1}, 1, true},
+		{"zero-based cycle", []byte{1, 2, 0}, 0, true},
+		{"duplicate", []byte{1, 1, 3}, 0, false},
+		{"gap", []byte{1, 2, 4}, 0, false},
+		{"overlong", []byte{0x81, 0, 2, 3}, 0, false},
+		{"truncated", []byte{1, 2, 0x80}, 0, false},
+		{"empty", nil, 0, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			order := canonicalPermutation(test.encoded)
+			if (order != nil) != test.valid || order != nil && order.Base != test.base {
+				t.Fatal("permutation predicate accepted an invalid canonical range")
+			}
+		})
+	}
+	makeNode := func(encoded []byte, literalCount int) []byte {
+		node := wireBytes(1, wireBytes(2, encoded))
+		for index := 0; index < literalCount; index++ {
+			node = append(node, wireBytes(1, wireBytes(1, []byte("private ordered literal")))...)
+		}
+		return node
+	}
+	shape := describeNode(makeNode([]byte{2, 3, 1}, 3))
+	if !shape.Chunks[0].CanonicalPermutationOneBased || shape.Chunks[0].CanonicalPermutationZeroBased || shape.referenceOrder == nil || shape.referenceOrder.Indices[0] != 2 || shape.referenceOrder.Indices[1] != 3 || shape.referenceOrder.Indices[2] != 1 {
+		t.Fatal("private reference order lost the non-self-inverse cycle")
+	}
+	if describeNode(makeNode([]byte{2, 3, 1}, 2)).referenceOrder != nil {
+		t.Fatal("literal-count mismatch produced a qualified reference order")
+	}
+	invalid := append(wireBytes(7, []byte("unknown")), makeNode([]byte{2, 3, 1}, 3)...)
+	if describeNode(invalid).referenceOrder != nil {
+		t.Fatal("nonleading marker produced a qualified reference order")
+	}
+	public, err := encodeReport(report{Objects: []objectShape{{Kind: "cas", Node: shape}}})
+	if err != nil || bytes.Contains(public, []byte("indices")) || bytes.Contains(public, []byte("private ordered literal")) {
+		t.Fatal("private order or literal escaped public report")
 	}
 }
 

@@ -57,6 +57,7 @@ jobs:
         run: |
           python3 qa/xcode/standalone-snapshot-probe.test.py
           python3 qa/xcode/plugin-semantics.test.py
+          python3 qa/xcode/archive-command-outcome.test.py
           go test -race ./qa/xcode
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/layercache" ./cmd/layercache
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/xcode-pressure-proxy" ./qa/xcode/pressure-proxy
@@ -111,7 +112,7 @@ jobs:
           path: ${{ runner.temp }}/xcode-adapter
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24'
+          node-version: '24.13.0'
       - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-adapter/xcode-shape-diagnostic"
       - name: Install the pinned project generator
         run: gem install --user-install xcodeproj --version 1.27.0 --no-document
