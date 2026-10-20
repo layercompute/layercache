@@ -188,6 +188,91 @@ func TestDeclaredNativeReferenceLinksRejectedTargetByOrdinalOnly(t *testing.T) {
 	}
 }
 
+func nativeShapeNode(payload []byte, id []byte, native bool) []byte {
+	value := wireBytes(1, wireBytes(1, payload))
+	if id == nil {
+		return value
+	}
+	desc := append(wireBytes(1, bytes.Repeat([]byte{0}, 65)), wireBytes(2, id)...)
+	if native {
+		desc = protowire.AppendVarint(protowire.AppendTag(desc, 3, protowire.VarintType), 1)
+	}
+	return append(value, wireBytes(2, wireBytes(2, desc))...)
+}
+
+func fixtureShapeCAS(payload []byte) (privateRecord, [32]byte) {
+	data, _ := proto.Marshal(&cas.CASObject{Blob: &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: payload}}})
+	return privateRecord{"cas", data}, sha256.Sum256(data)
+}
+
+func fixtureShapeReport(t *testing.T, records []privateRecord) report {
+	t.Helper()
+	result := report{Objects: []objectShape{}}
+	ordinals := map[string]int{}
+	for index, record := range records {
+		shape, err := describe(record.kind, record.data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		shape.Ordinal, shape.Links = index+1, []linkedReference{}
+		result.Objects = append(result.Objects, shape)
+		if record.kind == "cas" {
+			id := sha256.Sum256(record.data)
+			ordinals[hex.EncodeToString(id[:])] = index + 1
+		}
+	}
+	if err := deriveReferenceContext(context.Background(), records, ordinals, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func TestRawBlobShapedLikeNativeNodeCannotInventReferences(t *testing.T) {
+	leaf, leafID := fixtureShapeCAS([]byte("unreferenced leaf"))
+	raw, rawID := fixtureShapeCAS(nativeShapeNode([]byte("ordinary raw output shaped like a node"), leafID[:], true))
+	data, _ := proto.Marshal(&kv.Value{Entries: map[string][]byte{"CASID": rawID[:]}})
+	value := fixtureShapeReport(t, []privateRecord{raw, leaf, {kind: "kv", data: data}})
+	if !value.Objects[0].Node.StrictAccepted || len(value.Objects[0].Links) != 0 || value.Objects[0].ExpectedNativeNode || value.Objects[1].ExpectedNativeNode {
+		t.Fatal("ordinary raw output invented native graph edges")
+	}
+	if len(value.Objects[2].Links) != 1 || value.Objects[2].Links[0].NativeNode {
+		t.Fatal("accepted raw action context was lost")
+	}
+}
+
+func TestNativeTargetAfterDisplayedLinkLimitIsStillClassified(t *testing.T) {
+	target, targetID := fixtureShapeCAS(nativeShapeNode([]byte("declared native target"), nil, false))
+	root := nativeShapeNode([]byte("action"), nil, false)
+	for index := 1; index <= maxFields+1; index++ {
+		node := nativeShapeNode(nil, bytes.Repeat([]byte{byte(index)}, 32), false)
+		// Strip only the known empty data chunk from this test's reference.
+		root = append(root, node[len(wireBytes(1, wireBytes(1, nil))):]...)
+	}
+	node := nativeShapeNode(nil, targetID[:], true)
+	root = append(root, node[len(wireBytes(1, wireBytes(1, nil))):]...)
+	data, _ := proto.Marshal(&kv.Value{Entries: map[string][]byte{"value": root}})
+	value := fixtureShapeReport(t, []privateRecord{target, {kind: "kv", data: data}})
+	if !value.Objects[0].ExpectedNativeNode || len(value.Objects[1].Links) != maxFields || !value.Objects[1].LinksTruncated || value.Objects[1].ActionReferences != maxFields+2 {
+		t.Fatal("display truncation hid a later declared native target from classification")
+	}
+}
+
+func TestAcceptedIncomingReferencePromotesRawNodeContext(t *testing.T) {
+	leaf, leafID := fixtureShapeCAS(nativeShapeNode([]byte("leaf"), nil, false))
+	parent, parentID := fixtureShapeCAS(nativeShapeNode([]byte("parent"), leafID[:], true))
+	bridge, bridgeID := fixtureShapeCAS(nativeShapeNode([]byte("bridge"), parentID[:], true))
+	// Stack order visits raw parent first, then the native bridge introduces a
+	// declared native parent reference and must discover the native leaf.
+	root := nativeShapeNode([]byte("action"), bridgeID[:], true)
+	rawRef := nativeShapeNode(nil, parentID[:], false)
+	root = append(root, rawRef[len(wireBytes(1, wireBytes(1, nil))):]...)
+	data, _ := proto.Marshal(&kv.Value{Entries: map[string][]byte{"value": root}})
+	value := fixtureShapeReport(t, []privateRecord{parent, leaf, bridge, {kind: "kv", data: data}})
+	if !value.Objects[0].ExpectedNativeNode || !value.Objects[1].ExpectedNativeNode || len(value.Objects[0].Links) != 1 || !value.Objects[0].Links[0].NativeNode {
+		t.Fatal("accepted raw-to-native promotion lost declared child context")
+	}
+}
+
 func TestShapeOutputBoundFailsWithoutReturningPartialReport(t *testing.T) {
 	value := report{Objects: make([]objectShape, maxRows)}
 	for index := range value.Objects {

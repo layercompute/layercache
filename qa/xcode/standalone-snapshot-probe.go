@@ -218,35 +218,86 @@ func describe(kind string, data []byte) (objectShape, error) {
 	return result, nil
 }
 
-// Linking uses only references accepted by the production parser. Rejected
-// native nodes still expose their bounded chunk shape, never speculative edges.
-func declaredReferences(kind string, data []byte) []xcodecache.GraphReference {
-	if kind == "kv" {
-		value := new(kv.Value)
-		if proto.Unmarshal(data, value) != nil {
-			return nil
-		}
-		refs, _ := xcodecache.ActionReferences(value)
-		return refs
-	}
-	value := new(cas.CASObject)
-	if proto.Unmarshal(data, value) != nil {
-		return nil
-	}
-	var refs []xcodecache.GraphReference
-	for _, child := range value.References {
-		refs = append(refs, xcodecache.GraphReference{ID: child.GetId()})
-	}
-	native, err := xcodecache.NativeNodeReferences(value.GetBlob().GetData())
-	if err == nil {
-		refs = append(refs, native...)
-	}
-	return refs
-}
-
+// Reference context starts at accepted action roots. Raw bytes are interpreted
+// as a native node only after an incoming reference explicitly declares it.
 type privateRecord struct {
 	kind string
 	data []byte
+}
+type pendingReference struct {
+	ordinal int
+	ref     xcodecache.GraphReference
+}
+
+func deriveReferenceContext(ctx context.Context, records []privateRecord, casOrdinals map[string]int, result *report) error {
+	acceptedEdges := make(map[int][]xcodecache.GraphReference)
+	var queue []pendingReference
+	discovered := map[int]bool{}
+	enqueue := func(refs []xcodecache.GraphReference) {
+		for _, ref := range refs {
+			ordinal, found := casOrdinals[hex.EncodeToString(ref.ID)]
+			if found {
+				if ref.NativeNode {
+					result.Objects[ordinal-1].ExpectedNativeNode = true
+				}
+				priorNative, known := discovered[ordinal]
+				if known && (priorNative || !ref.NativeNode) {
+					continue
+				}
+				discovered[ordinal] = ref.NativeNode
+				queue = append(queue, pendingReference{ordinal, ref})
+			}
+		}
+	}
+	for index, record := range records {
+		if record.kind != "kv" {
+			continue
+		}
+		value := new(kv.Value)
+		if err := proto.Unmarshal(record.data, value); err != nil {
+			return err
+		}
+		refs, err := xcodecache.ActionReferences(value)
+		if err == nil {
+			acceptedEdges[index] = refs
+			enqueue(refs)
+		}
+	}
+	seen := map[int]bool{}
+	for len(queue) != 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		next := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		priorNative, known := seen[next.ordinal]
+		if known && (priorNative || !next.ref.NativeNode) {
+			continue
+		}
+		seen[next.ordinal] = next.ref.NativeNode
+		object := new(cas.CASObject)
+		if err := proto.Unmarshal(records[next.ordinal-1].data, object); err != nil {
+			return err
+		}
+		refs, err := xcodecache.ObjectReferences(next.ref, object)
+		if err == nil {
+			acceptedEdges[next.ordinal-1] = refs
+			enqueue(refs)
+		}
+	}
+	for index, refs := range acceptedEdges {
+		result.Objects[index].LinksTruncated = len(refs) > maxFields
+		for position, ref := range refs {
+			// Classification traversed every accepted edge above. This cap only
+			// bounds the displayed list; it never hides a node from traversal.
+			if position >= maxFields {
+				break
+			}
+			ordinal, found := casOrdinals[hex.EncodeToString(ref.ID)]
+			result.Objects[index].Links = append(result.Objects[index].Links, linkedReference{ordinal, found, ref.NativeNode})
+		}
+	}
+	return nil
 }
 
 func inspect(ctx context.Context, store, project, profile string) (report, error) {
@@ -318,19 +369,8 @@ func inspect(ctx context.Context, store, project, profile string) (report, error
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
-	for index, record := range records {
-		refs := declaredReferences(record.kind, record.data)
-		result.Objects[index].LinksTruncated = len(refs) > maxFields
-		for _, ref := range refs {
-			if len(result.Objects[index].Links) >= maxFields {
-				break
-			}
-			ordinal, found := casOrdinals[hex.EncodeToString(ref.ID)]
-			result.Objects[index].Links = append(result.Objects[index].Links, linkedReference{ordinal, found, ref.NativeNode})
-			if found && ref.NativeNode {
-				result.Objects[ordinal-1].ExpectedNativeNode = true
-			}
-		}
+	if err := deriveReferenceContext(ctx, records, casOrdinals, &result); err != nil {
+		return result, err
 	}
 	return result, nil
 }
