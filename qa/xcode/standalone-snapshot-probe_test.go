@@ -273,6 +273,62 @@ func TestAcceptedIncomingReferencePromotesRawNodeContext(t *testing.T) {
 	}
 }
 
+func TestMarkerVectorPredicatesWithoutChangingStrictGrammar(t *testing.T) {
+	makeNode := func(vector []byte, literals int) []byte {
+		node := wireBytes(1, wireBytes(2, vector))
+		for index := 0; index < literals; index++ {
+			node = append(node, wireBytes(1, wireBytes(1, []byte("opaque literal do not publish")))...)
+		}
+		return node
+	}
+	for _, test := range []struct {
+		name     string
+		vector   []byte
+		literals int
+		allOne   bool
+		matches  bool
+	}{
+		{"multiple ones", []byte{1, 1}, 2, true, true},
+		{"non-one byte", []byte{1, 0}, 2, false, true},
+		{"mismatched count", []byte{1, 1, 1}, 2, true, false},
+		{"empty vector", nil, 0, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			shape := describeNode(makeNode(test.vector, test.literals))
+			if shape.StrictAccepted || !shape.SequenceComplete || !shape.OnlyTopLevelChunks || shape.MarkerCount != 1 || shape.LiteralChunkCount != test.literals {
+				t.Fatalf("unexpected sequence/strict verdict: %+v", shape)
+			}
+			marker := shape.Chunks[0]
+			if marker.PayloadBytes != len(test.vector) || marker.AllBytesOne != test.allOne || marker.FollowingLiteralChunks != test.literals || !marker.LeadingUniqueMarker || marker.VectorCardinalityMatches != test.matches {
+				t.Fatalf("unexpected bounded predicates: %+v", marker)
+			}
+			output, err := encodeReport(report{Objects: []objectShape{{Kind: "cas", Node: shape}}})
+			if err != nil || bytes.Contains(output, []byte("opaque literal do not publish")) {
+				t.Fatal("literal payload escaped vector predicates")
+			}
+		})
+	}
+	shape := describeNode(makeNode(bytes.Repeat([]byte{1}, 32), 32))
+	if !shape.SequenceComplete || !shape.ChunksTruncated || len(shape.Chunks) != maxFields || shape.Chunks[0].FollowingLiteralChunks != 32 || !shape.Chunks[0].VectorCardinalityMatches {
+		t.Fatal("display truncation changed whole-node literal count")
+	}
+	shape = describeNode(makeNode(bytes.Repeat([]byte{1}, maxInspectedFields-1), maxInspectedFields))
+	if shape.SequenceComplete || shape.Chunks[0].LeadingUniqueMarker || shape.Chunks[0].VectorCardinalityMatches {
+		t.Fatal("incomplete bounded scan claimed a complete vector sequence")
+	}
+	node := makeNode([]byte{1}, 1)
+	node = append(node, makeNode([]byte{1}, 1)...)
+	shape = describeNode(node)
+	if !shape.SequenceComplete || shape.MarkerCount != 2 || shape.Chunks[0].LeadingUniqueMarker || shape.Chunks[2].LeadingUniqueMarker {
+		t.Fatal("multiple markers were classified as unique")
+	}
+	node = append(wireBytes(1, wireBytes(1, []byte("literal before marker"))), makeNode([]byte{1}, 1)...)
+	shape = describeNode(node)
+	if shape.Chunks[1].LeadingUniqueMarker || shape.Chunks[1].FollowingLiteralChunks != 1 {
+		t.Fatal("non-leading marker was classified as leading")
+	}
+}
+
 func TestShapeOutputBoundFailsWithoutReturningPartialReport(t *testing.T) {
 	value := report{Objects: make([]objectShape, maxRows)}
 	for index := range value.Objects {

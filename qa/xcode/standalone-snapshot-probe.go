@@ -44,8 +44,13 @@ type descriptorFlags struct {
 	Flag4 string `json:"flag4"`
 }
 type chunkShape struct {
-	Field           fieldShape `json:"field"`
-	IsSingleByteOne bool       `json:"isSingleByteOne"`
+	Field                    fieldShape `json:"field"`
+	IsSingleByteOne          bool       `json:"isSingleByteOne"`
+	PayloadBytes             int        `json:"payloadBytes"`
+	AllBytesOne              bool       `json:"allBytesOne"`
+	FollowingLiteralChunks   int        `json:"followingLiteralChunks"`
+	LeadingUniqueMarker      bool       `json:"leadingUniqueMarker"`
+	VectorCardinalityMatches bool       `json:"vectorCardinalityMatches"`
 }
 type linkedReference struct {
 	TargetOrdinal int  `json:"targetOrdinal"`
@@ -62,6 +67,10 @@ type nodeShape struct {
 	DescriptorsTruncated bool              `json:"descriptorsTruncated"`
 	Chunks               []chunkShape      `json:"chunks"`
 	ChunksTruncated      bool              `json:"chunksTruncated"`
+	MarkerCount          int               `json:"markerCount"`
+	LiteralChunkCount    int               `json:"literalChunkCount"`
+	SequenceComplete     bool              `json:"sequenceComplete"`
+	OnlyTopLevelChunks   bool              `json:"onlyTopLevelChunks"`
 }
 type objectShape struct {
 	Ordinal            int               `json:"ordinal"`
@@ -144,28 +153,58 @@ func descriptor(data []byte) descriptorFlags {
 
 func describeNode(data []byte) *nodeShape {
 	refs, err := xcodecache.NativeNodeReferences(data)
-	result := &nodeShape{Bytes: len(data), StrictAccepted: err == nil, Fields: []fieldShape{}, Descriptors: []descriptorFlags{}, Chunks: []chunkShape{}}
+	result := &nodeShape{Bytes: len(data), StrictAccepted: err == nil, Fields: []fieldShape{}, Descriptors: []descriptorFlags{}, Chunks: []chunkShape{}, OnlyTopLevelChunks: true}
 	if err == nil {
 		result.References = len(refs)
 	}
-	for count := 0; len(data) != 0 && count < maxInspectedFields; count++ {
+	type marker struct {
+		displayIndex   int
+		literalsBefore int
+		payloadBytes   int
+		leading        bool
+	}
+	var markers []marker
+	complete := true
+	for count := 0; len(data) > 0 && count < maxInspectedFields; count++ {
 		shape, value, rest, ok := parseField(data)
 		if !ok {
-			result.FieldsTruncated = true
-			return result
+			result.FieldsTruncated, complete = true, false
+			break
 		}
 		if len(result.Fields) < maxFields {
 			result.Fields = append(result.Fields, shape)
 		} else {
 			result.FieldsTruncated = true
 		}
+		if shape.Number != 1 || shape.Wire != int(protowire.BytesType) {
+			result.OnlyTopLevelChunks = false
+		}
 		if shape.Number == 1 && shape.Wire == int(protowire.BytesType) {
 			chunk, payload, tail, valid := parseField(value)
-			if valid && len(tail) == 0 {
+			if !valid || len(tail) != 0 || chunk.Wire != int(protowire.BytesType) || chunk.Number != 1 && chunk.Number != 2 {
+				complete = false
+			} else {
+				allOne := chunk.Number == 2 && len(payload) > 0
+				if allOne {
+					for _, value := range payload {
+						if value != 1 {
+							allOne = false
+							break
+						}
+					}
+				}
+				displayIndex := -1
 				if len(result.Chunks) < maxFields {
-					result.Chunks = append(result.Chunks, chunkShape{chunk, len(payload) == 1 && payload[0] == 1})
+					displayIndex = len(result.Chunks)
+					result.Chunks = append(result.Chunks, chunkShape{Field: chunk, IsSingleByteOne: len(payload) == 1 && payload[0] == 1, PayloadBytes: len(payload), AllBytesOne: allOne})
 				} else {
 					result.ChunksTruncated = true
+				}
+				if chunk.Number == 1 {
+					result.LiteralChunkCount++
+				} else {
+					result.MarkerCount++
+					markers = append(markers, marker{displayIndex, result.LiteralChunkCount, len(payload), count == 0})
 				}
 			}
 		}
@@ -182,7 +221,16 @@ func describeNode(data []byte) *nodeShape {
 		data = rest
 	}
 	if len(data) != 0 {
-		result.FieldsTruncated, result.DescriptorsTruncated, result.ChunksTruncated = true, true, true
+		result.FieldsTruncated, result.DescriptorsTruncated, result.ChunksTruncated, complete = true, true, true, false
+	}
+	result.SequenceComplete = complete
+	for _, marker := range markers {
+		if marker.displayIndex >= 0 {
+			chunk := &result.Chunks[marker.displayIndex]
+			chunk.FollowingLiteralChunks = result.LiteralChunkCount - marker.literalsBefore
+			chunk.LeadingUniqueMarker = complete && marker.leading && len(markers) == 1
+			chunk.VectorCardinalityMatches = complete && marker.payloadBytes > 0 && marker.payloadBytes == chunk.FollowingLiteralChunks
+		}
 	}
 	return result
 }
