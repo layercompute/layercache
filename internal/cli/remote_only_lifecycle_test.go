@@ -229,6 +229,9 @@ func TestRemoteOnlyUninstallOwnsCredentialAndPreservesConfigurationOnFailure(t *
 					t.Fatal("disconnected client config remains")
 				}
 			}
+			if backups, globErr := filepath.Glob(filepath.Join(root, ".layercache-disconnect-*.json")); globErr != nil || len(backups) != 0 {
+				t.Fatal("completed disconnect/restoration retained unnecessary recovery copy")
+			}
 			if test.foreign && len(calls) != 0 {
 				t.Fatal("attempted to delete a foreign credential")
 			}
@@ -542,5 +545,77 @@ func TestRemoteOnlyUninstallCanRetryUnknownCredentialDeleteCommit(t *testing.T) 
 	}
 	if _, err = os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("completed retry left installed client")
+	}
+}
+
+func TestRemoteOnlyUninstallPreservesDurableRecoveryWhenRestorationFails(t *testing.T) {
+	root := t.TempDir()
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RemoteOnly = true
+	cfg.TeamURL = "https://cache.example"
+	cfg.DataDir = filepath.Join(root, "unused")
+	cfg.GitHubCredentialAccount, err = newGitHubCredentialAccount(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "client.json")
+	if err = config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := lockConfiguration(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	calls := 0
+	removed, err := uninstallRemoteOnlyClient(context.Background(), path, cfg, func(_ context.Context, account string) error {
+		calls++
+		if account != cfg.GitHubCredentialAccount {
+			t.Fatal("wrong credential account")
+		}
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatal("credential deletion preceded configuration removal")
+		}
+		// Simulate another process claiming the old pathname while the native
+		// credential manager reports failure. Restoration must not overwrite it.
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "foreign.txt"), []byte("keep foreign replacement"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return errors.New("fixture credential manager unavailable")
+	})
+	if err == nil || removed || calls != 1 {
+		t.Fatalf("restoration failure not reported: removed=%v calls=%d error=%v", removed, calls, err)
+	}
+	backups, globErr := filepath.Glob(filepath.Join(root, ".layercache-disconnect-*.json"))
+	if globErr != nil || len(backups) != 1 {
+		t.Fatal("durable recovery copy was not retained")
+	}
+	backup := backups[0]
+	if !filepath.IsAbs(backup) || !strings.Contains(err.Error(), backup) {
+		t.Fatal("restoration failure omitted exact recovery path")
+	}
+	data, readErr := readProtectedFile(backup)
+	if readErr != nil || !bytes.Equal(data, before) {
+		t.Fatal("recovery did not preserve exact protected connection bytes")
+	}
+	if info, statErr := os.Stat(backup); statErr != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("recovery configuration is not protected")
+	}
+	if recovered, loadErr := config.Load(backup); loadErr != nil || recovered.TeamURL != cfg.TeamURL || recovered.ProjectID != cfg.ProjectID || recovered.GitHubCredentialAccount != cfg.GitHubCredentialAccount {
+		t.Fatal("recovery copy cannot restore original cloud connection")
+	}
+	assertFileContents(t, filepath.Join(path, "foreign.txt"), []byte("keep foreign replacement"))
+	if _, statErr := os.Stat(cfg.DataDir); !os.IsNotExist(statErr) {
+		t.Fatal("recovery touched the unused data directory")
 	}
 }

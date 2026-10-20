@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -112,18 +113,32 @@ func uninstallRemoteOnlyClient(ctx context.Context, path string, cfg config.Conf
 			return false, errors.New("cloud client credential account does not belong to this project and endpoint")
 		}
 	}
+	backup, err := persistDisconnectedClientRecovery(path, data)
+	if err != nil {
+		return false, err
+	}
+	cleanupRecovery := func() error {
+		if err := os.Remove(backup); err != nil {
+			return fmt.Errorf("remove protected cloud client recovery file at %s: %w", backup, err)
+		}
+		return nil
+	}
 	// Prove the installed configuration can be removed before changing its
-	// credential. A directory permission failure leaves the client usable.
+	// credential. The durable recovery copy survives restoration failures.
 	if err := os.Remove(path); err != nil {
-		return false, fmt.Errorf("remove cloud client configuration: %w", err)
+		return false, errors.Join(fmt.Errorf("remove cloud client configuration: %w", err), cleanupRecovery())
 	}
 	if cfg.GitHubCredentialAccount != "" {
 		if err := deleteCredential(ctx, cfg.GitHubCredentialAccount); err != nil {
-			return false, errors.Join(fmt.Errorf("remove cloud client credential: %w", err), restoreDisconnectedClient(path, data))
+			credentialErr := fmt.Errorf("remove cloud client credential: %w", err)
+			if restoreErr := restoreDisconnectedClient(path, data); restoreErr != nil {
+				return false, errors.Join(credentialErr, restoreErr, fmt.Errorf("original cloud client configuration remains recoverable at %s", backup))
+			}
+			return false, errors.Join(credentialErr, cleanupRecovery())
 		}
-		return true, nil
+		return true, cleanupRecovery()
 	}
-	return false, nil
+	return false, cleanupRecovery()
 }
 
 // Exclusive creation preserves a configuration another process may have created
@@ -142,5 +157,44 @@ func restoreDisconnectedClient(path string, data []byte) error {
 		_ = os.Remove(path)
 		return fmt.Errorf("restore cloud client configuration after credential cleanup failed: %w", err)
 	}
+	if err := syncDisconnectedClientDirectory(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("sync restored cloud client configuration: %w", err)
+	}
 	return nil
+}
+
+func persistDisconnectedClientRecovery(path string, data []byte) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve cloud client recovery directory: %w", err)
+	}
+	file, err := os.CreateTemp(filepath.Dir(absolute), ".layercache-disconnect-*.json")
+	if err != nil {
+		return "", fmt.Errorf("persist cloud client recovery before disconnect: %w", err)
+	}
+	backup := file.Name()
+	writeErr := file.Chmod(0600)
+	if writeErr == nil {
+		_, writeErr = file.Write(data)
+	}
+	if writeErr == nil {
+		writeErr = file.Sync()
+	}
+	closeErr := file.Close()
+	if err = errors.Join(writeErr, closeErr); err == nil {
+		err = syncDisconnectedClientDirectory(filepath.Dir(backup))
+	}
+	if err != nil {
+		_ = os.Remove(backup)
+		return "", fmt.Errorf("persist cloud client recovery before disconnect: %w", err)
+	}
+	return backup, nil
+}
+
+func syncDisconnectedClientDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	return errors.Join(directory.Sync(), directory.Close())
 }
