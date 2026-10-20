@@ -613,14 +613,19 @@ func inspectRecentDegraded(ctx context.Context, cfg config.Config) degradedCondi
 	if response.StatusCode != http.StatusOK {
 		return result
 	}
-	var report measurement.PeriodReport
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&report); err != nil {
+	var report struct {
+		measurement.PeriodReport
+		Degraded *bool `json:"degraded"`
+	}
+	limited := &io.LimitedReader{R: response.Body, N: (1 << 20) + 1}
+	decoder := json.NewDecoder(limited)
+	if decoder.Decode(&report) != nil || report.SchemaVersion != measurement.SchemaVersion || report.Degraded == nil || report.Runs < 0 || decoder.Decode(&struct{}{}) != io.EOF || limited.N == 0 {
 		return result
 	}
 	result.Available = true
-	result.Observed = report.Degraded
+	result.Observed = *report.Degraded
 	result.Runs = report.Runs
-	if report.Degraded {
+	if *report.Degraded {
 		result.State = "degraded"
 	} else {
 		result.State = "healthy"

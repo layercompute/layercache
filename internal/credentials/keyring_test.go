@@ -2,6 +2,11 @@ package credentials
 
 import (
 	"encoding/base64"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -52,4 +57,50 @@ func TestDecodeDarwinSecretSupportsLegacyValuesAndRejectsBadEncoding(t *testing.
 	if _, err := decodeDarwinSecret(darwinEncodedSecretPrefix + "%%%"); err == nil {
 		t.Fatal("invalid encoded value was accepted")
 	}
+}
+
+func TestCredentialDeleteOnlyAcceptsNativeMissingItemResults(t *testing.T) {
+	for _, test := range []struct {
+		name, system, output string
+		code                 int
+		absent               bool
+	}{
+		{name: "Linux missing item", system: "linux", code: 1, absent: true},
+		{name: "Linux bus unavailable", system: "linux", code: 1, output: "secret-tool: could not connect to Secret Service"},
+		{name: "Linux cancelled", system: "linux", code: 137},
+		{name: "Linux invalid arguments", system: "linux", code: 2},
+		{name: "macOS missing item", system: "darwin", code: 44, output: "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.", absent: true},
+		{name: "macOS search failed before missing status", system: "darwin", code: 44, output: "security: SecKeychainSearchCreateFromAttributes: User interaction is not allowed.\nsecurity: SecKeychainSearchCopyNext: The specified item could not be found in the keychain."},
+		{name: "macOS status without diagnostic", system: "darwin", code: 44},
+		{name: "macOS denied", system: "darwin", code: 51, output: "security: User interaction is not allowed."},
+		{name: "macOS unspecified error", system: "darwin", code: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(os.Args[0], "-test.run=^TestCredentialDeleteStatusChild$")
+			command.Env = append(os.Environ(), "LAYERCACHE_DELETE_STATUS="+strconv.Itoa(test.code), "LAYERCACHE_DELETE_OUTPUT="+test.output)
+			output, err := command.CombinedOutput()
+			if err == nil {
+				t.Fatal("fixture did not return its native failure status")
+			}
+			if got := credentialAlreadyAbsent(test.system, err, output); got != test.absent {
+				t.Fatalf("missing-item classification %v, want %v", got, test.absent)
+			}
+		})
+	}
+	if credentialAlreadyAbsent("linux", errors.New("could not launch credential manager"), nil) {
+		t.Fatal("launch failure was treated as an absent credential")
+	}
+}
+
+func TestCredentialDeleteStatusChild(t *testing.T) {
+	value := os.Getenv("LAYERCACHE_DELETE_STATUS")
+	if value == "" {
+		return
+	}
+	code, err := strconv.Atoi(value)
+	if err != nil {
+		os.Exit(2)
+	}
+	_, _ = fmt.Fprint(os.Stderr, os.Getenv("LAYERCACHE_DELETE_OUTPUT"))
+	os.Exit(code)
 }

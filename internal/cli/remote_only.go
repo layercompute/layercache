@@ -101,7 +101,6 @@ func uninstallRemoteOnlyClient(ctx context.Context, path string, cfg config.Conf
 			return false, errors.New("cloud client configuration changed before uninstall")
 		}
 	}
-	removed := false
 	if cfg.GitHubCredentialAccount != "" {
 		prefix := githubCredentialAccount(cfg)
 		owned := cfg.GitHubCredentialAccount == prefix
@@ -112,13 +111,36 @@ func uninstallRemoteOnlyClient(ctx context.Context, path string, cfg config.Conf
 		if !owned {
 			return false, errors.New("cloud client credential account does not belong to this project and endpoint")
 		}
-		if err := deleteCredential(ctx, cfg.GitHubCredentialAccount); err != nil {
-			return false, fmt.Errorf("remove cloud client credential before configuration cleanup: %w", err)
-		}
-		removed = true
 	}
+	// Prove the installed configuration can be removed before changing its
+	// credential. A directory permission failure leaves the client usable.
 	if err := os.Remove(path); err != nil {
-		return removed, fmt.Errorf("remove cloud client configuration: %w", err)
+		return false, fmt.Errorf("remove cloud client configuration: %w", err)
 	}
-	return removed, nil
+	if cfg.GitHubCredentialAccount != "" {
+		if err := deleteCredential(ctx, cfg.GitHubCredentialAccount); err != nil {
+			return false, errors.Join(fmt.Errorf("remove cloud client credential: %w", err), restoreDisconnectedClient(path, data))
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// Exclusive creation preserves a configuration another process may have created
+// outside the CLI's lock. Restoration never reads or writes the DataDir hint.
+func restoreDisconnectedClient(path string, data []byte) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("restore cloud client configuration after credential cleanup failed: %w", err)
+	}
+	_, writeErr := file.Write(data)
+	if writeErr == nil {
+		writeErr = file.Sync()
+	}
+	closeErr := file.Close()
+	if err = errors.Join(writeErr, closeErr); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("restore cloud client configuration after credential cleanup failed: %w", err)
+	}
+	return nil
 }

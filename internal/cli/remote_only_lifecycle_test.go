@@ -24,10 +24,17 @@ func TestRemoteOnlyDoctorUsesHostedReportWithoutLocalRuntime(t *testing.T) {
 	for _, test := range []struct {
 		name                         string
 		available, degraded, healthy bool
+		reportBody                   string
 	}{
 		{name: "healthy hosted report", available: true, healthy: true},
 		{name: "degraded hosted report", available: true, degraded: true},
 		{name: "unavailable hosted report"},
+		{name: "empty hosted report", available: true, reportBody: `{}`},
+		{name: "missing degradation observation", available: true, reportBody: `{"schemaVersion":"2"}`},
+		{name: "null degradation observation", available: true, reportBody: `{"schemaVersion":"2","degraded":null}`},
+		{name: "negative observed runs", available: true, reportBody: `{"schemaVersion":"2","degraded":false,"runs":-1}`},
+		{name: "unsupported hosted report", available: true, reportBody: `{"schemaVersion":"future","degraded":false}`},
+		{name: "trailing hosted report", available: true, reportBody: `{"schemaVersion":"2","degraded":false} {}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cfg, err := config.Defaults()
@@ -51,6 +58,10 @@ func TestRemoteOnlyDoctorUsesHostedReportWithoutLocalRuntime(t *testing.T) {
 				case "/v1/reports":
 					if !test.available {
 						w.WriteHeader(503)
+						return
+					}
+					if test.reportBody != "" {
+						_, _ = w.Write([]byte(test.reportBody))
 						return
 					}
 					_ = json.NewEncoder(w).Encode(measurement.PeriodReport{SchemaVersion: measurement.SchemaVersion, Degraded: test.degraded})
@@ -431,4 +442,105 @@ func TestRemoteOnlyTransitionSerializesIntegrationOwnershipDiscovery(t *testing.
 		t.Fatal("setup did not finish after integration unlock")
 	}
 	assertFileContents(t, path, before)
+}
+
+func TestRemoteOnlyUninstallKeepsCredentialWhenConfigurationRemovalFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("directory permission denial requires an unprivileged process")
+	}
+	root := t.TempDir()
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RemoteOnly = true
+	cfg.TeamURL = "https://cache.example"
+	cfg.DataDir = filepath.Join(root, "unused")
+	cfg.GitHubCredentialAccount, err = newGitHubCredentialAccount(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "client.json")
+	if err = config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	unlock, err := lockConfiguration(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if err = os.Chmod(root, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(root, 0700) }()
+	credentialCalls := 0
+	remove := func(context.Context, string) error { credentialCalls++; return nil }
+	removed, err := uninstallRemoteOnlyClient(context.Background(), path, cfg, remove)
+	if err == nil || removed || credentialCalls != 0 {
+		t.Fatalf("configuration removal failure touched credential: removed=%v calls=%d error=%v", removed, credentialCalls, err)
+	}
+	assertFileContents(t, path, before)
+	if err = os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	removed, err = uninstallRemoteOnlyClient(context.Background(), path, cfg, remove)
+	if err != nil || !removed || credentialCalls != 1 {
+		t.Fatalf("uninstall retry failed: removed=%v calls=%d error=%v", removed, credentialCalls, err)
+	}
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("successful retry left installed client")
+	}
+}
+
+func TestRemoteOnlyUninstallCanRetryUnknownCredentialDeleteCommit(t *testing.T) {
+	root := t.TempDir()
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RemoteOnly = true
+	cfg.TeamURL = "https://cache.example"
+	cfg.DataDir = filepath.Join(root, "unused")
+	cfg.GitHubCredentialAccount, err = newGitHubCredentialAccount(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "client.json")
+	if err = config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	unlock, err := lockConfiguration(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	present := true
+	attempts := 0
+	deleteCredential := func(_ context.Context, account string) error {
+		attempts++
+		if account != cfg.GitHubCredentialAccount {
+			t.Fatal("unexpected credential account")
+		}
+		if present {
+			present = false
+			return errors.New("credential deletion committed; acknowledgement lost")
+		}
+		// Store.Delete normalizes native missing-item responses to success.
+		return nil
+	}
+	if removed, err := uninstallRemoteOnlyClient(context.Background(), path, cfg, deleteCredential); err == nil || removed || present {
+		t.Fatal("unknown credential commit was not reported")
+	}
+	assertFileContents(t, path, before)
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("restored client config lost protected permissions")
+	}
+	if removed, err := uninstallRemoteOnlyClient(context.Background(), path, cfg, deleteCredential); err != nil || !removed || attempts != 2 {
+		t.Fatalf("missing credential blocked retry: %v", err)
+	}
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("completed retry left installed client")
+	}
 }
