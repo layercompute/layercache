@@ -33,8 +33,16 @@ workspaces and filesystem migration are outside the current product scope.
   qualification separately from installed clients and deployed inventory.
   The first [source qualification](docs/evidence/execution-observability-20261020.md)
   now covers authenticated inventory, shared presentation, bounded collection,
-  persistence and standalone operation. Installed clients, deployed samples and
-  normal application CI adoption remain pending.
+  persistence and standalone operation. [PR #73](https://github.com/ziahamza/layercache/pull/73)
+  and the runtime corrections in
+  [PR #74](https://github.com/ziahamza/layercache/pull/74) are merged. The final
+  reviewed source is deployed and installed; five authenticated no-op clients
+  produce one shared installation in the hosted dashboard. All 132 live browser
+  checks pass. The
+  [rollout receipt](docs/evidence/execution-rollout-20261020.md) separates that
+  location/resource evidence from cache reuse. Normal application CI observation
+  adoption remains pending for older immutable action pins; no extra native jobs
+  were dispatched to populate inventory.
 
 - [ ] **Share one bounded local artifact cache across worktrees and projects.**
   Owner: LayerCache storage/native clients. The latest user outcome adds local
@@ -56,7 +64,10 @@ workspaces and filesystem migration are outside the current product scope.
 
 - [ ] **Qualify portable reuse without weakening native compatibility.**
   Owner: LayerCache native integrations. Architecture, target ABI, OS and SDK
-  belong in the logical identity when they can affect an output. Execution-host
+  belong in the logical identity when they can affect an output. Apply this to
+  every proposed key dimension: qualify invalidation for relevant changes and
+  unchanged identity for irrelevant changes. Machine identity, runner size and
+  observed free space must not fragment compatible task caches. Execution-host
   architecture and compilation target are different facts. Keep native systems'
   complete declared inputs; never strip architecture from an opaque key or
   infer portability from a file extension. Current measured runtime profiles
@@ -106,15 +117,21 @@ workspaces and filesystem migration are outside the current product scope.
   launcher now validates installed pinned tools, derives runtime profiles through
   the same algorithm as the prepared CI clients and uses temporary protected
   configuration overlays without changing saved configurations. Five plans and
-  doctors pass; that does not establish task reuse. Four application PRs add
-  immutable action pins, canonical endpoints and eligible read-only PR consumers.
-  Qualify normal trusted publishers and independent consumers before declaring
-  adoption complete. An existing consumer following main already submitted a
+  doctors pass; that does not establish task reuse. Four application adoption
+  PRs are merged with immutable action pins, canonical endpoints and eligible
+  read-only PR consumers. Three clients recorded normal Team restores. The
+  fourth passed its cold read-only PR with zero eligible Team hits, then its
+  normal trusted main workflow recorded 4 Team hits among 47 eligible task
+  outcomes. Those hits can come from other jobs in that same workflow; a later
+  independent reader remains unqualified. An existing consumer following main
+  already submitted a
   correct normal OIDC export report after the source update, without dispatch.
-  The hosted CLI report path also needs the native summary allowlist: unused
-  inputs, environment metadata and commands must stay on the machine. Owner:
-  LayerCache CLI/measurement. Qualify raw and wire bounds, malformed-input
-  refusal before HTTP and unchanged original summaries for native publication.
+  The hosted CLI report projection from
+  [PR #72](https://github.com/ziahamza/layercache/pull/72) is now deployed and
+  installed in the final PR #74 rollout. Unused input details, environment
+  metadata and commands stay on the machine. Raw/wire bounds, malformed-input
+  refusal before HTTP and unchanged original summaries for native publication
+  passed source controls.
   The Expo provider needs a native credential/cloud-only storage bridge; Go
   `remoteOnly` does not control that client's local archives or extractions.
   Existing compiler/provider snapshots remain separate. Native metering and
