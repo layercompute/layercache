@@ -1,5 +1,6 @@
 import type { DownloadOptions, UploadOptions } from "@actions/cache";
 
+import { reportExecutionObservation } from "../../setup/execution.js";
 import {
   VerifiedCacheClient,
   VerifiedCacheInputError,
@@ -109,7 +110,7 @@ export async function runRestore({ core, cache, env }: ActionDependencies): Prom
         platform,
         toolchain,
         builder,
-      });
+      }, env, "start");
     } catch (error) {
       if (!(error instanceof RuntimeTokenUnavailableError)) {
         throw error;
@@ -196,7 +197,7 @@ export async function runSave({ core, cache, env }: ActionDependencies): Promise
       platform: core.getInput("public-platform") || platformForRuntime(process.platform, process.arch),
       toolchain: core.getInput("public-toolchain") || "actions/cache@6.2.0",
       builder: core.getInput("public-builder"),
-    });
+    }, env, "finish");
     configureV1Process(endpoint, token, publicCacheMode, env, compatibility);
 
     const paths = parseSavedPaths(core.getState(statePaths));
@@ -269,6 +270,8 @@ async function resolveRuntimeToken(
   project: string,
   fallbackToken: string,
   identity: OIDCExchangeIdentity,
+  env: NodeJS.ProcessEnv,
+  phase: "start" | "finish",
 ): Promise<string> {
   const endpointURL = validatedEndpoint(endpoint);
   if (fallbackToken !== "") {
@@ -305,6 +308,14 @@ async function resolveRuntimeToken(
         throw new Error("OIDC exchange returned an invalid or nearly expired token");
       }
       core.setSecret(exchanged.teamToken);
+      await reportExecutionObservation({
+        endpoint,
+        project,
+        exchange: exchanged,
+        env,
+        phase,
+        provider: core.getInput("execution-provider"),
+      });
       return exchanged.teamToken;
     } catch (error) {
       if (fallbackToken === "") {

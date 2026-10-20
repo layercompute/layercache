@@ -1,5 +1,6 @@
 import {renderCache, renderCost, renderScopes, scopeName, type Cache, type CostReport} from './cache-view.js';
-type Snapshot = {projects: {id: string; local: Cache; team: Cache; cost?: CostReport}[]; updatedAt: string};
+import {renderExecutions, type ExecutionInventory} from './execution-view.js';
+type Snapshot = {projects: {id: string; local: Cache; team: Cache; cost?: CostReport; executions?: ExecutionInventory | null}[]; updatedAt: string};
 
 function consumeSessionFragment(): string {
   const value = location.hash.slice(1);
@@ -37,6 +38,7 @@ async function load(): Promise<void> {
     const data: Snapshot = await response.json();
     if (requestToken !== token) return;
     projects.replaceChildren();
+    projects.append(renderExecutions(data.projects));
     for (const project of data.projects) {
       const card = el("article", "project"); const heading = el("div", "project-head"); const title = el("div");
       title.append(el("h2", "", project.id.split("/").at(-1) ?? project.id), el("p", "", project.id));

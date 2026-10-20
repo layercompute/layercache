@@ -1,10 +1,11 @@
 import {renderCache, renderCost, renderScopes, scopeName, bytes, type Cache, type CostReport, type Scope} from '../dashboard/cache-view.js';
+import {renderExecutions, type ExecutionInventory, type ExecutionProject} from '../dashboard/execution-view.js';
 type Team = {id:string;name:string;role:string;kind:'team'|'personal';operatorManaged?:boolean};
 type Project = {id:string;teamId:string;name:string;repository:string;role:string;operatorManaged?:boolean};
 type Member = {userId:string;login:string;role:string};
 type Session = {user:{id:string;login:string};csrfToken:string;cloudOrigin:string;authMethod:'github'|'password';passwordChangeRequired:boolean;canChangePassword:boolean;canManageGitHub:boolean;canCreateTeam:boolean;teams:Team[]|null;projects:Project[]|null;invitations:{id:string;teamName:string;role:string}[]|null};
 type PublicConfig = {githubClientId:string;passwordLogin:boolean};
-type Snapshot = {cache: Cache; scope?: Scope; cost?: CostReport; updatedAt: string};
+type Snapshot = {cache: Cache; scope?: Scope; cost?: CostReport; updatedAt: string; executions?: ExecutionInventory | null};
 type TeamUsage = {cost?: CostReport; projectCount: number; allocatedCacheBytes: number | null; allocationComplete: boolean};
 const root = document.querySelector<HTMLElement>('#app')!;
 const notice = document.querySelector<HTMLElement>('#notice')!;
@@ -59,10 +60,19 @@ function render(){if(!session)return renderLogin();const current=session;const v
  const usage=el('section','','card account-usage');usage.setAttribute('aria-label','Account usage');usage.append(el('h2',team.kind==='personal'?'Personal account usage':'Team usage'),el('p','Loading account usage…','muted'));main.append(usage);
  void api<TeamUsage>(`/api/teams/${encodeURIComponent(team.id)}/usage`).then(data=>{if(version!==generation)return;usage.replaceChildren(el('h2',team.kind==='personal'?'Personal account usage':'Team usage'));const capacity=data.allocationComplete&&data.allocatedCacheBytes!==null?`${bytes(data.allocatedCacheBytes)} allocated cache capacity`:'Allocated capacity unavailable';const allocation=el('p',`${data.projectCount} ${data.projectCount===1?'project':'projects'} · ${capacity}`,'muted');usage.append(allocation,renderCost(data.cost,team.kind==='personal'?'Personal account cost':'Team cost'),el('p','Allocated capacity is a configured limit. It does not measure current usage or billed storage.','coverage-note'));}).catch(error=>{if(version===generation)usage.replaceChildren(el('h2','Account usage'),el('p',error instanceof Error?error.message:'Usage unavailable','error'),renderCost(undefined,team.kind==='personal'?'Personal account cost':'Team cost'));});
  main.append(renderScopes());
+ const executionPanel=el('div');executionPanel.append(el('p','Loading execution inventory…','muted'));main.append(executionPanel);
+ const initialSnapshots=new Map<string,Promise<Snapshot>>();
+ const inventorySnapshot=(id:string)=>{let pending=initialSnapshots.get(id);if(!pending){pending=api<Snapshot>(`/api/projects/${encodeURIComponent(id)}/snapshot?period=24h`);initialSnapshots.set(id,pending);}return pending;};
+ const executionProjects:ExecutionProject[]=projects.toSorted((a,b)=>Number(b.id===selectedProject)-Number(a.id===selectedProject)).map(item=>({id:item.id,name:item.name,repository:item.repository}));
+ let inventoryCursor=0;
+ const readInventories=async()=>{while(version===generation&&inventoryCursor<Math.min(32,executionProjects.length)){const item=executionProjects[inventoryCursor++]!;try{item.executions=(await inventorySnapshot(item.id)).executions;}catch{item.executions=undefined;}}};
+ void Promise.all(Array.from({length:Math.min(3,executionProjects.length)},()=>readInventories())).then(()=>{if(version===generation)executionPanel.replaceChildren(renderExecutions(executionProjects));});
  const project=projects.find(p=>p.id===selectedProject);
  if(project){main.append(el('h1',project.name),el('p',project.repository,'muted'));const cache=el('section','','card');cache.setAttribute('aria-label','Cache visibility');cache.append(el('h2','Cache activity'));const period=el('select');period.setAttribute('aria-label','Reporting period');for(const [id,text] of [['24h','Last 24 hours'],['7d','Last 7 days']]){const o=el('option',text!);o.value=id!;period.append(o);}const metrics=el('div');cache.append(period,metrics);main.append(cache);let request=0;
+ let firstSnapshot=true;
  const load=async()=>{const order=++request;metrics.replaceChildren(el('p','Loading cache activity…'));try{
-   const snapshot=await api<Snapshot>(`/api/projects/${encodeURIComponent(project.id)}/snapshot?period=${period.value}`);if(version!==generation||order!==request)return;
+   const pending=firstSnapshot&&period.value==='24h'?inventorySnapshot(project.id):api<Snapshot>(`/api/projects/${encodeURIComponent(project.id)}/snapshot?period=${period.value}`);firstSnapshot=false;
+   const snapshot=await pending;if(version!==generation||order!==request)return;
    const scope=snapshot.scope??snapshot.cache.status?.visibility??team.kind;
    const prune=async(targetBytes:number)=>{try{await api(`/api/projects/${encodeURIComponent(project.id)}/prune`,'POST',{targetBytes,confirm:true});}finally{await load();}};
    metrics.replaceChildren(renderCache(scopeName(scope),snapshot.cache,{scope,canPrune:snapshot.cache.status?.canPrune===true,onPrune:prune}),renderCost(snapshot.cost));

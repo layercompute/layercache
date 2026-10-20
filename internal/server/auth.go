@@ -12,6 +12,7 @@ import (
 
 	"github.com/layercache/layercache/internal/access"
 	"github.com/layercache/layercache/internal/compatibility"
+	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/githubauth"
 	"github.com/layercache/layercache/internal/publicbuild"
 )
@@ -117,6 +118,9 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 		Capabilities: capabilities,
 		ExpiresAt:    now.Add(projectCapabilityLifetime),
 	}
+	if localRun && server.executions != nil {
+		claims.Execution = execution.ClientContext("github-id:"+strconv.FormatInt(user.ID, 10), localRunID)
+	}
 	token, err := access.MintCapabilityToken(server.config.LocalToken, claims, now)
 	if err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "issue project capability"})
@@ -126,6 +130,9 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 		"token": token, "expiresAt": now.Add(projectCapabilityLifetime),
 		"capabilities": capabilities,
 		"runId":        localRunID, "workspaceId": workspaceID,
+	}
+	if claims.Execution != nil {
+		result["executionObservations"] = execution.Supported()
 	}
 	if localRun {
 		nativeTokens := make(map[string]string)
@@ -267,7 +274,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 		// never reconcile or delete one another's observations and outcomes.
 		runID += ":check:" + identity.CheckRunID
 	}
-	token, err := access.MintCapabilityToken(server.config.LocalToken, access.Claims{
+	claims := access.Claims{
 		Subject: "github-actions:" + identity.Subject, Project: server.config.ProjectID, Integration: input.Integration,
 		RunID:         runID,
 		WorkspaceID:   "github-actions-check:" + strings.ToLower(identity.Repository) + ":" + identity.CheckRunID,
@@ -276,15 +283,26 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 		ActionsActorID: identity.ActorID,
 		RecipeDigest:   recipe, Target: target, Platform: platform, Toolchain: toolchain, Builder: builder,
 		Capabilities: capabilities, ExpiresAt: expiresAt,
-	}, now)
+	}
+	if server.executions != nil {
+		context := &execution.Context{Kind: "githubActions", OwnerID: "github-id:" + identity.ActorID, ExecutionID: "github-actions:" + identity.RepositoryID + ":" + identity.RunID + ":" + identity.RunAttempt + ":" + identity.CheckRunID, RunnerEnvironment: identity.RunnerEnvironment}
+		if context.Validate() == nil {
+			claims.Execution = context
+		}
+	}
+	token, err := access.MintCapabilityToken(server.config.LocalToken, claims, now)
 	if err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "issue project capability"})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{
+	result := map[string]any{
 		"token": token, "teamToken": token, "expiresAt": expiresAt,
 		"repository": identity.Repository, "ref": identity.Ref, "commit": identity.Commit,
-	})
+	}
+	if claims.Execution != nil {
+		result["executionObservations"] = execution.Supported()
+	}
+	writeJSON(writer, http.StatusOK, result)
 }
 
 func (server *Server) writeCapabilityExchangeFailure(writer http.ResponseWriter, request *http.Request) {

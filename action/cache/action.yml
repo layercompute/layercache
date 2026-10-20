@@ -32,6 +32,9 @@ inputs:
     description: >-
       Project-scoped Layer Cache token fallback. The Action masks it in logs. Prefer project with GitHub OIDC.
     required: false
+  execution-provider:
+    description: Optional declared compute provider for resource observations. Use github, ubicloud, selfHosted, or unknown.
+    required: false
   compatibility:
     description: >-
       Output compatibility identity. Defaults to the Node job OS and architecture plus schema1. Set this when

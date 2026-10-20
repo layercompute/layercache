@@ -76,6 +76,18 @@ _Avoid_: Local run
 A short-lived repository checkout and execution environment, including a Git worktree or disposable VM. A Workspace may disappear while its reusable artifacts remain cached.
 _Avoid_: Agent box, runner when it is not specifically a CI runner
 
+**Client installation**:
+A persistent user's Layer Cache client identity shared across that user's projects and workspaces. Separate installations can occupy the same physical machine, and copied installation state does not prove distinct or identical hardware.
+_Avoid_: Physical host, workspace identity
+
+**CI execution**:
+One authenticated CI job attempt. Its orchestration identity is distinct from the provider supplying compute and from any underlying physical machine.
+_Avoid_: Unique physical runner, client installation
+
+**Resource observation**:
+A client's bounded report of the CPU, memory and filesystems visible to one execution at a stated time. Verified execution authority does not attest to the reported hardware or establish cache activity.
+_Avoid_: Provider invoice, machine health check
+
 **Transparent Cache**:
 An integration that redirects an existing tool's cache protocol to Layer Cache without changing the workload definition.
 _Avoid_: Automatic cache, invisible cache

@@ -18,6 +18,9 @@ inputs:
   ttl-minutes:
     description: Credential lifetime from 1 to 60 minutes; must cover build and cache export.
     default: '30'
+  execution-provider:
+    description: Optional declared runner provider for resource observations, github, ubicloud, selfHosted, or unknown.
+    default: unknown
 outputs:
   enabled:
     description: Whether authentication and registry login succeeded.

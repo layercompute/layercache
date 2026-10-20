@@ -19,17 +19,19 @@ import (
 
 	"github.com/layercache/layercache/internal/config"
 	"github.com/layercache/layercache/internal/credentials"
+	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/githubauth"
 )
 
 type capabilityExchange struct {
-	Token             string            `json:"token"`
-	TeamToken         string            `json:"teamToken"`
-	PublicAccessToken string            `json:"publicAccessToken,omitempty"`
-	ExpiresAt         time.Time         `json:"expiresAt"`
-	RunID             string            `json:"runId,omitempty"`
-	WorkspaceID       string            `json:"workspaceId,omitempty"`
-	NativeTokens      map[string]string `json:"nativeTokens,omitempty"`
+	Token                 string                `json:"token"`
+	TeamToken             string                `json:"teamToken"`
+	PublicAccessToken     string                `json:"publicAccessToken,omitempty"`
+	ExpiresAt             time.Time             `json:"expiresAt"`
+	RunID                 string                `json:"runId,omitempty"`
+	WorkspaceID           string                `json:"workspaceId,omitempty"`
+	NativeTokens          map[string]string     `json:"nativeTokens,omitempty"`
+	ExecutionObservations *execution.Capability `json:"executionObservations,omitempty"`
 }
 
 func runLogin(ctx context.Context, args []string, stdout, stderr io.Writer) error {

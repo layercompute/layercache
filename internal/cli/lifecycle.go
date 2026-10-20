@@ -17,24 +17,26 @@ import (
 	"time"
 
 	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/publicbuild"
 )
 
 type runtimeStatus struct {
-	Running            bool                       `json:"running"`
-	Role               string                     `json:"role"`
-	ProjectID          string                     `json:"projectId"`
-	StartedAt          time.Time                  `json:"startedAt"`
-	RuntimePID         int                        `json:"runtimePid"`
-	RuntimeInstanceID  string                     `json:"runtimeInstanceId"`
-	UsageBytes         int64                      `json:"usageBytes"`
-	MaxBytes           int64                      `json:"maxBytes"`
-	EvictionPolicy     string                     `json:"evictionPolicy"`
-	Artifacts          int64                      `json:"artifacts"`
-	Entries            int64                      `json:"entries"`
-	PendingUploads     int64                      `json:"pendingUploads"`
-	PendingUploadBytes int64                      `json:"pendingUploadBytes"`
-	PublicBuild        *publicbuild.StatusSummary `json:"publicBuild,omitempty"`
+	Running               bool                       `json:"running"`
+	Role                  string                     `json:"role"`
+	ProjectID             string                     `json:"projectId"`
+	StartedAt             time.Time                  `json:"startedAt"`
+	RuntimePID            int                        `json:"runtimePid"`
+	RuntimeInstanceID     string                     `json:"runtimeInstanceId"`
+	UsageBytes            int64                      `json:"usageBytes"`
+	MaxBytes              int64                      `json:"maxBytes"`
+	EvictionPolicy        string                     `json:"evictionPolicy"`
+	Artifacts             int64                      `json:"artifacts"`
+	Entries               int64                      `json:"entries"`
+	PendingUploads        int64                      `json:"pendingUploads"`
+	PendingUploadBytes    int64                      `json:"pendingUploadBytes"`
+	PublicBuild           *publicbuild.StatusSummary `json:"publicBuild,omitempty"`
+	ExecutionObservations *execution.Capability      `json:"executionObservations,omitempty"`
 }
 
 type runtimeOwnership struct {
