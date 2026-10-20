@@ -17,7 +17,7 @@ function message(text:string,error=false){notice.textContent=text;notice.classNa
 async function api<T>(path:string,method='GET',body?:unknown,expireSession=true):Promise<T>{
  const version=generation;
  const response=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method!=='GET'?{'X-CSRF-Token':session?.csrfToken??''}:{})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(20000)});
- if(response.status===401&&expireSession){if(version===generation){session=undefined;passwordFormOpen=false;generation++;renderLogin();}throw new Unauthorized('Your session expired. Sign in to continue.');}
+ if(response.status===401&&expireSession){const detail='Your session expired. Sign in to continue.';if(version===generation){const wasSignedIn=!!session;session=undefined;passwordFormOpen=false;generation++;renderLogin();if(wasSignedIn)message(detail,true);}throw new Unauthorized(detail);}
  if(!response.ok){let detail='Request failed. Please try again.';try{detail=(await response.json()).error??detail;}catch{}throw new Error(detail);}
  return response.status===204?undefined as T:await response.json() as T;
 }

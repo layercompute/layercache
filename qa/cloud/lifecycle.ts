@@ -104,6 +104,13 @@ try{
   await page.getByText('@lifecycle-user',{exact:true}).waitFor();assert.equal(await page.getByText('@obsolete-user',{exact:true}).count(),0);
   assert.equal(await page.locator('#notice').innerText(),'','The old refresh changed the restored view notice');
  });
+ await check('current expiration explains sign-in while a fresh anonymous page stays neutral',async()=>{
+  signedIn=false;await page.getByRole('button',{name:'Refresh',exact:true}).click();
+  await page.getByRole('heading',{name:'Email and password',exact:true}).waitFor();
+  assert.equal(await page.locator('#notice').innerText(),'Your session expired. Sign in to continue.');
+  await page.reload({waitUntil:'networkidle'});await page.getByRole('heading',{name:'Email and password',exact:true}).waitFor();
+  assert.equal(await page.locator('#notice').innerText(),'');
+ });
  await check('no page errors',async()=>assert.deepEqual(errors,[]));
 }catch(error){console.error(error);process.exitCode=1;}
 finally{
