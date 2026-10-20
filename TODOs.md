@@ -89,6 +89,19 @@ workspaces and filesystem migration are outside the current product scope.
   restores and disabled/failed/shared-key behavior. Strict malformed and
   unsupported-version refusal and packaged offline export also pass.
   Application action adoption and normal-run receipts remain separate gates.
+  Historical timing is unavailable through the current observed producer join,
+  rather than inherently unrecoverable. Qualify Gradle's archive-declared
+  `METADATA.executionTime` as a separate work-plus-output-snapshot estimate.
+  Reuse verified normal transfer bytes and exact native keys, with bounded
+  stream/property parsing and duplicate-metadata refusal. Do not substitute a
+  prefix, latest duplicate PUT or internal Gradle API for original evidence,
+  and keep this estimate separate from task-event elapsed time and CPU/cost.
+  Also add bounded failed-transfer phase receipts for exchange, lock, headers,
+  body, verification, inspection and extraction. Use fixed phase/error labels,
+  timings and byte counts without raw URLs, headers or credentials. Qualify
+  failure and timeout coverage before attributing a generic restore error to
+  transfer speed or a particular deadline. These are follow-ups, not shipped
+  archive timing or phase attribution.
 
 - [ ] **Show where LayerCache runs and the resources available there.**
   Owner: LayerCache observability. October 20 user outcome: recognize the same
