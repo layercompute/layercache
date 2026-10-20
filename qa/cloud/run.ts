@@ -29,6 +29,10 @@ try {
   browser=spawn(process.execPath,[resolve('qa/cloud/browser.ts')],{env:{...process.env,CLOUD_ORIGIN:origin},stdio:'inherit'});
   const code=await new Promise<number>((resolveExit,reject)=>{browser!.once('error',reject);browser!.once('exit',code=>resolveExit(code??1));});
   process.exitCode=code;
+  if(code===0){
+    browser=spawn(process.execPath,[resolve('qa/cloud/lifecycle.ts')],{env:process.env,stdio:'inherit'});
+    process.exitCode=await new Promise<number>((resolveExit,reject)=>{browser!.once('error',reject);browser!.once('exit',code=>resolveExit(code??1));});
+  }
 } finally {
   if(browser)await cleanup(browser);
   await cleanup(fixture);
