@@ -10,13 +10,17 @@ import (
 	"github.com/layercache/layercache/internal/measurement"
 )
 
-// Reconciliation replaces one complete job's Turbo graph. Only signed OIDC job
-// authority selects its identity; client JSON cannot select a run or project.
+// Reconciliation replaces one complete invocation's Turbo graph. Signed OIDC
+// job or member-local run authority selects its identity; report JSON cannot
+// select a run or project. Member-local context is caller-declared, not CI proof.
 func (server *Server) reconcileTurboReport(writer http.ResponseWriter, request *http.Request) {
 	claims, ok := access.ClaimsFromContext(request.Context())
 	checkPrefix := "github-actions-check:" + claims.Repository + ":"
 	checkID := strings.TrimPrefix(claims.WorkspaceID, checkPrefix)
-	if !ok || claims.Integration != "turbo" || claims.Compatibility == "" || claims.Repository == "" || !strings.HasPrefix(claims.Subject, "github-actions:") || !strings.HasPrefix(claims.WorkspaceID, checkPrefix) || checkID == "" || !strings.HasPrefix(claims.RunID, "github-actions:"+claims.Repository+":") || !strings.HasSuffix(claims.RunID, ":check:"+checkID) {
+	oidcRun := claims.Integration == "turbo" && strings.HasPrefix(claims.Subject, "github-actions:") && strings.HasPrefix(claims.WorkspaceID, checkPrefix) && checkID != "" && strings.HasPrefix(claims.RunID, "github-actions:"+claims.Repository+":") && strings.HasSuffix(claims.RunID, ":check:"+checkID)
+	localPrefix := "github-local:" + claims.Subject + ":"
+	memberLocalRun := (strings.HasPrefix(claims.Subject, "github:") || strings.HasPrefix(claims.Subject, "github-id:")) && claims.Integration == "turbo" && strings.HasPrefix(claims.RunID, localPrefix) && validLocalRunNonce(strings.TrimPrefix(claims.RunID, localPrefix)) && strings.HasPrefix(claims.WorkspaceID, localPrefix) && validLocalWorkspace(strings.TrimPrefix(claims.WorkspaceID, localPrefix))
+	if !ok || claims.Compatibility == "" || claims.Repository == "" || !oidcRun && !memberLocalRun {
 		server.writeAuthorizationFailure(writer, request)
 		return
 	}

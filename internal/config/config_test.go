@@ -235,3 +235,29 @@ func TestConfigValidatesBypassAdaptersAndPublicBuildRepositories(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoteOnlyRequiresClientConfigurationAndExactRemote(t *testing.T) {
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RemoteOnly = true
+	if err = cfg.Validate(); err == nil {
+		t.Fatal("remoteOnly accepted without hosted endpoint")
+	}
+	cfg.TeamURL = "https://cache.example"
+	if err = cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"team", "public"} {
+		other := cfg
+		other.Role = role
+		if err = other.Validate(); err == nil {
+			t.Fatal("remoteOnly accepted server role", role)
+		}
+	}
+	cfg.CloudPostgresURL = "postgres://localhost/metadata"
+	if err = cfg.Validate(); err == nil {
+		t.Fatal("remoteOnly accepted an operational storage backend")
+	}
+}

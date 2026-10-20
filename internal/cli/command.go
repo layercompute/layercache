@@ -76,11 +76,16 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		_, _ = fmt.Fprintf(stderr, "Layer Cache warning: %v; bypassing Layer Cache for this command\n", scopeErr)
 		return runCommandWithScopeBypass(ctx, commandArgs, stdout, stderr)
 	}
-	if _, err := probeRuntime(cfg); err != nil {
-		_, _ = fmt.Fprintf(stderr,
-			"Layer Cache warning: the local daemon is unavailable; running the command without Layer Cache environment injection: %v\n", err,
-		)
-		return runCommandWithoutCache(ctx, commandArgs, stdout, stderr)
+	if cfg.RemoteOnly && isAdapterBypassed(cfg, "turbo") && isAdapterBypassed(cfg, "actions") && isAdapterBypassed(cfg, "nx") && isAdapterBypassed(cfg, "gradle") && isAdapterBypassed(cfg, "buildkit") {
+		return runCommandWithScopeBypass(ctx, commandArgs, stdout, stderr)
+	}
+	if !cfg.RemoteOnly {
+		if _, err := probeRuntime(cfg); err != nil {
+			_, _ = fmt.Fprintf(stderr,
+				"Layer Cache warning: the local daemon is unavailable; running the command without Layer Cache environment injection: %v\n", err,
+			)
+			return runCommandWithoutCache(ctx, commandArgs, stdout, stderr)
+		}
 	}
 	random, err := config.NewToken()
 	if err != nil {
@@ -110,35 +115,61 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		authority.SourceCommit = discovered.Commit
 	}
 	authority.WorkspaceID = workspaceMeasurementIdentity(cfg.ProjectID, discoveredRoot, cfg.ProjectRoot)
-	turboAuthority := authority
-	turboAuthority.Integration = "turbo"
-	turboToken, err := access.MintCapabilityToken(cfg.LocalToken, turboAuthority, now)
-	if err != nil {
-		return err
-	}
-	actionsAuthority := authority
-	actionsAuthority.Integration = "actions"
-	actionsToken, err := access.MintCapabilityToken(cfg.LocalToken, actionsAuthority, now)
-	if err != nil {
-		return err
-	}
-	buildkitAuthority := authority
-	buildkitAuthority.Integration = "buildkit"
-	buildkitToken, err := access.MintCapabilityToken(cfg.LocalToken, buildkitAuthority, now)
-	if err != nil {
-		return err
-	}
-	nxAuthority := authority
-	nxAuthority.Integration = "nx"
-	nxToken, err := access.MintCapabilityToken(cfg.LocalToken, nxAuthority, now)
-	if err != nil {
-		return err
-	}
-	gradleAuthority := authority
-	gradleAuthority.Integration = "gradle"
-	gradleToken, err := access.MintCapabilityToken(cfg.LocalToken, gradleAuthority, now)
-	if err != nil {
-		return err
+	endpoint := localRuntimeURL(cfg.Listen)
+	var turboToken, actionsToken, buildkitToken, nxToken, gradleToken string
+	if cfg.RemoteOnly {
+		scoped := cfg
+		scoped.ActionsRepository, scoped.ActionsRef, scoped.ActionsDefaultRef = authority.Repository, authority.Ref, authority.DefaultRef
+		token, authErr := githubTokenForCapability(ctx, cfg)
+		if authErr != nil {
+			_, _ = fmt.Fprintln(stderr, "Layer Cache warning: hosted authentication unavailable; running without cache credentials")
+			return runCommandWithScopeBypass(ctx, commandArgs, stdout, stderr)
+		}
+		exchanged, authErr := exchangeGitHubCapabilityWithContext(ctx, cfg.TeamURL, scoped, token, &localRunContext{RunID: runID, WorkspaceID: authority.WorkspaceID, SourceCommit: authority.SourceCommit})
+		if authErr != nil || exchanged.RunID == "" || exchanged.WorkspaceID == "" || exchanged.NativeTokens["turbo"] == "" || exchanged.NativeTokens["actions"] == "" || exchanged.NativeTokens["nx"] == "" || exchanged.NativeTokens["gradle"] == "" {
+			_, _ = fmt.Fprintln(stderr, "Layer Cache warning: hosted run authority unavailable; running without cache credentials")
+			return runCommandWithScopeBypass(ctx, commandArgs, stdout, stderr)
+		}
+		if exchanged.TeamToken == "" {
+			exchanged.TeamToken = exchanged.Token
+		}
+		cfg.TeamToken, cfg.TeamTokenExpiresAt = exchanged.NativeTokens["turbo"], exchanged.ExpiresAt
+		runID, authority.RunID, authority.WorkspaceID = exchanged.RunID, exchanged.RunID, exchanged.WorkspaceID
+		endpoint = strings.TrimRight(cfg.TeamURL, "/")
+		turboToken, actionsToken, nxToken, gradleToken = exchanged.NativeTokens["turbo"], exchanged.NativeTokens["actions"], exchanged.NativeTokens["nx"], exchanged.NativeTokens["gradle"]
+		// BuildKit uses its configured authenticated registry; no locally minted
+		// measurement capability can authorize requests against a hosted service.
+	} else {
+		turboAuthority := authority
+		turboAuthority.Integration = "turbo"
+		turboToken, err = access.MintCapabilityToken(cfg.LocalToken, turboAuthority, now)
+		if err != nil {
+			return err
+		}
+		actionsAuthority := authority
+		actionsAuthority.Integration = "actions"
+		actionsToken, err = access.MintCapabilityToken(cfg.LocalToken, actionsAuthority, now)
+		if err != nil {
+			return err
+		}
+		buildkitAuthority := authority
+		buildkitAuthority.Integration = "buildkit"
+		buildkitToken, err = access.MintCapabilityToken(cfg.LocalToken, buildkitAuthority, now)
+		if err != nil {
+			return err
+		}
+		nxAuthority := authority
+		nxAuthority.Integration = "nx"
+		nxToken, err = access.MintCapabilityToken(cfg.LocalToken, nxAuthority, now)
+		if err != nil {
+			return err
+		}
+		gradleAuthority := authority
+		gradleAuthority.Integration = "gradle"
+		gradleToken, err = access.MintCapabilityToken(cfg.LocalToken, gradleAuthority, now)
+		if err != nil {
+			return err
+		}
 	}
 	command := exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
 	command.Stdin = os.Stdin
@@ -157,15 +188,15 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		"LAYER_CACHE_RUN_ID":                       runID,
 		"LAYER_CACHE_CONFIG":                       *configPath,
 		"LAYER_CACHE_BYPASS":                       strings.Join(cfg.BypassAdapters, ","),
-		"TURBO_API":                                localRuntimeURL(cfg.Listen),
+		"TURBO_API":                                endpoint,
 		"TURBO_TOKEN":                              turboToken,
 		"TURBO_TEAM":                               cfg.ProjectID,
-		"ACTIONS_CACHE_URL":                        localRuntimeURL(cfg.Listen) + "/",
+		"ACTIONS_CACHE_URL":                        endpoint + "/",
 		"ACTIONS_RUNTIME_TOKEN":                    actionsToken,
 		"ACTIONS_CACHE_SERVICE_V2":                 "",
-		"NX_SELF_HOSTED_REMOTE_CACHE_SERVER":       localRuntimeURL(cfg.Listen),
+		"NX_SELF_HOSTED_REMOTE_CACHE_SERVER":       endpoint,
 		"NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN": nxToken,
-		"LAYER_CACHE_GRADLE_URL":                   localRuntimeURL(cfg.Listen) + "/v1/gradle-cache/",
+		"LAYER_CACHE_GRADLE_URL":                   endpoint + "/v1/gradle-cache/",
 		"LAYER_CACHE_GRADLE_TOKEN":                 gradleToken,
 		measurementCapabilityEnvironment:           buildkitToken,
 	}
@@ -464,6 +495,9 @@ func reconcileTurboSummaries(
 	type summaryRepository interface {
 		ReconcileTurboSummaries(string, measurement.TurboReconcileOptions, [][]byte) (int, error)
 		Close() error
+	}
+	if cfg.RemoteOnly {
+		return reconcileRemoteTurboSummaries(ctx, cfg, documents)
 	}
 	var repository summaryRepository
 	var err error

@@ -176,6 +176,9 @@ func lockIntegrationApplication(
 	configPath string,
 	integration string,
 ) (func(), error) {
+	if cfg.RemoteOnly {
+		return nil, errors.New("remoteOnly uses per-command native credentials; use layercache run instead of applying a Local integration")
+	}
 	unlock, err := lockIntegrationState(ctx, cfg)
 	if err != nil {
 		return nil, err

@@ -36,6 +36,7 @@ type Config struct {
 	Version                    int                `json:"version"`
 	InstallationID             string             `json:"installationId,omitempty"`
 	Role                       string             `json:"role"`
+	RemoteOnly                 bool               `json:"remoteOnly,omitempty"`
 	DataDir                    string             `json:"dataDir"`
 	Listen                     string             `json:"listen"`
 	MaxBytes                   int64              `json:"maxBytes"`
@@ -344,6 +345,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Role != "local" && cfg.Role != "team" && cfg.Role != "public" {
 		return fmt.Errorf("role must be local, team, or public, got %q", cfg.Role)
+	}
+	if cfg.RemoteOnly && (cfg.Role != "local" || cfg.TeamURL == "" || cfg.BazelRemote != nil || cfg.CloudPostgresURL != "" || cfg.CloudS3Endpoint != "") {
+		return errors.New("remoteOnly requires a local client configuration with teamUrl and no storage backend")
 	}
 	if cfg.RetainedArtifactsEnabled && (cfg.Role != "team" || cfg.CloudPostgresURL == "") {
 		return errors.New("retained artifacts require a private Team runtime with PostgreSQL/S3 persistence")

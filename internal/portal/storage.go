@@ -215,7 +215,7 @@ func (s *Store) configureStorage(ctx context.Context, policy *storagePolicy) err
 	if err != nil {
 		return err
 	}
-	projects, err := tx.QueryContext(ctx, `SELECT p.id,p.storage_pool_id,p.allocated_cache_bytes,p.storage_backend_fingerprint,COALESCE(t.storage_plan_id,'legacy'),COALESCE(t.storage_plan_fingerprint,'') FROM lc_portal_projects p LEFT JOIN lc_portal_teams t ON t.id=p.team_id`)
+	projects, err := tx.QueryContext(ctx, `SELECT p.id,p.storage_pool_id,p.allocated_cache_bytes,p.storage_backend_fingerprint,COALESCE(t.storage_plan_id,'legacy'),COALESCE(t.storage_plan_fingerprint,''),p.operator_managed FROM lc_portal_projects p LEFT JOIN lc_portal_teams t ON t.id=p.team_id`)
 	if err != nil {
 		return err
 	}
@@ -223,8 +223,11 @@ func (s *Store) configureStorage(ctx context.Context, policy *storagePolicy) err
 	for projects.Next() {
 		var project Project
 		var planID, planFingerprint string
-		if err = projects.Scan(&project.ID, &project.StoragePoolID, &project.AllocatedCacheBytes, &project.StorageBackendFingerprint, &planID, &planFingerprint); err != nil {
+		if err = projects.Scan(&project.ID, &project.StoragePoolID, &project.AllocatedCacheBytes, &project.StorageBackendFingerprint, &planID, &planFingerprint, &project.OperatorManaged); err != nil {
 			break
+		}
+		if project.OperatorManaged {
+			continue // The explicit operator adoption owns this backend binding.
 		}
 		if project.StoragePoolID == legacyStorageID && project.StorageBackendFingerprint == "" && project.AllocatedCacheBytes == 0 && planID == legacyStorageID {
 			legacyIDs = append(legacyIDs, project.ID)

@@ -21,6 +21,7 @@ import (
 )
 
 type cloudFile struct {
+	PasswordAccountsFile    string                           `json:"passwordAccountsFile,omitempty"`
 	DashboardCostsFile      string                           `json:"dashboardCostsFile,omitempty"`
 	GitHubAPIURL            string                           `json:"githubApiUrl,omitempty"`
 	GitHubAuthorizeURL      string                           `json:"githubAuthorizeUrl,omitempty"`
@@ -39,6 +40,20 @@ type cloudFile struct {
 	StoragePlans            map[string]portal.StoragePlan    `json:"storagePlans,omitempty"`
 	DefaultStoragePlan      string                           `json:"defaultStoragePlan,omitempty"`
 	TeamCreatorStoragePlans map[string]string                `json:"teamCreatorStoragePlans,omitempty"`
+	OperatorProjects        []operatorProjectFile            `json:"operatorProjects,omitempty"`
+	RegistryURL             string                           `json:"registryUrl,omitempty"`
+	RegistryUsername        string                           `json:"registryUsername,omitempty"`
+	RegistryPasswordFile    string                           `json:"registryPasswordFile,omitempty"`
+}
+
+type operatorProjectFile struct {
+	ProjectConfigFile string      `json:"projectConfigFile"`
+	Name              string      `json:"name"`
+	RepositoryID      string      `json:"repositoryId"`
+	Owner             portal.User `json:"owner"`
+	TeamID            string      `json:"teamId"`
+	TeamName          string      `json:"teamName"`
+	Alias             string      `json:"alias,omitempty"`
 }
 
 type hostedStoragePoolFile struct {
@@ -70,7 +85,7 @@ func loadCloud(path string) (cloudFile, portal.Config, error) {
 	if err = portal.ValidateTeamCreatorIDs(file.TeamCreatorIDs); err != nil {
 		return file, cfg, err
 	}
-	for _, p := range []string{file.DataDir, file.GitHubClientSecretFile, file.SessionKeyFile, file.ProjectTemplateFile} {
+	for _, p := range []string{file.DataDir, file.SessionKeyFile, file.ProjectTemplateFile} {
 		if !filepath.IsAbs(p) {
 			return file, cfg, errors.New("cloud data, template and secret paths must be absolute")
 		}
@@ -85,9 +100,26 @@ func loadCloud(path string) (cloudFile, portal.Config, error) {
 	if err != nil {
 		return file, cfg, errors.New("invalid project template")
 	}
-	cfg.GitHubClientSecret, err = readSecretFile(file.GitHubClientSecretFile)
-	if err != nil {
-		return file, cfg, errors.New("cannot read protected GitHub OAuth secret")
+	if (file.GitHubClientID == "") != (file.GitHubClientSecretFile == "") || (file.GitHubClientID == "" && file.PasswordAccountsFile == "") {
+		return file, cfg, errors.New("cloud requires GitHub OAuth credentials or protected operator password accounts")
+	}
+	if file.GitHubClientSecretFile != "" {
+		if !filepath.IsAbs(file.GitHubClientSecretFile) {
+			return file, cfg, errors.New("GitHub OAuth secret path must be absolute")
+		}
+		cfg.GitHubClientSecret, err = readSecretFile(file.GitHubClientSecretFile)
+		if err != nil || cfg.GitHubClientSecret == "" {
+			return file, cfg, errors.New("cannot read protected GitHub OAuth secret")
+		}
+	}
+	if file.PasswordAccountsFile != "" {
+		if !filepath.IsAbs(file.PasswordAccountsFile) {
+			return file, cfg, errors.New("password accounts path must be absolute")
+		}
+		if _, err = readProtectedFile(file.PasswordAccountsFile); err != nil {
+			return file, cfg, errors.New("cannot read protected password accounts")
+		}
+		cfg.PasswordAccountsFile = file.PasswordAccountsFile
 	}
 	cfg.SessionKey, err = readProtectedFile(file.SessionKeyFile)
 	if err != nil || len(cfg.SessionKey) != 32 {
@@ -126,6 +158,32 @@ func loadCloud(path string) (cloudFile, portal.Config, error) {
 	cfg.StoragePlans = file.StoragePlans
 	cfg.DefaultStoragePlan = file.DefaultStoragePlan
 	cfg.TeamCreatorStoragePlans = file.TeamCreatorStoragePlans
+	cfg.RegistryURL, cfg.RegistryUsername = file.RegistryURL, file.RegistryUsername
+	if file.RegistryPasswordFile != "" {
+		if !filepath.IsAbs(file.RegistryPasswordFile) {
+			return file, cfg, errors.New("registry credential path must be absolute")
+		}
+		cfg.RegistryPassword, err = readSecretFile(file.RegistryPasswordFile)
+		if err != nil {
+			return file, cfg, errors.New("cannot read protected registry credential")
+		}
+	}
+	if len(file.OperatorProjects) > 128 {
+		return file, cfg, errors.New("operator adoption is limited to 128 projects")
+	}
+	for _, project := range file.OperatorProjects {
+		if !filepath.IsAbs(project.ProjectConfigFile) {
+			return file, cfg, errors.New("operator project paths must be absolute")
+		}
+		if _, err := readProtectedFile(project.ProjectConfigFile); err != nil {
+			return file, cfg, errors.New("operator project configurations must be protected")
+		}
+		projectConfig, err := config.Load(project.ProjectConfigFile)
+		if err != nil {
+			return file, cfg, errors.New("invalid operator project configuration")
+		}
+		cfg.OperatorProjects = append(cfg.OperatorProjects, portal.OperatorProject{Config: projectConfig, Name: project.Name, RepositoryID: project.RepositoryID, Owner: project.Owner, TeamID: project.TeamID, TeamName: project.TeamName, Alias: project.Alias})
+	}
 	if err := portal.ValidateStorageConfiguration(cfg); err != nil {
 		return file, cfg, err
 	}

@@ -18,6 +18,17 @@ import (
 )
 
 func Open(ctx context.Context, config Config) (*Store, error) {
+	return open(ctx, config, false)
+}
+
+// OpenExisting opens an operator-adopted project without creating a replacement
+// project or bootstrapping its authority. Missing metadata fails closed before
+// schema migration or object-store initialization.
+func OpenExisting(ctx context.Context, config Config) (*Store, error) {
+	return open(ctx, config, true)
+}
+
+func open(ctx context.Context, config Config, existing bool) (*Store, error) {
 	if err := validateConfig(&config); err != nil {
 		return nil, err
 	}
@@ -34,13 +45,26 @@ func Open(ctx context.Context, config Config) (*Store, error) {
 		_ = database.Close()
 		return nil, store.safeError("connect cloud metadata", err)
 	}
+	if existing {
+		var quota int64
+		var members int
+		err := database.QueryRowContext(ctx, `SELECT p.quota_bytes,
+			(SELECT COUNT(*) FROM layercache_memberships_v1 m WHERE m.project_id=p.project_id)
+			FROM layercache_projects_v1 p WHERE p.project_id=$1`, config.Project).Scan(&quota, &members)
+		if err != nil || quota <= 0 {
+			_ = database.Close()
+			return nil, errors.New("existing cloud project and membership metadata are required")
+		}
+	}
 	if err := store.migrate(ctx); err != nil {
 		_ = database.Close()
 		return nil, err
 	}
-	if err := ensureProject(ctx, store); err != nil {
-		_ = database.Close()
-		return nil, err
+	if !existing {
+		if err := ensureProject(ctx, store); err != nil {
+			_ = database.Close()
+			return nil, err
+		}
 	}
 	store.blobs, err = newS3BlobStore(ctx, config, store.namespace)
 	if err != nil {

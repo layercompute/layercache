@@ -39,6 +39,7 @@ import (
 var assets embed.FS
 
 type Config struct {
+	PasswordAccountsFile    string
 	DashboardCostsFile      string
 	Origin                  string
 	DataDir                 string
@@ -56,8 +57,13 @@ type Config struct {
 	StoragePlans            map[string]StoragePlan
 	DefaultStoragePlan      string
 	TeamCreatorStoragePlans map[string]string
+	OperatorProjects        []OperatorProject
+	RegistryURL             string
+	RegistryUsername        string
+	RegistryPassword        string
 }
 type Portal struct {
+	passwords *passwordStore
 	cfg       Config
 	store     *Store
 	gateway   *server.ProjectGateway
@@ -103,8 +109,22 @@ func New(ctx context.Context, cfg Config) (*Portal, error) {
 	if err := ValidateTeamCreatorIDs(cfg.TeamCreatorIDs); err != nil {
 		return nil, err
 	}
-	if !filepath.IsAbs(cfg.DataDir) || len(cfg.SessionKey) != 32 || cfg.GitHubClientID == "" || cfg.GitHubClientSecret == "" {
-		return nil, errors.New("cloud requires an absolute data directory, 32-byte session key and GitHub OAuth credentials")
+	if err := validateOperatorProjects(cfg.OperatorProjects); err != nil {
+		return nil, err
+	}
+	if !filepath.IsAbs(cfg.DataDir) || len(cfg.SessionKey) != 32 {
+		return nil, errors.New("cloud requires an absolute data directory and 32-byte session key")
+	}
+	if (cfg.GitHubClientID == "") != (cfg.GitHubClientSecret == "") || (cfg.GitHubClientID == "" && cfg.PasswordAccountsFile == "") {
+		return nil, errors.New("cloud requires complete GitHub OAuth credentials or protected operator password accounts")
+	}
+	var passwords *passwordStore
+	var err error
+	if cfg.PasswordAccountsFile != "" {
+		passwords, err = newPasswordStore(cfg.PasswordAccountsFile, cfg.OperatorProjects)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if cfg.GitHubAPIURL == "" {
 		cfg.GitHubAPIURL = githubauth.DefaultAPIURL
@@ -156,13 +176,17 @@ func New(ctx context.Context, cfg Config) (*Portal, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("restore managed storage assignments: %w", err)
 	}
+	if err := store.adoptOperatorProjects(ctx, cfg.OperatorProjects); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("adopt operator projects: %w", err)
+	}
 	origin, _ := url.Parse(cfg.Origin)
 	creators := make(map[string]struct{}, len(cfg.TeamCreatorIDs))
 	for _, id := range cfg.TeamCreatorIDs {
 		creators[id] = struct{}{}
 	}
-	p := &Portal{cfg: cfg, store: store, aead: aead, authority: origin.Host, secure: origin.Scheme == "https", creators: creators, mux: http.NewServeMux(), client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-	p.gateway, err = server.NewProjectGateway(ctx, server.ProjectGatewayConfig{Origin: cfg.Origin, Authority: store, StoragePool: cfg.StoragePool})
+	p := &Portal{passwords: passwords, cfg: cfg, store: store, aead: aead, authority: origin.Host, secure: origin.Scheme == "https", creators: creators, mux: http.NewServeMux(), client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	p.gateway, err = server.NewProjectGateway(ctx, server.ProjectGatewayConfig{Origin: cfg.Origin, Authority: store, StoragePool: cfg.StoragePool, RegistryURL: cfg.RegistryURL, RegistryUsername: cfg.RegistryUsername, RegistryPassword: cfg.RegistryPassword})
 	if err != nil {
 		store.Close()
 		return nil, err
@@ -187,6 +211,14 @@ func New(ctx context.Context, cfg Config) (*Portal, error) {
 }
 func (p *Portal) Close() error { return errors.Join(p.gateway.Close(), p.store.Close()) }
 func (p *Portal) ensureProject(ctx context.Context, project Project) error {
+	if project.OperatorManaged {
+		for _, adopted := range p.cfg.OperatorProjects {
+			if adopted.Config.ProjectID == project.ID {
+				return p.gateway.AddStandaloneProject(ctx, operatorAlias(adopted), adopted.Config)
+			}
+		}
+		return errors.New("operator project configuration is missing")
+	}
 	cfg, err := p.store.projectTemplate(ctx, project)
 	if err != nil {
 		return err
@@ -213,7 +245,7 @@ func (p *Portal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Path
-	if strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/v1/cache/") || strings.HasPrefix(path, "/v1/gradle-cache/") || path == "/v1/retained-artifacts" || strings.HasPrefix(path, "/v1/retained-artifacts/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" {
+	if strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/v1/cache/") || strings.HasPrefix(path, "/v1/gradle-cache/") || strings.HasPrefix(path, "/v1/bazel-cache/") || strings.HasPrefix(path, "/v1/members/") || strings.HasPrefix(path, "/v1/buildkit/promotion-leases/") || path == "/v1/audit" || path == "/v1/sync/turbo" || path == "/v1/retained-artifacts" || strings.HasPrefix(path, "/v1/retained-artifacts/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || path == "/v1/gc" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" {
 		p.gateway.ServeHTTP(w, r)
 		return
 	}
@@ -228,8 +260,10 @@ func (p *Portal) routes() {
 	}
 	p.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonResponse(w, 200, map[string]string{"status": "ok"}) })
 	p.mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, 200, map[string]string{"githubClientId": p.cfg.GitHubClientID})
+		jsonResponse(w, 200, map[string]any{"githubClientId": p.cfg.GitHubClientID, "passwordLogin": p.passwords != nil})
 	})
+	p.mux.HandleFunc("POST /auth/password", p.passwordLogin)
+	p.mux.Handle("POST /api/password/change", p.auth(p.changePassword))
 	p.mux.HandleFunc("GET /auth/github", p.beginLogin)
 	p.mux.HandleFunc("GET /auth/callback", p.finishLogin)
 	p.mux.HandleFunc("GET /api/cli/projects", p.cliProjects)
@@ -296,8 +330,16 @@ func (p *Portal) auth(next func(http.ResponseWriter, *http.Request, Session)) ht
 			jsonResponse(w, 401, map[string]string{"error": "sign in required"})
 			return
 		}
+		if err := p.authenticatePasswordSession(&session); err != nil {
+			jsonResponse(w, 401, map[string]string{"error": "sign in required"})
+			return
+		}
 		if r.Method != "GET" && (r.Header.Get("Origin") != p.cfg.Origin || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRF)) != 1) {
 			fail(w, ErrDenied)
+			return
+		}
+		if session.PasswordChangeRequired && r.URL.Path != "/api/session" && r.URL.Path != "/api/password/change" && r.URL.Path != "/api/logout" {
+			jsonResponse(w, 403, map[string]string{"error": "change your initial password before using the dashboard"})
 			return
 		}
 		next(w, r, session)
@@ -319,6 +361,10 @@ func (p *Portal) decrypt(value string) (string, error) {
 	return string(decoded), err
 }
 func (p *Portal) beginLogin(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.GitHubClientID == "" {
+		http.NotFound(w, r)
+		return
+	}
 	state, verifier := randomID(""), randomID("")
 	if err := p.store.SaveOAuth(r.Context(), state, verifier); err != nil {
 		fail(w, err)
@@ -332,6 +378,10 @@ func (p *Portal) beginLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.GitHubClientID == "" {
+		http.NotFound(w, r)
+		return
+	}
 	states, codes := r.URL.Query()["state"], r.URL.Query()["code"]
 	cookie, err := r.Cookie(p.cookieName("oauth"))
 	p.cookie(w, "oauth", "", -1)
@@ -414,6 +464,12 @@ func (p *Portal) finishLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 func (p *Portal) sessionInfo(w http.ResponseWriter, r *http.Request, session Session) {
+	if session.PasswordChangeRequired {
+		// First-login access is limited to identity and password rotation.
+		// Do not query or disclose workspace metadata before that gate passes.
+		jsonResponse(w, 200, map[string]any{"user": session.User, "csrfToken": session.CSRF, "authMethod": session.AuthMethod, "passwordChangeRequired": true, "canChangePassword": true, "canManageGitHub": false, "canCreateTeam": false, "teams": []Team{}, "projects": []Project{}, "invitations": []Invitation{}})
+		return
+	}
 	teams, err := p.store.Teams(r.Context(), session.User.ID)
 	if err != nil {
 		fail(w, err)
@@ -430,7 +486,7 @@ func (p *Portal) sessionInfo(w http.ResponseWriter, r *http.Request, session Ses
 		return
 	}
 	_, canCreateTeam := p.creators[session.User.ID]
-	jsonResponse(w, 200, map[string]any{"user": session.User, "csrfToken": session.CSRF, "teams": teams, "projects": projects, "invitations": invitations, "cloudOrigin": p.cfg.Origin, "canCreateTeam": canCreateTeam})
+	jsonResponse(w, 200, map[string]any{"user": session.User, "csrfToken": session.CSRF, "teams": teams, "projects": projects, "invitations": invitations, "cloudOrigin": p.cfg.Origin, "canCreateTeam": canCreateTeam && session.AuthMethod != "password", "authMethod": session.AuthMethod, "passwordChangeRequired": session.PasswordChangeRequired, "canChangePassword": session.AuthMethod == "password", "canManageGitHub": session.AuthMethod != "password"})
 }
 func (p *Portal) cliProjects(w http.ResponseWriter, r *http.Request) {
 	values := r.Header.Values("Authorization")
@@ -470,6 +526,9 @@ func (p *Portal) logout(w http.ResponseWriter, r *http.Request, session Session)
 	w.WriteHeader(204)
 }
 func (p *Portal) createTeam(w http.ResponseWriter, r *http.Request, session Session) {
+	if !passwordProviderAllowed(w, session) {
+		return
+	}
 	if _, allowed := p.creators[session.User.ID]; !allowed {
 		jsonResponse(w, http.StatusForbidden, map[string]string{"error": "team creation is limited to invited beta creators"})
 		return
@@ -521,6 +580,9 @@ func (p *Portal) githubGET(ctx context.Context, token, path string, result any) 
 	return nil
 }
 func (p *Portal) createProject(w http.ResponseWriter, r *http.Request, session Session) {
+	if !passwordProviderAllowed(w, session) {
+		return
+	}
 	var input struct {
 		Name       string `json:"name"`
 		Repository string `json:"repository"`
@@ -563,6 +625,9 @@ func (p *Portal) createProject(w http.ResponseWriter, r *http.Request, session S
 	jsonResponse(w, 201, project)
 }
 func (p *Portal) members(w http.ResponseWriter, r *http.Request, session Session) {
+	if !passwordProviderAllowed(w, session) {
+		return
+	}
 	members, err := p.store.Members(r.Context(), session.User.ID, r.PathValue("team"))
 	if err != nil {
 		fail(w, err)
@@ -571,6 +636,9 @@ func (p *Portal) members(w http.ResponseWriter, r *http.Request, session Session
 	jsonResponse(w, 200, members)
 }
 func (p *Portal) changeMember(w http.ResponseWriter, r *http.Request, session Session) {
+	if !passwordProviderAllowed(w, session) {
+		return
+	}
 	var input struct {
 		Role string `json:"role"`
 	}
@@ -591,6 +659,9 @@ func (p *Portal) changeMember(w http.ResponseWriter, r *http.Request, session Se
 	w.WriteHeader(204)
 }
 func (p *Portal) invite(w http.ResponseWriter, r *http.Request, session Session) {
+	if !passwordProviderAllowed(w, session) {
+		return
+	}
 	var input struct {
 		Login string `json:"login"`
 		Role  string `json:"role"`
@@ -621,6 +692,9 @@ func (p *Portal) invite(w http.ResponseWriter, r *http.Request, session Session)
 	jsonResponse(w, 201, invitation)
 }
 func (p *Portal) accept(w http.ResponseWriter, r *http.Request, session Session) {
+	if !passwordProviderAllowed(w, session) {
+		return
+	}
 	if err := p.store.Accept(r.Context(), session.User.ID, r.PathValue("invite")); err != nil {
 		fail(w, err)
 		return
@@ -691,7 +765,15 @@ func (p *Portal) projectSnapshot(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	now := time.Now().UTC()
-	token, err := access.MintCapabilityToken(selected.Secret, access.Claims{Subject: "github-id:" + session.User.ID, Project: selected.ID, Capabilities: []access.Capability{access.CapabilityRead}, ExpiresAt: now.Add(time.Minute)}, now)
+	subject := "github-id:" + session.User.ID
+	capabilities := []access.Capability{access.CapabilityRead}
+	if selected.OperatorManaged {
+		subject = "github:" + strings.ToLower(session.User.Login)
+		if selected.Role == "admin" {
+			capabilities = []access.Capability{access.CapabilityAdmin}
+		}
+	}
+	token, err := access.MintCapabilityToken(selected.Secret, access.Claims{Subject: subject, Project: selected.ID, Capabilities: capabilities, ExpiresAt: now.Add(time.Minute)}, now)
 	if err != nil {
 		fail(w, err)
 		return
@@ -707,7 +789,9 @@ func (p *Portal) projectSnapshot(w http.ResponseWriter, r *http.Request, session
 	var status dashboard.Status
 	if read("/v1/status", &status) {
 		cache.State = "connected"
-		status.CanPrune = selected.Role == "admin"
+		if !selected.OperatorManaged {
+			status.CanPrune = selected.Role == "admin"
+		}
 		cache.Status = &status
 	}
 	period := 24 * time.Hour
@@ -796,8 +880,12 @@ func (p *Portal) pruneProject(w http.ResponseWriter, r *http.Request, session Se
 		return
 	}
 	now := time.Now().UTC()
+	subject := "github-id:" + session.User.ID
+	if selected.OperatorManaged {
+		subject = "github:" + strings.ToLower(session.User.Login)
+	}
 	token, err := access.MintCapabilityToken(selected.Secret, access.Claims{
-		Subject: "github-id:" + session.User.ID, Project: selected.ID,
+		Subject: subject, Project: selected.ID,
 		Capabilities: []access.Capability{access.CapabilityAdmin}, ExpiresAt: now.Add(time.Minute),
 	}, now)
 	if err != nil {

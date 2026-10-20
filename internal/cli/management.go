@@ -91,6 +91,9 @@ func runDoctor(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if !operational.Running {
 		runtimeCheck.Detail = "runtime is not reachable"
 	}
+	if cfg.RemoteOnly {
+		runtimeCheck = diagnosticCheck{OK: true, Detail: "hosted client does not need a Local daemon"}
+	}
 	integrationCheck := inspectIntegrationHealth(operational)
 	remoteCheck := inspectRemoteHealth(operational)
 	credentialCheck := inspectCredentialHealth(operational)
@@ -156,6 +159,9 @@ func printDoctorResult(output io.Writer, healthy bool, checks map[string]diagnos
 }
 
 func inspectIntegrationHealth(status operationalStatus) diagnosticCheck {
+	if status.RemoteOnly {
+		return diagnosticCheck{OK: true, Detail: "native integrations receive hosted credentials from layercache run"}
+	}
 	problems := make([]string, 0)
 	for name, integration := range status.Integrations {
 		if integration.Configured && integration.State != "active" && integration.State != "bypassed" {
@@ -222,6 +228,9 @@ func inspectCredentialHealth(status operationalStatus) diagnosticCheck {
 }
 
 func inspectCacheHealth(cfg config.Config, status operationalStatus) diagnosticCheck {
+	if cfg.RemoteOnly {
+		return diagnosticCheck{OK: true, Detail: "Local artifact storage disabled; hosted quotas are managed by the backend"}
+	}
 	if status.UsageBytes > status.MaxBytes {
 		return diagnosticCheck{Detail: fmt.Sprintf("Local Cache uses %d bytes, above its %d-byte limit", status.UsageBytes, status.MaxBytes)}
 	}
@@ -277,6 +286,9 @@ func inspectConfigPermissions(path string) diagnosticCheck {
 }
 
 func inspectDataDirectory(cfg config.Config, configPath string) diagnosticCheck {
+	if cfg.RemoteOnly {
+		return diagnosticCheck{OK: true, Detail: "Local artifact storage disabled"}
+	}
 	info, err := os.Stat(cfg.DataDir)
 	if err != nil {
 		return diagnosticCheck{Detail: "cannot inspect Local Cache directory: " + err.Error()}
@@ -320,6 +332,9 @@ func runRepair(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	cfg, err = config.Load(*configPath)
 	if err != nil {
 		return fmt.Errorf("reload Layer Cache configuration after locking repair: %w", err)
+	}
+	if cfg.RemoteOnly {
+		return printResult(stdout, *jsonOutput, map[string]any{"repaired": false, "remoteOnly": true}, "Hosted client has no Local artifact store to repair")
 	}
 	if err := validateDeletionTarget(cfg.DataDir); err != nil {
 		return fmt.Errorf("refusing to repair unsafe Local Cache directory: %w", err)

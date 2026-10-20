@@ -63,6 +63,10 @@ func runStart(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		unlockConfiguration()
 		return err
 	}
+	if cfg.RemoteOnly {
+		unlockConfiguration()
+		return errors.New("remoteOnly uses hosted storage directly; no Local daemon is required")
+	}
 	if live, err := probeRuntime(cfg); err == nil {
 		unlockConfiguration()
 		return printResult(stdout, *jsonOutput, map[string]any{

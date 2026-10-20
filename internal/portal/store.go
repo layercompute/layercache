@@ -30,11 +30,12 @@ type User struct {
 	Login string `json:"login"`
 }
 type Team struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Role          string `json:"role"`
-	Kind          string `json:"kind"`
-	StoragePlanID string `json:"storagePlanId"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Role            string `json:"role"`
+	Kind            string `json:"kind"`
+	StoragePlanID   string `json:"storagePlanId"`
+	OperatorManaged bool   `json:"operatorManaged,omitempty"`
 }
 type Project struct {
 	ID                        string `json:"id"`
@@ -48,6 +49,7 @@ type Project struct {
 	StoragePoolID             string `json:"storagePoolId"`
 	AllocatedCacheBytes       int64  `json:"allocatedCacheBytes"`
 	StorageBackendFingerprint string `json:"-"`
+	OperatorManaged           bool   `json:"operatorManaged,omitempty"`
 }
 type Member struct {
 	UserID string `json:"userId"`
@@ -62,10 +64,13 @@ type Invitation struct {
 	ExpiresAt int64  `json:"expiresAt"`
 }
 type Session struct {
-	User           User
-	CSRF           string
-	EncryptedToken string
-	ExpiresAt      int64
+	AuthMethod             string
+	PasswordChangeRequired bool
+	PasswordEmail          string
+	User                   User
+	CSRF                   string
+	EncryptedToken         string
+	ExpiresAt              int64
 }
 
 // Store is the single durable membership authority for managed projects. Team
@@ -114,6 +119,7 @@ func OpenStore(ctx context.Context, postgresURL, filename string) (*Store, error
 		`CREATE INDEX IF NOT EXISTS lc_portal_sessions_user ON lc_portal_sessions(user_id)`,
 		`CREATE TABLE IF NOT EXISTS lc_portal_oauth (id TEXT PRIMARY KEY, verifier TEXT NOT NULL, expires_at BIGINT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS lc_portal_audit (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, subject TEXT NOT NULL, created_at BIGINT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS lc_portal_operator_projects (project_id TEXT PRIMARY KEY REFERENCES lc_portal_projects(id), fingerprint TEXT NOT NULL)`,
 	} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			return fail()
@@ -129,6 +135,8 @@ func OpenStore(ctx context.Context, postgresURL, filename string) (*Store, error
 		{`SELECT storage_pool_id FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN storage_pool_id TEXT NOT NULL DEFAULT 'legacy'`},
 		{`SELECT allocated_cache_bytes FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN allocated_cache_bytes BIGINT NOT NULL DEFAULT 0 CHECK(allocated_cache_bytes >= 0)`},
 		{`SELECT storage_backend_fingerprint FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN storage_backend_fingerprint TEXT NOT NULL DEFAULT ''`},
+		{`SELECT operator_managed FROM lc_portal_projects LIMIT 0`, `ALTER TABLE lc_portal_projects ADD COLUMN operator_managed BOOLEAN NOT NULL DEFAULT FALSE`},
+		{`SELECT operator_managed FROM lc_portal_teams LIMIT 0`, `ALTER TABLE lc_portal_teams ADD COLUMN operator_managed BOOLEAN NOT NULL DEFAULT FALSE`},
 	} {
 		rows, err := db.QueryContext(ctx, migration.probe)
 		if err == nil {
@@ -174,7 +182,7 @@ func (s *Store) UpsertUser(ctx context.Context, user User) error {
 	return err
 }
 func (s *Store) Teams(ctx context.Context, user string) ([]Team, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT t.id,t.name,m.role,t.kind,t.storage_plan_id FROM lc_portal_teams t JOIN lc_portal_members m ON m.team_id=t.id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY t.name,t.id`, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT t.id,t.name,m.role,t.kind,t.storage_plan_id,t.operator_managed FROM lc_portal_teams t JOIN lc_portal_members m ON m.team_id=t.id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY t.name,t.id`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +190,7 @@ func (s *Store) Teams(ctx context.Context, user string) ([]Team, error) {
 	result := []Team{}
 	for rows.Next() {
 		var t Team
-		if err := rows.Scan(&t.ID, &t.Name, &t.Role, &t.Kind, &t.StoragePlanID); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Role, &t.Kind, &t.StoragePlanID, &t.OperatorManaged); err != nil {
 			return nil, err
 		}
 		result = append(result, t)
@@ -272,16 +280,17 @@ func audit(ctx context.Context, tx *sql.Tx, team, actor, action, subject string)
 
 func requireSharedTeam(ctx context.Context, tx *sql.Tx, team string) error {
 	var kind string
-	if err := tx.QueryRowContext(ctx, `SELECT kind FROM lc_portal_teams WHERE id=$1`, team).Scan(&kind); err != nil {
+	var operator bool
+	if err := tx.QueryRowContext(ctx, `SELECT kind,operator_managed FROM lc_portal_teams WHERE id=$1`, team).Scan(&kind, &operator); err != nil {
 		return err
 	}
-	if kind != "team" {
+	if kind != "team" || operator {
 		return ErrDenied
 	}
 	return nil
 }
 func (s *Store) Projects(ctx context.Context, user string) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.team_id,p.name,p.repository,p.repository_id,p.default_ref,p.secret,m.role,p.storage_pool_id,p.allocated_cache_bytes,p.storage_backend_fingerprint FROM lc_portal_projects p JOIN lc_portal_members m ON m.team_id=p.team_id JOIN lc_portal_teams t ON t.id=p.team_id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY p.name,p.id`, user)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.team_id,p.name,p.repository,p.repository_id,p.default_ref,p.secret,m.role,p.storage_pool_id,p.allocated_cache_bytes,p.storage_backend_fingerprint,p.operator_managed FROM lc_portal_projects p JOIN lc_portal_members m ON m.team_id=p.team_id JOIN lc_portal_teams t ON t.id=p.team_id WHERE m.user_id=$1 AND (t.kind='team' OR t.created_by=$1) ORDER BY p.name,p.id`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +298,7 @@ func (s *Store) Projects(ctx context.Context, user string) ([]Project, error) {
 	result := []Project{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret, &p.Role, &p.StoragePoolID, &p.AllocatedCacheBytes, &p.StorageBackendFingerprint); err != nil {
+		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret, &p.Role, &p.StoragePoolID, &p.AllocatedCacheBytes, &p.StorageBackendFingerprint, &p.OperatorManaged); err != nil {
 			return nil, err
 		}
 		result = append(result, p)
@@ -297,7 +306,7 @@ func (s *Store) Projects(ctx context.Context, user string) ([]Project, error) {
 	return result, rows.Err()
 }
 func (s *Store) AllProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,team_id,name,repository,repository_id,default_ref,secret,storage_pool_id,allocated_cache_bytes,storage_backend_fingerprint FROM lc_portal_projects ORDER BY id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,team_id,name,repository,repository_id,default_ref,secret,storage_pool_id,allocated_cache_bytes,storage_backend_fingerprint,operator_managed FROM lc_portal_projects ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +314,7 @@ func (s *Store) AllProjects(ctx context.Context) ([]Project, error) {
 	result := []Project{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret, &p.StoragePoolID, &p.AllocatedCacheBytes, &p.StorageBackendFingerprint); err != nil {
+		if err := rows.Scan(&p.ID, &p.TeamID, &p.Name, &p.Repository, &p.RepositoryID, &p.DefaultRef, &p.Secret, &p.StoragePoolID, &p.AllocatedCacheBytes, &p.StorageBackendFingerprint, &p.OperatorManaged); err != nil {
 			return nil, err
 		}
 		result = append(result, p)
@@ -327,6 +336,13 @@ func (s *Store) CreateProject(ctx context.Context, user, team, name, repository,
 		return Project{}, err
 	}
 	if role != "admin" {
+		return Project{}, ErrDenied
+	}
+	var operator bool
+	if err := tx.QueryRowContext(ctx, `SELECT operator_managed FROM lc_portal_teams WHERE id=$1`, team).Scan(&operator); err != nil {
+		return Project{}, err
+	}
+	if operator {
 		return Project{}, ErrDenied
 	}
 	var total, teamCount int

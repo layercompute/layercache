@@ -58,7 +58,7 @@ Usage:
   layercache run [--sync-team] [--sync-timeout DURATION] [options] -- COMMAND [ARG...]
   layercache serve [options]
   layercache xcode run [options] -- xcodebuild [arguments]
-  layercache connect --cloud URL [--github-cli] [--team TEAM] [--project PROJECT]
+  layercache connect --cloud URL [--github-cli] [--remote-only] [--team TEAM] [--project PROJECT]
   layercache serve-cloud --config FILE
   layercache serve-projects --config FILE
 `
@@ -166,6 +166,9 @@ func runServe(ctx context.Context, args []string, stderr io.Writer) error {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return fmt.Errorf("load Layer Cache configuration: %w", err)
+	}
+	if cfg.RemoteOnly {
+		return errors.New("remoteOnly cannot serve a Local artifact store; use layercache run")
 	}
 	if refreshErr := refreshAndPersistTeamCapability(ctx, *configPath, &cfg); refreshErr != nil {
 		_, _ = fmt.Fprintf(stderr, "Layer Cache warning: %v; Local Cache will remain available\n", refreshErr)
@@ -334,6 +337,7 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 	maxSize := flags.String("max-size", strconv.FormatInt(base.MaxBytes, 10), "Local Cache byte limit")
 	evictionPolicy := flags.String("eviction-policy", string(base.EvictionPolicy), "cache eviction policy: lru or impact")
 	minFreeBytesFlag := flags.String("min-free-bytes", strconv.FormatInt(base.MinFreeBytes, 10), "upward Local Cache free-space reserve override in bytes")
+	remoteOnly := flags.Bool("remote-only", base.RemoteOnly, "use configured hosted storage directly without creating a Local artifact store")
 	role := flags.String("role", base.Role, "runtime role: local, team, or public")
 	projectID := flags.String("project", base.ProjectID, "project identity")
 	compatibilityID := flags.String("compatibility-id", base.CompatibilityID, "output compatibility identity (OS, architecture, ABI, and toolchain as needed)")
@@ -486,6 +490,7 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 	}
 	base.MinFreeBytes = minFreeBytes
 	base.Role = *role
+	base.RemoteOnly = *remoteOnly
 	base.ProjectID = *projectID
 	base.CompatibilityID = *compatibilityID
 	if localTokenSet {
@@ -661,7 +666,7 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 	}
 	defer unlockConfiguration()
 	var unlockIntegrations func()
-	if existing {
+	if existing && !original.RemoteOnly && !base.RemoteOnly {
 		unlockIntegrations, err = lockIntegrationState(ctx, original)
 		if err != nil {
 			return err
@@ -686,6 +691,14 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 		return fmt.Errorf("recheck Layer Cache configuration before setup commit: %w", existsErr)
 	} else if nowExists {
 		return errors.New("Layer Cache configuration was created during setup; rerun setup against the current configuration")
+	}
+	if base.RemoteOnly {
+		// Setup changes client configuration only. Existing local data is retained
+		// until a separately verified migration proves every required artifact.
+		if err := config.Save(*configPath, base); err != nil {
+			return err
+		}
+		return printResult(stdout, *jsonOutput, result, "Layer Cache configured for hosted storage at "+*configPath)
 	}
 	if err := validateDeletionTarget(base.DataDir); err != nil {
 		return fmt.Errorf("unsafe Local Cache directory: %w", err)
