@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/layercache/layercache/internal/artifact"
@@ -326,6 +328,68 @@ func TestMarkerVectorPredicatesWithoutChangingStrictGrammar(t *testing.T) {
 	shape = describeNode(node)
 	if shape.Chunks[1].LeadingUniqueMarker || shape.Chunks[1].FollowingLiteralChunks != 1 {
 		t.Fatal("non-leading marker was classified as leading")
+	}
+}
+
+type manifestOwnerInfo struct {
+	os.FileInfo
+	owner *syscall.Stat_t
+}
+
+func (info manifestOwnerInfo) Sys() any { return info.owner }
+
+func TestSemanticManifestIsPrivateBoundedAndAbsentFromPublicShape(t *testing.T) {
+	target, targetID := fixtureShapeCAS(nativeShapeNode([]byte("private semantic data"), nil, false))
+	node := nativeShapeNode([]byte("action"), targetID[:], true)
+	data, _ := proto.Marshal(&kv.Value{Entries: map[string][]byte{"value": node}})
+	value := fixtureShapeReport(t, []privateRecord{target, {kind: "kv", data: data}})
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(parent, "semantic-manifest.json")
+	if err := writeSemanticManifest(path, value); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0600 || info.Size() > 128<<10 {
+		t.Fatal("manifest was not private and bounded")
+	}
+	var manifest struct {
+		Version int              `json:"version"`
+		Project string           `json:"project"`
+		Targets []semanticTarget `json:"targets"`
+	}
+	encoded, _ := os.ReadFile(path)
+	if err := json.Unmarshal(encoded, &manifest); err != nil || manifest.Version != 1 || manifest.Project != "github.com/layercache/xcode-standalone-qa" || len(manifest.Targets) != 1 {
+		t.Fatal("manifest scope/target changed")
+	}
+	item := manifest.Targets[0]
+	if item.Ordinal != 1 || item.NativeDigestHex != strings.Repeat("0", 130) || item.WireReferenceCount != 0 || !item.WireReferencesComplete || item.WireDataBytes != nil {
+		t.Fatalf("unexpected private semantic target: %+v", item)
+	}
+	public, err := encodeReport(value)
+	if err != nil || bytes.Contains(public, []byte(item.NativeDigestHex)) || bytes.Contains(public, []byte("private semantic data")) {
+		t.Fatal("private digest/SDK bytes escaped public report")
+	}
+	if err := writeSemanticManifest(path, value); err == nil {
+		t.Fatal("manifest replaced an existing file")
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(after, encoded) {
+		t.Fatal("existing manifest changed")
+	}
+	parentInfo, err := os.Lstat(parent)
+	if err != nil || !privateManifestDirectory(parentInfo) {
+		t.Fatal("current owned private fixture directory was rejected")
+	}
+	if privateManifestDirectory(manifestOwnerInfo{parentInfo, &syscall.Stat_t{Uid: uint32(os.Geteuid() + 1)}}) {
+		t.Fatal("foreign-owned private directory was accepted")
+	}
+	if err := os.Chmod(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSemanticManifest(filepath.Join(parent, "not-private.json"), value); err == nil {
+		t.Fatal("manifest accepted a shared parent")
 	}
 }
 

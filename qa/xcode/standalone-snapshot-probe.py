@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in real Clang/PCH proof. This is never a simulator/runtime or Swift proof."""
 import argparse
+import importlib.util
 import hashlib
 import http.client
 import http.server
@@ -12,11 +13,15 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
+import sys
 import subprocess
 import tempfile
 import threading
 import time
 import urllib.request
+
+sys.dont_write_bytecode = True
 
 PROJECT = "github.com/layercache/xcode-standalone-qa"
 GENERATION = "xcode-snapshots/qualification-1"
@@ -391,6 +396,66 @@ scheme.save_as(project.path, 'Probe', true)
         write_json(self.root / f"{role}-archive.json", {key: result[key] for key in ("hit", "source", "digest", "bytes", "elapsedMs")})
         return result
 
+    def collect_producer_semantics(self, store):
+        """Query only the stopped producer, before consumer native-CAS removal."""
+        unavailable = {"version": 1, "available": False, "reason": "invalidInput", "abi": None, "objects": [], "workerStopped": True}
+        sdk_started, worker_stopped = False, True
+        root, plugin = self.private / "native-cas", self.private / "native-cas/plugin"
+        candidates = {"configuredRoot": root, "configuredPlugin": plugin,
+                      "configuredBuiltin": root / "builtin",
+                      "producerDerivedBuiltin": self.private / "derived-producer/CompilationCache.noindex/builtin"}
+        locations = {"version": 1, "phase": "producer-closed-before-consumer", "candidates": {},
+                     "producerStoreClosed": True, "storeConfirmedByBuild": False, "selectedPluginLibrary": None}
+        for name, path in candidates.items():
+            try:
+                info = path.lstat()
+                locations["candidates"][name] = {"exists": True, "directory": stat.S_ISDIR(info.st_mode),
+                    "owned": info.st_uid == os.geteuid(), "symlink": stat.S_ISLNK(info.st_mode)}
+            except OSError:
+                locations["candidates"][name] = {"exists": False, "directory": False, "owned": False, "symlink": False}
+        try:
+            developer = Path(self.env["DEVELOPER_DIR"]) if self.env.get("DEVELOPER_DIR") else Path(self.run("selected-developer-path", ["xcode-select", "-p"]).strip())
+            libraries = {"developerLibrary": developer / "usr/lib/libToolchainCASPlugin.dylib",
+                         "toolchainLibrary": developer / "Toolchains/XcodeDefault.xctoolchain/usr/lib/libToolchainCASPlugin.dylib"}
+            locations["libraries"] = {name: path.is_file() for name, path in libraries.items()}
+            existing = [(name, path) for name, path in libraries.items() if path.is_file()]
+            require(existing and (len(existing) == 1 or existing[0][1].samefile(existing[1][1])), "semantic plugin location is unavailable or ambiguous")
+            selected, library = existing[0]
+            locations["selectedPluginLibrary"] = selected
+            for name in ("configuredRoot", "configuredPlugin"):
+                location = locations["candidates"][name]
+                require(location["directory"] and location["owned"] and not location["symlink"], "producer native CAS is unavailable")
+            with (self.root / "producer-build.log").open() as log:
+                locations["storeConfirmedByBuild"] = any(line.startswith("ValidateCAS ") and str(plugin) in line for line in log)
+            require(locations["storeConfirmedByBuild"], "producer did not validate the selected native CAS")
+            # Xcode can create these exact owned fixture directories as 0755.
+            # Tighten metadata before the worker's independent private-path gate.
+            for path in (root, plugin):
+                path.chmod(0o700)
+            probe = Path(__file__).with_name("plugin-semantics.py")
+            require(self.shape_helper and probe.is_file(), "semantic fixture helper unavailable")
+            manifest = self.private / "producer-semantic-manifest.json"
+            self.run("producer-semantic-manifest", [self.shape_helper, store, PROJECT, self.profile,
+                "--semantic-manifest", manifest], timeout=15)
+            sdk_started = True
+            output = self.run("producer-plugin-semantics", [sys.executable, probe, "--plugin", library,
+                "--cas-path", plugin, "--manifest", manifest], timeout=15)
+            require(len(output.encode()) <= 128 << 10, "semantic output exceeds fixed bound")
+            value = json.loads(output)
+            # Reuse the probe owner's payload-free schema validation before
+            # saving stdout as public evidence. Importing this module loads no SDK.
+            spec = importlib.util.spec_from_file_location("layercache_plugin_semantics", probe)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            require(module.valid_report(value), "invalid semantic result schema")
+            worker_stopped = value["workerStopped"]
+        except Exception:
+            worker_stopped = not sdk_started
+            value = {**unavailable, "workerStopped": worker_stopped, "reason": "workerFailed" if sdk_started else "invalidInput"}
+        write_json(self.root / "native-cas-locations.json", locations)
+        write_json(self.root / "plugin-semantics.json", value)
+        return worker_stopped
+
     def qualify(self):
         self.fingerprint()
         self.prepare_project()
@@ -399,6 +464,9 @@ scheme.save_as(project.path, 'Probe', true)
         producer = self.adapter("producer", producer_store)
         cold = self.build("producer", producer, 42)
         cold_stats = self.stop("producer", producer)
+        self.diagnostic_store = producer_store
+        worker_stopped = self.collect_producer_semantics(producer_store)
+        require(worker_stopped, "semantic native worker exit is unconfirmed; preserve producer native CAS")
         require(cold_stats["actionWrites"] > 0 and cold_stats["casWrites"] > 0 and cold_stats["cacheErrors"] == 0,
                 "producer did not populate healthy external compiler store")
         require(not any(path.is_socket() for path in producer_store.rglob("*")), "closed snapshot contains a socket")

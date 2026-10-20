@@ -56,6 +56,7 @@ jobs:
       - name: Check standalone qualifier controls
         run: |
           python3 qa/xcode/standalone-snapshot-probe.test.py
+          python3 qa/xcode/plugin-semantics.test.py
           go test -race ./qa/xcode
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/layercache" ./cmd/layercache
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/xcode-pressure-proxy" ./qa/xcode/pressure-proxy
@@ -123,6 +124,8 @@ jobs:
           name: xcode-standalone-evidence
           path: |
             ${{ runner.temp }}/xcode-standalone-evidence/toolchain.json
+            ${{ runner.temp }}/xcode-standalone-evidence/native-cas-locations.json
+            ${{ runner.temp }}/xcode-standalone-evidence/plugin-semantics.json
             ${{ runner.temp }}/xcode-standalone-evidence/result.json
             ${{ runner.temp }}/xcode-standalone-evidence/transfer-audit.json
             ${{ runner.temp }}/xcode-standalone-evidence/failure-shapes.json

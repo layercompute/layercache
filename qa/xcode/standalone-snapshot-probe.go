@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/layercache/layercache/internal/xcodecache"
@@ -71,6 +72,7 @@ type nodeShape struct {
 	LiteralChunkCount    int               `json:"literalChunkCount"`
 	SequenceComplete     bool              `json:"sequenceComplete"`
 	OnlyTopLevelChunks   bool              `json:"onlyTopLevelChunks"`
+	WireReferenceCount   int               `json:"wireReferenceCount"`
 }
 type objectShape struct {
 	Ordinal            int               `json:"ordinal"`
@@ -92,6 +94,7 @@ type report struct {
 	Rows           int           `json:"rows"`
 	InspectedBytes int           `json:"inspectedBytes"`
 	Objects        []objectShape `json:"objects"`
+	nativeDigests  map[int][]byte
 }
 
 // parseField returns slices only for in-memory structure inspection. They never
@@ -209,6 +212,7 @@ func describeNode(data []byte) *nodeShape {
 			}
 		}
 		if shape.Number == 2 && shape.Wire == int(protowire.BytesType) {
+			result.WireReferenceCount++
 			union, external, tail, valid := parseField(value)
 			if valid && len(tail) == 0 && union.Number == 2 && union.Wire == int(protowire.BytesType) {
 				if len(result.Descriptors) < maxFields {
@@ -277,8 +281,62 @@ type pendingReference struct {
 	ref     xcodecache.GraphReference
 }
 
+// Digests remain private and are used only to query the compiler's own API.
+// A matching accepted NativeNode reference is required before retaining one.
+func captureNativeDigests(data []byte, refs []xcodecache.GraphReference, casOrdinals map[string]int, result *report) error {
+	accepted := map[string]bool{}
+	for _, ref := range refs {
+		if ref.NativeNode {
+			accepted[string(ref.ID)] = true
+		}
+	}
+	if len(accepted) == 0 {
+		return nil
+	}
+	for count := 0; len(data) > 0 && count < maxInspectedFields; count++ {
+		shape, payload, rest, ok := parseField(data)
+		if !ok {
+			break
+		}
+		data = rest
+		if shape.Number != 2 || shape.Wire != int(protowire.BytesType) {
+			continue
+		}
+		union, description, tail, ok := parseField(payload)
+		if !ok || len(tail) != 0 || union.Number != 2 || union.Wire != int(protowire.BytesType) {
+			continue
+		}
+		var nativeDigest, remoteID []byte
+		for fields := 0; len(description) != 0 && fields < maxFields; fields++ {
+			field, value, rest, ok := parseField(description)
+			if !ok {
+				break
+			}
+			description = rest
+			if field.Number == 1 && field.Wire == int(protowire.BytesType) {
+				nativeDigest = value
+			} else if field.Number == 2 && field.Wire == int(protowire.BytesType) {
+				remoteID = value
+			}
+		}
+		if len(nativeDigest) != 65 || len(remoteID) != sha256.Size || !accepted[string(remoteID)] {
+			continue
+		}
+		ordinal, found := casOrdinals[hex.EncodeToString(remoteID)]
+		if found {
+			previous := result.nativeDigests[ordinal]
+			if previous != nil && !bytes.Equal(previous, nativeDigest) {
+				return errors.New("ambiguous fixture native digest")
+			}
+			result.nativeDigests[ordinal] = append([]byte(nil), nativeDigest...)
+		}
+	}
+	return nil
+}
+
 func deriveReferenceContext(ctx context.Context, records []privateRecord, casOrdinals map[string]int, result *report) error {
 	acceptedEdges := make(map[int][]xcodecache.GraphReference)
+	result.nativeDigests = map[int][]byte{}
 	var queue []pendingReference
 	discovered := map[int]bool{}
 	enqueue := func(refs []xcodecache.GraphReference) {
@@ -308,6 +366,11 @@ func deriveReferenceContext(ctx context.Context, records []privateRecord, casOrd
 		refs, err := xcodecache.ActionReferences(value)
 		if err == nil {
 			acceptedEdges[index] = refs
+			if node, native := value.Entries["value"]; native {
+				if err := captureNativeDigests(node, refs, casOrdinals, result); err != nil {
+					return err
+				}
+			}
 			enqueue(refs)
 		}
 	}
@@ -330,6 +393,11 @@ func deriveReferenceContext(ctx context.Context, records []privateRecord, casOrd
 		refs, err := xcodecache.ObjectReferences(next.ref, object)
 		if err == nil {
 			acceptedEdges[next.ordinal-1] = refs
+			if next.ref.NativeNode {
+				if err := captureNativeDigests(object.GetBlob().GetData(), refs, casOrdinals, result); err != nil {
+					return err
+				}
+			}
 			enqueue(refs)
 		}
 	}
@@ -434,15 +502,78 @@ func encodeReport(value report) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+type semanticTarget struct {
+	Ordinal                int    `json:"ordinal"`
+	NativeDigestHex        string `json:"nativeDigestHex"`
+	WireReferenceCount     int    `json:"wireReferenceCount"`
+	WireReferencesComplete bool   `json:"wireReferencesComplete"`
+	WireDataBytes          *int   `json:"wireDataBytes"`
+}
+
+func privateManifestDirectory(info os.FileInfo) bool {
+	if info == nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+		return false
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	return ok && owner.Uid == uint32(os.Geteuid())
+}
+
+func writeSemanticManifest(path string, value report) error {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return errors.New("invalid private manifest path")
+	}
+	parent, err := os.Lstat(filepath.Dir(path))
+	if err != nil || !privateManifestDirectory(parent) {
+		return errors.New("manifest requires a private directory")
+	}
+	manifest := struct {
+		Version int              `json:"version"`
+		Project string           `json:"project"`
+		Targets []semanticTarget `json:"targets"`
+	}{1, "github.com/layercache/xcode-standalone-qa", []semanticTarget{}}
+	for index, object := range value.Objects {
+		if !object.ExpectedNativeNode {
+			continue
+		}
+		digest := value.nativeDigests[index+1]
+		if len(digest) != 65 || object.Node == nil || object.Node.WireReferenceCount > maxInspectedFields {
+			return errors.New("fixture native digest or wire context unavailable")
+		}
+		manifest.Targets = append(manifest.Targets, semanticTarget{index + 1, hex.EncodeToString(digest), object.Node.WireReferenceCount, object.Node.SequenceComplete, nil})
+	}
+	if len(manifest.Targets) > maxRows {
+		return errors.New("fixture semantic target bound exceeded")
+	}
+	encoded, err := json.Marshal(manifest)
+	if err != nil || len(encoded) > 128<<10 {
+		return errors.New("fixture semantic manifest bound exceeded")
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(append(encoded, '\n'))
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(path)
+	}
+	return err
+}
+
 func main() {
 	// Raw errors can contain paths or digests, so only this fixed error is emitted.
-	if len(os.Args) != 4 {
+	if len(os.Args) != 4 && !(len(os.Args) == 6 && os.Args[4] == "--semantic-manifest") {
 		os.Stderr.WriteString("closed fixture shape diagnostic unavailable\n")
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	value, err := inspect(ctx, os.Args[1], os.Args[2], os.Args[3])
+	if err == nil && len(os.Args) == 6 {
+		err = writeSemanticManifest(os.Args[5], value)
+	}
 	if err == nil {
 		var output []byte
 		output, err = encodeReport(value)

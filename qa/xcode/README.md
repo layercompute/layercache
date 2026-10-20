@@ -123,3 +123,37 @@ separate. Nested chunk shapes include only field/wire/length and a
 never enter this shape report. The failed compiler verdict stays red. These
 shapes help diagnose format coverage; the older aggregate-hit fixture does not
 establish that every compiler or PCH format previously replayed successfully.
+
+
+The QA-only `plugin-semantics.py` probe runs immediately after confirmed producer
+stop and before the first consumer deletes the producer's native CAS. A private
+0600 manifest binds numeric fixture ordinals to the exact declared native
+digests and bounded wire-reference counts. It remains under `.private` and is
+excluded from uploads. `native-cas-locations.json` reports only fixed candidate
+existence/ownership flags and whether the producer log selected the existing
+plugin store. Missing or ambiguous locations remain unavailable; the probe does
+not create an empty store and call that a restored object.
+
+Go inspection of the closed LayerCache store stays immutable and read-only.
+Apple's `llcas_cas_create` may update metadata in this fixture's separate producer
+native CAS. No SDK files or native CAS directories are copied or published as
+QA artifacts. The consumer still removes that native CAS and starts fresh.
+`plugin-semantics.json` contains only fixed reason labels, ordinals, counts and
+comparison booleans. An available API does not establish that every object was
+found; each object has its own availability result. Missing symbols, an unknown
+ABI, missing objects or a timeout establish no semantic success. The parent
+requires `workerStopped:true` before any consumer cleanup or build. An
+unconfirmed native worker preserves its producer CAS and fails qualification.
+The production
+wire parser and strict Clang/PCH replay requirements remain unchanged.
+
+The independently expressed ABI declarations follow LLVM's experimental
+[plugin types](https://github.com/swiftlang/llvm-project/blob/33957bbc59f4eed39bfee4627ef05e47ef31d801/llvm/include/llvm-c/CAS/PluginAPI_types.h)
+and [functions](https://github.com/swiftlang/llvm-project/blob/33957bbc59f4eed39bfee4627ef05e47ef31d801/llvm/include/llvm-c/CAS/PluginAPI_functions.h),
+licensed under [Apache 2.0 with LLVM exceptions](https://github.com/swiftlang/llvm-project/blob/33957bbc59f4eed39bfee4627ef05e47ef31d801/LICENSE.TXT).
+[Tuist's upstream loader](https://github.com/tuist/tuist/blob/a4c4bfec2eede5d2ac343aa1134460111eefce56/cas-plugin/src/upstream.rs)
+provides an OSS example of using that interface under its
+[MIT license](https://github.com/tuist/tuist/blob/a4c4bfec2eede5d2ac343aa1134460111eefce56/LICENSE).
+The probe reads semantic sizes and reference counts rather than guessing an
+encoding from opaque SDK bytes. Its fake-C ABI, privacy and timeout controls run
+in the existing Linux build job; only the Mac job can qualify Apple's library.

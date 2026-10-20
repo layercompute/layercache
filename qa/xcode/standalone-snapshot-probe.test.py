@@ -11,6 +11,7 @@ from pathlib import Path
 import tempfile
 import sys
 import unittest
+from unittest import mock
 
 sys.dont_write_bytecode = True
 
@@ -143,6 +144,104 @@ _other:
         self.assertIsNone(probe.archive_failure_code("Snapshot archive operation failed: secret:/private/file\n"))
         self.assertIsNone(probe.archive_failure_code("Snapshot archive operation failed: filesystem-missing /private/file\n"))
         self.assertIsNone(probe.archive_failure_code("filesystem-missing"))
+
+    def test_producer_semantics_capture_private_manifest_before_native_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            fixture = probe.Probe(Path("unused"), Path("unused"), parent / "evidence")
+            try:
+                developer = parent / "Developer"
+                library = developer / "usr/lib/libToolchainCASPlugin.dylib"
+                library.parent.mkdir(parents=True)
+                library.write_text("fake library never loaded")
+                fixture.env["DEVELOPER_DIR"] = str(developer)
+                fixture.profile = "xcode-standalone-v1-test"
+                fixture.shape_helper = fixture.private / "fake-helper"
+                store = fixture.private / "producer-store"
+                store.mkdir()
+                plugin = fixture.private / "native-cas/plugin"
+                plugin.mkdir(parents=True)
+                marker = plugin / "producer-only-marker"
+                marker.write_text("private SDK bytes not for output")
+                (fixture.root / "producer-build.log").write_text(f"ValidateCAS {plugin} actual-tool\n")
+                called = []
+
+                def run(name, arguments, **_):
+                    called.append(name)
+                    self.assertTrue(marker.is_file())
+                    if name == "producer-semantic-manifest":
+                        self.assertEqual(arguments[1], store)
+                        manifest = Path(arguments[-1])
+                        self.assertEqual(manifest.parent, fixture.private)
+                        manifest.write_text(json.dumps({"version": 1, "project": probe.PROJECT,
+                            "targets": [{"ordinal": 1, "nativeDigestHex": "0" * 130, "wireReferenceCount": 0,
+                                         "wireReferencesComplete": True, "wireDataBytes": None}]}))
+                        manifest.chmod(0o600)
+                        return "{}"
+                    self.assertEqual(name, "producer-plugin-semantics")
+                    self.assertEqual(arguments[arguments.index("--cas-path") + 1], plugin)
+                    return json.dumps({"version": 1, "available": True, "reason": "available", "abi": {"major": 0, "minor": 1},
+                        "workerStopped": True, "objects": [{"ordinal": 1, "available": False, "reason": "notFound", "dataBytes": None,
+                            "referenceCount": None, "wireReferenceCountMatches": None, "wireDataBytesMatches": None}]})
+
+                with mock.patch.object(fixture, "run", side_effect=run):
+                    self.assertTrue(fixture.collect_producer_semantics(store))
+                self.assertEqual(called, ["producer-semantic-manifest", "producer-plugin-semantics"])
+                result = json.loads((fixture.root / "plugin-semantics.json").read_text())
+                self.assertTrue(result["available"])
+                self.assertFalse(result["objects"][0]["available"])
+                locations = json.loads((fixture.root / "native-cas-locations.json").read_text())
+                self.assertEqual(locations["phase"], "producer-closed-before-consumer")
+                self.assertTrue(locations["storeConfirmedByBuild"])
+                self.assertEqual(plugin.stat().st_mode & 0o777, 0o700)
+                self.assertTrue(marker.is_file())
+                public = json.dumps(result) + json.dumps(locations)
+                self.assertNotIn("0" * 130, public)
+                self.assertNotIn(str(parent), public)
+                self.assertNotIn(marker.read_text(), public)
+            finally:
+                fixture.close()
+
+    def test_missing_producer_native_store_is_unavailable_without_sdk_load(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = probe.Probe(Path("unused"), Path("unused"), Path(temporary) / "evidence")
+            try:
+                developer = fixture.private / "Developer"
+                library = developer / "usr/lib/libToolchainCASPlugin.dylib"
+                library.parent.mkdir(parents=True)
+                library.write_text("fake library never loaded")
+                fixture.env["DEVELOPER_DIR"] = str(developer)
+                with mock.patch.object(fixture, "run") as run:
+                    self.assertTrue(fixture.collect_producer_semantics(fixture.private / "producer-store"))
+                    run.assert_not_called()
+                result = json.loads((fixture.root / "plugin-semantics.json").read_text())
+                self.assertFalse(result["available"])
+                self.assertFalse((fixture.private / "native-cas").exists())
+            finally:
+                fixture.close()
+
+    def test_unconfirmed_native_worker_prevents_consumer_cleanup_or_publication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = probe.Probe(Path("unused"), Path("unused"), Path(temporary) / "evidence")
+            try:
+                native = fixture.private / "native-cas/plugin"
+                native.mkdir(parents=True)
+                marker = native / "preserve-while-worker-unconfirmed"
+                marker.write_text("owned native data")
+                with mock.patch.object(fixture, "fingerprint"), mock.patch.object(fixture, "prepare_project"), \
+                     mock.patch.object(fixture, "team"), mock.patch.object(fixture, "adapter", return_value="producer"), \
+                     mock.patch.object(fixture, "build", return_value={}) as build, \
+                     mock.patch.object(fixture, "stop", return_value={}), \
+                     mock.patch.object(fixture, "collect_producer_semantics", return_value=False), \
+                     mock.patch.object(fixture, "archive") as archive:
+                    with self.assertRaisesRegex(RuntimeError, "worker exit is unconfirmed"):
+                        fixture.qualify()
+                    self.assertEqual(build.call_count, 1)
+                    self.assertEqual(build.call_args.args[0], "producer")
+                    archive.assert_not_called()
+                self.assertTrue(marker.is_file())
+            finally:
+                fixture.close()
 
     def test_evidence_directory_cannot_reuse_existing_tree(self):
         with tempfile.TemporaryDirectory() as root:
