@@ -1,7 +1,7 @@
 # Customer dashboard qualification
 
 Checked on October 20, 2026. The
-[reviewed implementation](https://github.com/ziahamza/layercache/commit/90a5a8b6cf52311c49af4dfcfe1c96c5601ffeda)
+[reviewed implementation](https://github.com/ziahamza/layercache/commit/3e13358f72845d4b9d9cce3038ed71371b3c8a59)
 extends the existing CLI dashboard and authenticated cloud portal. Both use
 the same cache, scope and cost renderer. This receipt describes source
 qualification with isolated synthetic data. It is not a CLI release, hosted
@@ -13,6 +13,12 @@ deployment, customer pruning or billing acceptance.
   backends; conflicts and partial startup preserve existing runtimes. Shutdown
   releases owned listeners and runtime locks. Credentials refresh in memory
   without modifying project configuration.
+- A configured remote with an empty initial capability authenticates before any
+  backend is constructed. Actual Local HTTP restoration and publication use the
+  fresh authority. Unavailable, malformed or missing first login initializes no
+  stores and preserves existing listeners. Pure Local configurations stay
+  account-free and offline. This follow-up closes an external review finding;
+  the earlier browser qualification alone did not cover first-login bootstrap.
 - `--backend` selects the configured remote origin without a Local daemon.
   Changed origins cannot receive previously issued or copied credentials.
   Default-mode live reload still obtains fresh authority for a new connection.
@@ -29,7 +35,8 @@ deployment, customer pruning or billing acceptance.
 
 ## Browser and cost controls
 
-The final candidate passed **222 browser checks** across Chromium, Firefox and
+The [shared renderer and browser fixture source](https://github.com/ziahamza/layercache/commit/90a5a8b6cf52311c49af4dfcfe1c96c5601ffeda)
+passed **222 browser checks** across Chromium, Firefox and
 WebKit: 40 CLI checks and 34 hosted checks per engine. Checks include:
 
 - Personal/Team authority, trusted Public source attribution, eligible-outcome
@@ -56,7 +63,9 @@ The affected server, portal, dashboard and CLI Go suites pass, including their
 race checks. TypeScript checks, generated browser bundles, Go vet, workflow/shell
 lint and whitespace checks pass. Local cache fixtures use an isolated temporary
 filesystem with enough real headroom; admission policies are unchanged. Required
-hosted CI remains visible on the implementing pull request.
+hosted CI remains visible on [PR #67](https://github.com/ziahamza/layercache/pull/67).
+The first-login follow-up changes CLI startup and its Go fixtures; the renderer
+and browser fixtures retain the same bytes as their 222-check qualification.
 
 Reports currently cover reconciled Turbo, Actions and BuildKit outcomes. Native
 Gradle, Nx, Bazel, Xcode and Expo reporting is incomplete. Artifact-store usage

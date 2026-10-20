@@ -29,13 +29,16 @@ workspaces and filesystem migration are outside the current product scope.
   and unavailable invoices. Do not infer total spend from current stored bytes.
   Acceptance and outstanding native metering/billing limits are recorded in the
   [dashboard specification](docs/customer-dashboard-spec.md).
-  [Reviewed implementation](https://github.com/ziahamza/layercache/commit/90a5a8b6cf52311c49af4dfcfe1c96c5601ffeda)
+  [Reviewed implementation](https://github.com/ziahamza/layercache/commit/3e13358f72845d4b9d9cce3038ed71371b3c8a59)
   passes affected Go suites and race checks, type checking, builds, vet, lint
   and 222 isolated browser checks across Chromium, Firefox and WebKit.
   [Qualification](docs/evidence/customer-dashboard-20261020.md) records actual
   pruning, read-only denial, lifecycle and exact-currency controls. This is
   source qualification; a CLI release and hosted portal deployment remain
   separate gates. Full native usage and provider billing remain open below.
+  [PR #67](https://github.com/ziahamza/layercache/pull/67) tracks hosted source
+  checks. Initial remote authentication now precedes owned-backend construction,
+  with restored and published native bytes tested from an empty capability.
 
 - [ ] **Launch hosted private caches with R2-backed storage pools.**
   Owner: LayerCache cloud/storage. The October 19 user priority is a usable
