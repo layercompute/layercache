@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/measurement"
 )
 
 // A hosted acknowledgement is only a cache presence observation. It does not
@@ -46,18 +47,9 @@ func syncRemoteTurboResults(ctx context.Context, cfg config.Config, hashes []str
 }
 
 func reconcileRemoteTurboSummaries(ctx context.Context, cfg config.Config, documents [][]byte) (int, error) {
-	summaries := make([]json.RawMessage, len(documents))
-	for i, document := range documents {
-		summaries[i] = document
-	}
-	body, err := json.Marshal(struct {
-		Summaries []json.RawMessage `json:"summaries"`
-	}{summaries})
+	body, err := measurement.TurboReportPayload(documents)
 	if err != nil {
 		return 0, err
-	}
-	if len(body) > 8<<20 {
-		return 0, errors.New("hosted Turbo summaries exceed 8 MiB")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(cfg.TeamURL, "/")+"/v1/reports/turbo", bytes.NewReader(body))
 	if err != nil {
