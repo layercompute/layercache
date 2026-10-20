@@ -1,6 +1,17 @@
 # Xcode compilation cache adapter
 
-`layercache xcode run` integrates with Xcode 26's native compilation cache. It enables Apple's bundled CAS plugin and serves LLVM's CAS and compilation action-index protocols on a private Unix socket for one Xcode build. The verified artifact store supplies project/toolchain namespaces and a bounded quota. Clang, Objective-C, module and PCH replay is qualified. External Swift compilation replay remains unqualified; the mixed-language fixture still compiles its Swift source on the warm consumer. Persisting Swift's local CAS is a separate reuse path and does not prove that external replay works. See the [support audit](research/xcode26-compilation-cache-20261019.md) for exact coverage and evidence.
+`layercache xcode run` integrates with Xcode's native compilation cache. It
+enables Apple's bundled CAS plugin and serves LLVM's CAS and compilation
+action-index protocols on a private Unix socket for one build.
+`layercache xcode serve` exposes the same adapter when the workflow owns
+`xcodebuild`.
+The verified artifact store supplies project/toolchain namespaces and a bounded
+quota. Clang, Objective-C and PCH replay is qualified within the fixtures below.
+External Swift compilation replay remains unqualified; the mixed-language
+fixture still compiles its Swift source on the warm consumer. Persisting Swift's
+local CAS is a separate reuse path and does not prove external replay. See the
+[support audit](research/xcode26-compilation-cache-20261019.md) for the earlier
+toolchain's coverage and evidence.
 
 ```sh
 layercache xcode run \
@@ -122,11 +133,15 @@ Before returning a cached action, this revision verifies its complete transitive
 CAS graph and atomically leases the exact objects for a two-minute fetch window.
 It recognizes LLVM's `CASID` root, Clang's output-name-to-ID map and the native
 Xcode plugin's inline `value` node. Native nodes include inline data and external
-references; encoded external nodes are followed transitively. The native parser
-accepts the bounded message shapes recorded from the Xcode 26.6 fixture and
-returns a miss for unsupported fields, malformed descriptors and unknown action
-schemas. The alternate data-chunk branch accepts only its recorded single-byte
-sentinel; new native formats need qualification before they can become hits.
+references; encoded external nodes are followed transitively. The existing
+reference grammar for nodes without a marker is unchanged. A separate marker
+form requires a leading data chunk with nested field 2 containing canonical
+varints that form a permutation of `1..N`, followed by exactly `N` literal data
+chunks with nested field 1, where `N` is 1 through 256. These literals contain
+terminal native leaves. This form permits no other chunks, reference unions or
+CAS envelope references. Duplicate, zero-based, out-of-range or noncanonical
+indices, missing or extra literals, unknown fields and malformed descriptors
+return an action miss. Other native formats still require qualification.
 Eviction during verification produces an action miss. During the window, Local
 Cache deletion, LRU and impact collection preserve all leased objects, including
 descendants shared with another action. The committed byte quota remains in force;
@@ -142,6 +157,20 @@ ten-second lookup budget. Across the store, at most 4,096 graph owners and 262,1
 owner/object memberships are retained. A graph which cannot be admitted returns
 an action miss. These changes are newer than the published beta.3 artifact.
 
+The Xcode 27 qualification uses Apple's native CAS API to check every declared
+native object before publication or consumer startup. It requires complete
+ordinal coverage, zero root data, matching child counts and indexed content,
+and terminal children. Public reports contain only bounded structure, counts
+and comparison booleans; native digests and literal hashes stay in the private
+manifest. The semantic probe permits at most 256 targets, 256 children per
+target, 1,024 children overall, 64 KiB per child and a shared 64 MiB root/child
+byte budget. Its manifest and report are each bounded to 128 KiB. Closed-store
+shape inspection reads at most 256 rows and 64 MiB and emits at most 256 KiB.
+Exceeding an inline comparison bound aborts manifest generation and fails
+qualification closed. Optional root-only counts are deferred and cannot qualify
+replay. See the [QA contract](../qa/xcode/README.md#standalone-xcode-27-snapshot-gate)
+for the diagnostic boundary.
+
 `graphChecks`, `graphObjectsChecked` and `graphLookupNanos` measure complete graph
 verification and lease admission. Divide the nanosecond total by `graphChecks` to
 inspect average lookup cost. `graphLeaseMisses` records admission failures caused
@@ -152,6 +181,25 @@ Build the Darwin arm64 binary on Linux with `GOOS=darwin GOARCH=arm64 CGO_ENABLE
 ## Qualification
 
 [Hosted replay and pressure qualification](https://github.com/ziahamza/layercache/actions/runs/39072238914/job/117512286300) passed on 2026-10-17 at source `90b07ca0e83117a638604bb7a7944ad89483ff3e`, using Xcode 26.6 build 17F113. The mixed Swift/Objective-C command-line tool builds with fresh DerivedData. The native local CAS is deleted between invocations; only the closed Layer Cache store survives. The warm consumer recorded 69 of 71 action lookups as hits and replayed 70 CAS objects. Its two Swift source compilation tasks still reported replay misses. This proves LLVM protocol compatibility; it is not complete Swift replay or an app release speed benchmark.
+
+The Xcode 27 standalone gate passed at PR #76 source
+`fc8b449659de2889dc88dc2ec7dbd5e5bdf6a4a9` in the
+[candidate job](https://github.com/ziahamza/layercache/actions/runs/39467518317/job/118783279071)
+and repeated after merge at `86d2383d7be6f2831851444faf4e11f3ee67a8d0` in the
+[post-merge job](https://github.com/ziahamza/layercache/actions/runs/39468895209/job/118788090537).
+Both used Xcode 27.0 build `27A266a`, iPhoneSimulator 27.0 SDK build `24A430`
+and macOS 27.0.1 build `26A434`, compiling arm64 Release with `-O2`.
+The small Objective-C simulator library used the same VM and source path, with
+fresh adapter/compiler processes, native CAS and DerivedData for the consumer.
+Its closed store crossed the existing authenticated HTTP archive transport to
+a separate reader cache and restored store. Both jobs recorded 10/10 action
+hits and 20/20 CAS hits, main-source and PCH hit diagnostics, and a changed-source
+compilation miss producing 43 instead of 42, checked by object bytes and
+disassembly. The native API also verified the complete indexed leaf mapping
+before transfer. This qualifies Clang/Objective-C and PCH replay for that exact
+fixture and toolchain. Phase timings are observations from this small fixture
+and establish no application savings. Fresh-worker restoration, managed Xcode
+Cloud acceptance, signed builds and external Swift replay remain unqualified.
 
 The dedicated workflow cross-compiles on Linux and repeats this replay with real Xcode. Its Linux runner defaults to GitHub Ubuntu until the repository has Ubicloud installed and `LAYERCACHE_UBICLOUD_ENABLED=true`; reruns use Ubuntu for recovery. Go protocol tests additionally exercise immutable action collisions, project/toolchain misses, file/inline identity, a fresh store consumer and compiler failure/uncached retry behavior.
 

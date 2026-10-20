@@ -184,12 +184,29 @@ test('the shipped native CJS action finds its sibling worker', { timeout: 5000 }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+// macOS can add this key even when spawn receives an empty environment.
+// https://github.com/nodejs/node/blob/3e5c8afba6dcff91d46b8204276d62e3843b23b6/test/embedding/test-embedding-permission-env.js#L28-L30
+function workerEnvironmentIsIsolated(keys: string[], platform: string): boolean {
+  return keys.every(key => platform === 'darwin' && key === '__CF_USER_TEXT_ENCODING');
+}
+
+test('the worker environment fixture permits only the Darwin runtime key', () => {
+  for (const platform of ['linux', 'darwin', 'win32']) {
+    assert.equal(workerEnvironmentIsIsolated([], platform), true);
+    assert.equal(workerEnvironmentIsIsolated(['__CF_USER_TEXT_ENCODING'], platform), platform === 'darwin');
+    for (const key of ['SECRET', 'GITHUB_TOKEN', 'NODE_OPTIONS', '__CF_USER_TEXT_ENCODING_SUFFIX', '__CF_UNEXPECTED']) {
+      assert.equal(workerEnvironmentIsIsolated([key], platform), false);
+      assert.equal(workerEnvironmentIsIsolated(['__CF_USER_TEXT_ENCODING', key], platform), false);
+    }
+  }
+});
+
 test('the isolated worker inherits no token, environment or Node flags', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'layercache-observation-worker-'));
   try {
     const worker = join(directory, 'fixture.cjs');
     const sample = await collectExecutionSample({}, { ...base, read: async () => null });
-    await writeFile(worker, `let source='';process.stdin.on('data',chunk=>source+=chunk);process.stdin.on('end',()=>{const input=JSON.parse(source);if(Object.keys(process.env).length||Object.keys(input).some(key=>!['GITHUB_WORKSPACE','RUNNER_TEMP'].includes(key))||process.execArgv.length)process.exit(2);process.stdout.write(${JSON.stringify(JSON.stringify(sample))});});`);
+    await writeFile(worker, `let source='';process.stdin.on('data',chunk=>source+=chunk);process.stdin.on('end',()=>{const input=JSON.parse(source);if(!(${workerEnvironmentIsIsolated.toString()})(Object.keys(process.env),process.platform)||Object.keys(input).some(key=>!['GITHUB_WORKSPACE','RUNNER_TEMP'].includes(key))||process.execArgv.length)process.exit(2);process.stdout.write(${JSON.stringify(JSON.stringify(sample))});});`);
     assert.deepEqual(await collectExecutionSampleIsolated(env, worker), sample);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

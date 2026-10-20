@@ -40,6 +40,9 @@ jobs:
         if: steps.scope.outputs.mode != 'docs'
       - run: pnpm check
         if: steps.scope.outputs.mode != 'docs'
+      - name: Test isolated execution observations
+        if: steps.scope.outputs.mode != 'docs'
+        run: node --test action/setup/execution.test.ts
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         if: steps.scope.outputs.mode != 'docs'
         with:
