@@ -172,6 +172,14 @@ directory name, executable modes, and safe internal symlinks. CLI results are
 JSON. A miss has `hit:false`; errors return a nonzero exit status. The Expo adapter
 and GitHub action translate errors into explicit build fallback.
 
+Operator-provisioned private snapshots can instead use an explicit `--endpoint`
+and `--credential-file`. This exchanges a private bootstrap for an exact-artifact,
+short-lived reader or writer capability before consulting local archives. Scoped
+saves require confirmed immutable Team acceptance. See
+[snapshot authentication](../docs/snapshot-auth.md) and the
+[standalone Xcode lifecycle](../docs/xcode-cache.md#standalone-lifecycle-for-managed-builds).
+The shared bootstrap does not attest to the build's source or provider identity.
+
 ## Storage, trust, and current limits
 
 The shared local archive cache defaults to `~/.cache/layercache/native-v1`, outside

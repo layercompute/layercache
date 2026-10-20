@@ -246,7 +246,7 @@ func (p *Portal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Path
-	if strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/v1/cache/") || strings.HasPrefix(path, "/v1/gradle-cache/") || strings.HasPrefix(path, "/v1/bazel-cache/") || strings.HasPrefix(path, "/v1/members/") || strings.HasPrefix(path, "/v1/buildkit/promotion-leases/") || path == "/v1/audit" || path == "/v1/sync/turbo" || path == execution.Path || path == "/v1/retained-artifacts" || strings.HasPrefix(path, "/v1/retained-artifacts/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || path == "/v1/gc" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" {
+	if strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/v1/cache/") || strings.HasPrefix(path, "/v1/gradle-cache/") || strings.HasPrefix(path, "/v1/bazel-cache/") || strings.HasPrefix(path, "/v1/members/") || strings.HasPrefix(path, "/v1/buildkit/promotion-leases/") || path == "/v1/audit" || path == "/v1/sync/turbo" || path == execution.Path || path == "/v1/retained-artifacts" || strings.HasPrefix(path, "/v1/retained-artifacts/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || path == "/v1/gc" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" || path == "/v1/auth/snapshot/exchange" {
 		p.gateway.ServeHTTP(w, r)
 		return
 	}

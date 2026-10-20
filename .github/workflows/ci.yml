@@ -50,6 +50,21 @@ jobs:
         run: |
           go build -o "$RUNNER_TEMP/layercache-native-test" ./cmd/layercache
           LAYERCACHE_SETUP_BINARY="$RUNNER_TEMP/layercache-native-test" pnpm test
+      - name: Qualify standalone compiler lifecycle and scoped snapshots
+        if: steps.scope.outputs.mode != 'docs'
+        env:
+          LAYERCACHE_BIN: ${{ runner.temp }}/layercache-native-test
+          NATIVE_CACHE_CLI: ${{ github.workspace }}/native/dist/cli.js
+          LAYER_CACHE_XCODE_LIFECYCLE_REPORT: ${{ runner.temp }}/xcode-lifecycle-evidence.json
+        run: go test ./qa/xcode-lifecycle -run '^TestScopedClosedStoreRoundTrip$' -count=1 -v
+      - name: Preserve sanitized lifecycle evidence
+        if: (steps.scope.outputs.mode != 'docs') && (always())
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: xcode-lifecycle-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/xcode-lifecycle-evidence.json
+          if-no-files-found: warn
+          retention-days: 3
       - name: Gate candidate with real Nx native HTTP acceptance
         if: steps.scope.outputs.mode != 'docs'
         env:

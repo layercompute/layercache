@@ -15,6 +15,99 @@ layercache xcode run \
 
 Create the socket parent directory privately and use a unique socket for each invocation. The wrapper enables Xcode compilation caching, its plugin integration, remote service path, detached key queries and diagnostic remarks. It acquires the runtime data-directory lock before opening the store, stops RPC handlers and closes SQLite before releasing ownership, including after compilation fails. A second owner with a different socket is rejected without running store reconciliation. Existing socket parent directories must belong to the current user and have mode 0700. Persist the closed `--data-dir` with the CI cache mechanism. Keep signed products, provisioning profiles, keychains and DerivedData out of that snapshot. Include the exact Xcode, compiler and SDK identity in both the compatibility argument and snapshot key.
 
+## Standalone lifecycle for managed builds
+
+When the build provider owns `xcodebuild`, start the adapter independently:
+
+```sh
+layercache xcode serve \
+  --data-dir "$CACHE_STORE" --socket "$CONTROL_ROOT/cas.sock" \
+  --ready-file "$CONTROL_ROOT/ready.json" \
+  --project "$CACHE_PROJECT" --compatibility "$EXACT_TOOLCHAIN_PROFILE" \
+  --max-size 5368709120 --stats-file "$CONTROL_ROOT/stats.json"
+```
+
+This is a foreground process. A provider hook can background it and retain its
+process handle, but must wait for successful readiness before enabling the
+compiler's remote plugin. The readiness file and control socket belong outside
+the cache directory being snapshotted. Their parent is a private directory owned
+by the current user. Use a distinct socket and readiness file for each active
+adapter. The adapter publishes readiness only after ownership, recovery and RPC
+startup succeed.
+
+```sh
+layercache xcode status --ready-file "$CONTROL_ROOT/ready.json"
+# The provider runs its own build and waits for its compiler work to finish.
+layercache xcode stop --ready-file "$CONTROL_ROOT/ready.json"
+```
+
+Control requests use the instance identity in the protected readiness file.
+They never signal a PID. A successful live stop confirms RPC handlers stopped,
+SQLite closed and store ownership released. A missing process, unreachable
+socket or timed-out shutdown does not establish a safe snapshot boundary.
+Status can return a retained stopped receipt with `historical:true`; that
+receipt records an earlier instance and cannot acknowledge a new stop. Keep
+statistics outside the store and separate from readiness and socket files.
+Keep an unconfirmed directory out of publication. Serialize the snapshot with
+any later owner of that directory. Cancellation and a later
+restart retain the exclusive store ownership and existing recovery checks.
+
+The standalone process does not inject settings into Apple's build. The owning
+workflow must set `COMPILATION_CACHE_ENABLE_CACHING=YES`,
+`COMPILATION_CACHE_ENABLE_PLUGIN=YES`,
+`COMPILATION_CACHE_REMOTE_SERVICE_PATH` to the ready adapter's socket,
+`COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES` and
+`COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES` through its supported build
+configuration. Enabling settings or receiving readiness does not establish a
+compiler hit. Preserve the provider's own build/test lifecycle and fresh runtime
+assertions.
+
+## Scoped private snapshot transfer
+
+Reuse the [native archive CLI](../native/README.md#local-native-artifacts-and-fresh-worktrees)
+with Node 24 or later. The credential file holds one operator-provisioned shared
+bootstrap, not an Apple or GitHub identity. Its descriptor, provisioning and
+revocation are documented in [snapshot authentication](snapshot-auth.md).
+Keep the bootstrap file private and outside the snapshot.
+
+```sh
+node "$LAYER_CACHE_CHECKOUT/native/dist/cli.js" restore \
+  --endpoint "$CACHE_ORIGIN" --credential-file "$READER_CREDENTIAL_FILE" \
+  --project "$CACHE_PROJECT" --compatibility "$EXACT_TOOLCHAIN_PROFILE" \
+  --key "$SNAPSHOT_GENERATION" --path "$NEW_RESTORE_PARENT" \
+  --cache-dir "$TRANSFER_CACHE" --max-bytes 5368709120
+
+# After a successful, confirmed stop, only the trusted publisher may save.
+node "$LAYER_CACHE_CHECKOUT/native/dist/cli.js" save \
+  --endpoint "$CACHE_ORIGIN" --credential-file "$WRITER_CREDENTIAL_FILE" \
+  --project "$CACHE_PROJECT" --compatibility "$EXACT_TOOLCHAIN_PROFILE" \
+  --key "$NEW_SNAPSHOT_GENERATION" --path "$CLOSED_CACHE_STORE" \
+  --cache-dir "$TRANSFER_CACHE" --max-bytes 5368709120
+```
+
+Restore needs a new destination and preserves the saved top-level directory
+inside it. Point the next adapter at that restored store. A miss returns
+`hit:false`; ordinary compilation remains the fallback. Changed snapshots need
+distinct immutable generation keys within the grant's namespace. Consumers name
+a published generation explicitly; this interface does not discover or rotate
+a latest generation.
+
+Scoped commands exchange their bootstrap before consulting their local archive
+cache. The backend issues a short-lived exact-artifact capability and rechecks
+the current grant at each scoped archive request. A scoped save rejects a
+conflicting winner or a degraded/local-queue acknowledgment. These are optional
+cache snapshots, with the existing cache eviction policy. Their acknowledgments
+do not grant retained-artifact TTL or future availability.
+
+The archive client still needs local staging and extraction space. The Go store
+budget and archive budget are separate; neither limits caller-owned restored
+directories or all physical disk allocation. Preserve a filesystem reserve,
+measure packing/transfer/unpacking and complete job time, and avoid duplicating
+the entire DerivedData tree. This transport does not snapshot, checkpoint or
+qualify Apple's own built-in CAS directory while another process owns it.
+
+## Compiler behavior and native qualification
+
 A miss or corrupt object triggers compilation. A cache directory or metadata startup failure runs the compiler once with caching disabled and reports `uncachedFallback`. Insecure socket directories, invalid configuration and an already-owned data directory are rejected. Once compilation starts, its result is preserved even if a cache backend error or statistics write also fails; a cache error alone cannot establish the cause of a compiler failure. Statistics and close warnings do not replace the compiler result. `uncachedRetry` remains false for compatibility with existing receipts. `cacheErrors` and real CAS/action request and hit counts report cache behavior. An action with a missing or corrupt indirect CAS output is returned as a miss; size checks include serialized object and response envelopes before accepting an object. The adapter opens no TCP listener and requires no account or external service deployment. It currently uses a local store; CI snapshot transport supplies reuse between runners.
 
 Before returning a cached action, this revision verifies its complete transitive

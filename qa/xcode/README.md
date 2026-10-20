@@ -53,3 +53,54 @@ An independently pinned root with an unleased, unconsumed leaf proves quota
 eviction of that leaf fails the second inspection. A healthy graph can pass
 with an unused first output and a real read from another promised object.
 Only the macOS workflow can qualify the actual Apple compiler.
+
+## Standalone Xcode 27 snapshot gate
+
+`standalone-snapshot-probe.py` qualifies direct `xcodebuild` use with the
+standalone lifecycle and the existing native archive client. The normal
+`Xcode compiler cache` workflow adds one bounded `xcode-27` job alongside the
+unchanged Xcode 26 pressure fixture. The selected release is checked against
+actual Xcode build `27A266a`, macOS build `26A434` and iPhoneSimulator SDK build
+`24A430`. The job records compiler version and executable SHA256, host and target
+facts, minimum iOS 16.4 and Release `-O2`. A runner label alone cannot pass it.
+The [published runner image](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+was checked on 2026-10-20; image changes require reviewing the expected profile.
+
+```sh
+python3 qa/xcode/standalone-snapshot-probe.py \
+  /absolute/path/to/layercache /absolute/path/to/native/dist/cli.js \
+  /new/private/evidence-directory
+```
+
+The small Objective-C simulator library uses a precompiled header. It needs no
+simulator boot, Apple signing or Swift code. `xcodebuild` is invoked directly
+with the plugin settings and the ready standalone socket. Only after stop
+acknowledges that exact instance's closed store, removes its socket and the
+process exits can the scoped writer archive it. The fixture publishes one
+immutable generation through a real isolated Team server, using generated,
+short-lived fixture grants. It removes the producer store, restores through a
+fresh reader archive cache into a new destination, then starts another adapter
+and builds with fresh DerivedData and native CAS.
+
+Passing requires Clang compilation and PCH hit diagnostics, adapter action/CAS
+hits and verified graph reads. An actual relevant source edit must produce a
+Clang miss and a newly compiled arm64 function returning 43 instead of 42.
+Object markers and disassembly verify the outputs; generic protocol counters
+alone cannot pass. The read-only consumer must issue zero archive PUTs. Total
+save and restore command times include authentication, packing or verification,
+transfer and extraction. The separate request timings are not a network
+bandwidth measurement or a whole-application speedup.
+
+Server configuration, grants, credentials, source and caches stay under the
+private `.private` directory. The workflow uploads an explicit allowlist of
+compiler logs, sanitized closure/statistics/transfer results and toolchain
+facts. It never uploads the private subtree or command transcripts containing
+credentials. Failure preserves the available compiler evidence and fails the
+job. Linux evidence-parser controls run in the existing build job and establish
+no compiler acceptance themselves.
+
+This gate does not qualify external Swift replay, signed device builds or the
+Apple-owned Xcode Cloud lifecycle. Application adoption still needs its exact
+compiler fingerprint, supported workflow settings, scoped trusted publication
+and fresh producer/consumer acceptance. Apple's own compilation cache stays
+separate and enabled under its owning workflow policy.

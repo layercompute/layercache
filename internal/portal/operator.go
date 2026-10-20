@@ -57,7 +57,7 @@ func operatorFingerprint(project OperatorProject) (string, string, error) {
 	// and preserving current SQL memberships instead of reapplying this file.
 	cfg.CloudPostgresURL, cfg.CloudS3Endpoint, cfg.CloudS3Bucket, cfg.CloudS3Region = "", "", "", ""
 	cfg.CloudS3AccessKey, cfg.CloudS3SecretKey, cfg.TeamMembers = "", "", nil
-	cfg.Listen, cfg.ActionsArchiveBaseURL = "", ""
+	cfg.Listen, cfg.ActionsArchiveBaseURL, cfg.SnapshotCredentialsFile = "", "", ""
 	return storageFingerprint(struct {
 		Project OperatorProject
 		Config  config.Config
