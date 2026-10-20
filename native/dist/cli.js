@@ -3980,6 +3980,7 @@ var maximumBytes = 64 * 1024 * 1024;
 var maximumMatches = 8192;
 var maximumPaths = 4096;
 var maximumPathCharacters = 1024;
+var qualifiedVersions = /* @__PURE__ */ new Set(["9.3.1", "9.4.1"]);
 var taskKeyLine = /^Build cache key for task '(:[^'\r\n]*)' is ([a-f0-9]{32})$/;
 var disabledLine = /^Caching disabled for task '(:[^'\r\n]*)' because:$/;
 var pathControls = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
@@ -3987,7 +3988,7 @@ function unavailable(reason) {
   return { keys: /* @__PURE__ */ new Map(), ineligiblePaths: /* @__PURE__ */ new Set(), ambiguousPaths: /* @__PURE__ */ new Set(), duplicateKeys: /* @__PURE__ */ new Set(), reason };
 }
 function parseGradleInfo(text, { gradleVersion = "9.3.1" } = {}) {
-  if (gradleVersion !== "9.3.1") return unavailable("unsupported-gradle-version");
+  if (!qualifiedVersions.has(gradleVersion)) return unavailable("unsupported-gradle-version");
   if (typeof text !== "string") return unavailable("invalid-info-log");
   if (text.length > maximumBytes || Buffer.byteLength(text, "utf8") > maximumBytes) {
     return unavailable("info-log-too-large");

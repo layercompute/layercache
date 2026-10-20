@@ -50,8 +50,20 @@ test('missing or unsupported key evidence preserves accepted outcomes without a 
     assert.notEqual(keyEvidence, 'native-info-key-correlation');
     assert.equal(body.eligible, undefined);
   }
-  const {document, options} = fixture();document.gradleVersion = '9.4.1';
+  const {document, options} = fixture();document.gradleVersion = '9.4.2';
   assert.ok(projectGradleInvocation(document, options).body.tasks.every(task => task.nativeKey === undefined));
+});
+
+test('Gradle 9.4.1 projects exact native keys, successful duration and disabled-task eligibility', () => {
+  const {document, options} = fixture(['executed', 'fromCache', 'executed']);document.gradleVersion = '9.4.1';
+  options.infoText = document.tasks.slice(0, 2).map(task => `Build cache key for task '${task.taskPath}' is ${nativeKey}\n`).join('') +
+    `Caching disabled for task '${document.tasks[2].taskPath}' because:\n  Native reason stays local\nBUILD SUCCESSFUL in 1s\n`;
+  const {body, keyEvidence} = projectGradleInvocation(document, options);
+  assert.equal(keyEvidence, 'native-info-key-correlation');assert.equal(body.status, 'success');
+  assert.deepEqual(body.tasks.map(task => task.cacheEligibility), ['eligible', 'eligible', 'ineligible']);
+  assert.deepEqual(body.tasks.map(task => task.nativeKey), [nativeKey, nativeKey, undefined]);
+  assert.equal(body.tasks[0].executionMs, 500);assert.equal(body.tasks[1].executionMs, undefined);
+  assert.equal(JSON.stringify(body).includes('Native reason'), false);
 });
 
 test('up-to-date skipped no-source and failed tasks never become eligible misses', () => {

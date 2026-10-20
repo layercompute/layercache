@@ -81,6 +81,14 @@ workspaces and filesystem migration are outside the current product scope.
   other providers. Automatic job-allocation/billing ingestion, native application
   receipts, attributable savings and shared snapshot-purpose work keep this
   parent task open. Do not infer zero cost from a provider's absent timing data.
+  October 20 UTC [Gradle 9.4.1 source qualification](docs/evidence/gradle-941-metering-20261020.md)
+  now covers exact info-log key correlation and completed-task timing while
+  preserving the pinned 9.3.1 protocol controls. Owner: LayerCache native
+  integrations. Actual seven-stage controls passed on both versions, including
+  root/multi/composite/buildSrc and parallel tasks, configuration-cache reuse,
+  restores and disabled/failed/shared-key behavior. Strict malformed and
+  unsupported-version refusal and packaged offline export also pass.
+  Application action adoption and normal-run receipts remain separate gates.
 
 - [ ] **Show where LayerCache runs and the resources available there.**
   Owner: LayerCache observability. October 20 user outcome: recognize the same

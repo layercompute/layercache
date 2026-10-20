@@ -242,11 +242,11 @@ test('post cleanup refuses directories outside the owned runner location', () =>
   } finally { fixture.cleanup(); }
 });
 
-function meteredInvocation(fixture, result) {
+function meteredInvocation(fixture, result, gradleVersion = '9.3.1') {
   const start = Date.now() - 1000, end = Date.now() - 500;
   const taskPath = ':private:compile';
   const workRef = 'sha256:' + createHash('sha256').update(`layercache-gradle-task-v1\0${fixture.env.INPUT_PROJECT}\0${fixture.env.INPUT_COMPATIBILITY}\0${taskPath}`).digest('hex');
-  const document = {version: 1, invocationId: 'gradle-11111111-1111-4111-8111-111111111111', gradleVersion: '9.3.1',
+  const document = {version: 1, invocationId: 'gradle-11111111-1111-4111-8111-111111111111', gradleVersion,
     startedAtMs: start, finishedAtMs: end, status: 'unknown', truncated: false,
     tasks: [{taskPath, workRef, startedAtMs: start, finishedAtMs: end, outcome: 'fromCache'}]};
   writeFileSync(join(result.reportDirectory, document.invocationId + '.json'), JSON.stringify(document), {mode: 0o600});
@@ -255,14 +255,14 @@ function meteredInvocation(fixture, result) {
   return {...fixture.env, ...Object.fromEntries(Object.entries(fileValues(fixture.env.GITHUB_STATE)).map(([name, value]) => ['STATE_' + name, value]))};
 }
 
-test('advertised native reporting exports private collection and renews this action scope before final submission', async () => {
+test('advertised native reporting projects Gradle 9.4.1 and renews this action scope before final submission', async () => {
   const fixture = job(), oauth = await issuer({nativeReports: true}), messages = [];
   try {
     fixture.env['INPUT_NATIVE-INFO-LOG'] = join(fixture.root, 'native-info.log');
     const result = await setupGradle(fixture.env, {fetcher: oauth.fetcher, log: value => messages.push(value)});
     assert.equal(statSync(result.reportDirectory).mode & 0o777, 0o700);
     assert.equal(fileValues(fixture.env.GITHUB_ENV).LAYER_CACHE_GRADLE_REPORT_DIR, result.reportDirectory);
-    const env = meteredInvocation(fixture, result);
+    const env = meteredInvocation(fixture, result, '9.4.1');
     env.LAYER_CACHE_GRADLE_TOKEN = 'later-action-token-for-another-project';
     env.INPUT_PROJECT = 'later-project';
     const completed = await completeGradle(env, {fetcher: oauth.fetcher, log: value => messages.push(value)});

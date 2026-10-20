@@ -89,6 +89,18 @@ test('one invocation exports stable retry bytes and never overwrites an existing
   assert.equal((await cli(withValue(f.args, '--output', linked))).code, 1); assert.equal(await readFile(f.output, 'utf8'), before);
 });
 
+test('offline Gradle 9.4.1 export retains qualified keys and original task-operation duration', async t => {
+  const f = await files(t);
+  f.document.gradleVersion = '9.4.1'; await writeFile(f.report, JSON.stringify(f.document));
+  const result = await cli(f.args);assert.equal(result.code, 0, result.stderr);
+  const report = JSON.parse(await readFile(f.output, 'utf8'));
+  assert.equal(report.status, 'success');
+  assert.equal(report.tasks[0].nativeKey, nativeKeys[0]);assert.equal(report.tasks[0].executionMs, 500);
+  assert.equal(report.tasks[1].nativeKey, nativeKeys[1]);assert.equal(report.tasks[1].outcome, 'fromCache');
+  assert.equal(report.tasks[2].cacheEligibility, 'ineligible');assert.equal(report.tasks[2].nativeKey, undefined);
+  assert.doesNotMatch(JSON.stringify(report), /private|taskPath|command|token/i);
+});
+
 test('missing unsupported or unsafe optional info cannot invent keys or discard native FROM-CACHE outcomes', async t => {
   const f = await files(t);
   const symlinkInfo = join(f.root, 'symlink-info'); await symlink(f.info, symlinkInfo);
@@ -107,7 +119,7 @@ test('missing unsupported or unsafe optional info cannot invent keys or discard 
     assert.ok(report.tasks.every((row: {nativeKey?: string}) => row.nativeKey === undefined));
     assert.equal(report.tasks[0].cacheEligibility, undefined); assert.equal(report.tasks[2].cacheEligibility, undefined);
   }
-  f.document.gradleVersion = '9.4.1'; await writeFile(f.report, JSON.stringify(f.document));
+  f.document.gradleVersion = '9.4.2'; await writeFile(f.report, JSON.stringify(f.document));
   const result = await cli(f.args); assert.equal(result.code, 0, result.stderr);
   const report = JSON.parse(await readFile(f.output, 'utf8'));
   assert.equal(report.status, 'unknown'); assert.ok(report.tasks.every((row: {nativeKey?: string}) => row.nativeKey === undefined));

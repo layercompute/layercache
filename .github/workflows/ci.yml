@@ -82,28 +82,51 @@ jobs:
           path: ${{ runner.temp }}/nx-native-evidence.json
           if-no-files-found: warn
           retention-days: 30
-      - name: Gate the native Gradle protocol on Linux
+      - name: Cache pinned Gradle distributions
+        if: (steps.scope.outputs.mode != 'docs') && (runner.os == 'Linux')
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.tool_cache }}/layercache-gradle-distributions
+          key: gradle-native-linux-v1-9.3.1-b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06-9.4.1-2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb
+      - name: Gate native Gradle protocol and qualified metering versions on Linux
         if: (steps.scope.outputs.mode != 'docs') && (runner.os == 'Linux')
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-native-test
           GRADLE_QA_OUTPUT: ${{ runner.temp }}/gradle-native-evidence.json
         run: |
-          curl --fail --silent --show-error --location --retry 2 \
-            --connect-timeout 10 --max-time 120 \
-            https://services.gradle.org/distributions/gradle-9.3.1-bin.zip \
-            --output "$RUNNER_TEMP/gradle-native.zip"
-          echo "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06  $RUNNER_TEMP/gradle-native.zip" | sha256sum --check --strict
-          unzip -q "$RUNNER_TEMP/gradle-native.zip" -d "$RUNNER_TEMP/gradle-native"
+          mkdir -p "$RUNNER_TOOL_CACHE/layercache-gradle-distributions"
+          for gradle_version in 9.3.1 9.4.1; do
+            gradle_archive="$RUNNER_TOOL_CACHE/layercache-gradle-distributions/gradle-$gradle_version-bin.zip"
+            if [[ ! -f "$gradle_archive" ]]; then
+              curl --fail --silent --show-error --location --retry 2 \
+                --connect-timeout 10 --max-time 120 \
+                "https://services.gradle.org/distributions/gradle-$gradle_version-bin.zip" \
+                --output "$gradle_archive"
+            fi
+            if [[ "$gradle_version" == 9.3.1 ]]; then
+              gradle_checksum=b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06
+            else
+              gradle_checksum=2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb
+            fi
+            echo "$gradle_checksum  $gradle_archive" | sha256sum --check --strict
+            unzip -q "$gradle_archive" -d "$RUNNER_TEMP/gradle-native"
+          done
           export JAVA_HOME="${JAVA_HOME_17_X64:?The native fixture requires JDK 17}"
           export PATH="$JAVA_HOME/bin:$PATH"
           export GRADLE_BIN="$RUNNER_TEMP/gradle-native/gradle-9.3.1/bin/gradle"
           pnpm qa:gradle-native
+          GRADLE_BIN="$RUNNER_TEMP/gradle-native/gradle-9.4.1/bin/gradle" \
+            GRADLE_METERING_VERSION=9.4.1 \
+            GRADLE_METERING_QA_OUTPUT="$RUNNER_TEMP/gradle-metering-9.4.1-evidence.json" \
+            node qa/gradle-native/metering.mjs
       - name: Preserve sanitized Gradle evidence
         if: (steps.scope.outputs.mode != 'docs') && (always() && runner.os == 'Linux')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gradle-native-evidence-linux
-          path: ${{ runner.temp }}/gradle-native-evidence.json
+          path: |
+            ${{ runner.temp }}/gradle-native-evidence.json
+            ${{ runner.temp }}/gradle-metering-9.4.1-evidence.json
           if-no-files-found: warn
           retention-days: 30
       - name: Gate the native Bazel HTTP protocol on Linux

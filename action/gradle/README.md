@@ -81,7 +81,7 @@ accepted task hits. Gradle's completion API does not supply cache keys or cache
 source.
 
 For exact native-key correlation, provide `native-info-log` as an absolute path
-to one completed Gradle 9.3.1 `--info` log. Keep the caller's existing command and
+to one completed Gradle 9.3.1 or 9.4.1 `--info` log. Keep the caller's existing command and
 preserve its exit status, for example:
 
 ```yaml

@@ -114,7 +114,7 @@ test('task paths remain exact local identities and reject controls or excessive 
 });
 
 test('unsupported versions and invalid or missing input return fixed reasons', () => {
-  for (const version of ['9.3', '9.3.0', '9.3.2', '9.4.0', '9.3.1-custom', null, 9]) {
+  for (const version of ['9.3', '9.3.0', '9.3.2', '9.4', '9.4.0', '9.4.2', '9.5.0', '9.3.1-custom', '9.4.1-custom', null, 9]) {
     unavailable(parseGradleInfo(keyLine(':app:compile'), { gradleVersion: version }), 'unsupported-gradle-version');
   }
   for (const input of [undefined, null, 3, {}, Buffer.from(keyLine(':app:compile'))]) {
@@ -124,6 +124,28 @@ test('unsupported versions and invalid or missing input return fixed reasons', (
     unavailable(parseGradleInfo(text), 'missing-key-lines');
   }
   assert.equal(parseGradleInfo(keyLine(':app:compile'), { gradleVersion: undefined }).keys.size, 1);
+});
+
+test('each qualified version keeps exact keys, disabled markers and malformed-input refusal', () => {
+  for (const gradleVersion of ['9.3.1', '9.4.1']) {
+    const parse = text => parseGradleInfo(text, {gradleVersion});
+    const valid = keyLine(':root:compile') + keyLine(':included:compile') + "Caching disabled for task ':uncacheable' because:\n";
+    const result = parse(valid);
+    assert.deepEqual([...result.keys], [[':root:compile', first], [':included:compile', first]]);
+    assert.deepEqual([...result.ineligiblePaths], [':uncacheable']);
+    assert.deepEqual([...result.duplicateKeys], [first]);
+    for (const malformed of [
+      'prefix ' + keyLine(':wrong'), keyLine(':wrong', first.toUpperCase()),
+      keyLine(':wrong', first.slice(1)), "Caching disabled for task ':wrong' because: extra\n",
+      keyLine(':wrong').trimEnd(),
+    ]) {
+      const rejected = parse(valid + malformed);
+      assert.equal(rejected.keys.size, 0);assert.equal(rejected.ineligiblePaths.size, 0);
+      assert.ok(['unrecognized-key-line', 'truncated-info-log'].includes(rejected.reason));
+    }
+    const conflict = parse(keyLine(':same', first) + keyLine(':same', second));
+    assert.equal(conflict.keys.size, 0);assert.ok(conflict.ambiguousPaths.has(':same'));
+  }
 });
 
 test('a nonterminated final line invalidates prior mappings', () => {

@@ -33,7 +33,7 @@ are shown separately. A zero eligible denominator has no hit percentage.
 If executed-task eligibility is incomplete, the whole reported-task hit rate
 remains unknown; known counts remain visible.
 
-Supply one Gradle 9.3.1 `--info` log per action instance through
+Supply one Gradle 9.3.1 or 9.4.1 `--info` log per action instance through
 `native-info-log` to correlate task paths with native keys. The parser keeps
 multiple task paths sharing one key, but rejects conflicting keys for one path.
 Raw logs, task paths, commands and free-form failure reasons stay local. Work
@@ -41,6 +41,10 @@ references are opaque hashes scoped to project and compatibility profile.
 Without the log, native outcomes remain useful but key, source and producer
 timing coverage may be incomplete. Reports are client observations, not an
 attestation that task code could not emit misleading diagnostics.
+Only those exact versions are qualified. Other versions retain native outcomes
+with unknown key, source and producer-timing coverage. The
+[9.4.1 qualification](evidence/gradle-941-metering-20261020.md) covers the public
+listener and exact log correlation, separately from application adoption.
 
 The action's post step uploads bounded final reports under its own renewed job
 authority. It does not use a later step's exported credential. Reporting failure
