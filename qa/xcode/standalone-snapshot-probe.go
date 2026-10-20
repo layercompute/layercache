@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -204,7 +205,8 @@ func inspect(ctx context.Context, store, project, profile string) (report, error
 	}
 	// The Python caller requires live stop acknowledgement and process exit.
 	// Read-only immutable mode cannot checkpoint or create a WAL in this store.
-	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(metadata)+"?mode=ro&immutable=1")
+	databaseURL := &url.URL{Scheme: "file", Path: metadata, RawQuery: "mode=ro&immutable=1"}
+	db, err := sql.Open("sqlite", databaseURL.String())
 	if err != nil {
 		return result, err
 	}

@@ -102,6 +102,42 @@ func TestClosedStoreInspectionIsReadOnlyAndScoped(t *testing.T) {
 	}
 }
 
+func TestClosedStoreURICharactersReadOnlyOriginalDatabase(t *testing.T) {
+	for _, directory := range []string{"fixture#closed", "fixture?closed", "fixture%25closed", "fixture#?%-closed"} {
+		t.Run(directory, func(t *testing.T) {
+			ctx := context.Background()
+			parent := t.TempDir()
+			root := filepath.Join(parent, directory)
+			store, err := artifact.Open(ctx, root, 16<<20, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			project, profile := "github.com/layercache/xcode-standalone-qa", "xcode-standalone-v1-uri"
+			data, _ := proto.Marshal(&cas.CASObject{Blob: &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: []byte("original database fixture")}}})
+			sum := sha256.Sum256(data)
+			key := artifact.Key{Integration: "xcode", Project: project, Compatibility: profile, Native: "cas-" + hex.EncodeToString(sum[:]), Version: "1"}
+			if _, _, err := store.Put(ctx, key, artifact.Metadata{}, bytes.NewReader(data)); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			before := fileHashes(t, parent)
+			result, readErr := inspect(ctx, root, project, profile)
+			// Compare the whole parent, including an accidentally created prefix file.
+			if after := fileHashes(t, parent); !equalHashes(before, after) {
+				t.Fatal("URI path parsing created a file or changed original database bytes")
+			}
+			if readErr != nil || result.Rows != 1 || len(result.Objects) != 1 {
+				t.Fatalf("URI escaped path did not read original database: %+v %v", result, readErr)
+			}
+			if _, err := os.Lstat(filepath.Join(parent, "fixture")); !os.IsNotExist(err) {
+				t.Fatal("unescaped URI prefix was created or inspected")
+			}
+		})
+	}
+}
+
 func TestShapeOutputBoundFailsWithoutReturningPartialReport(t *testing.T) {
 	value := report{Objects: make([]objectShape, maxRows)}
 	for index := range value.Objects {
