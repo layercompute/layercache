@@ -15,7 +15,7 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
-- [ ] **Make the hosted dashboard useful for an active project.**
+- [x] **Make the hosted dashboard useful for an active project.**
   Owner: LayerCache dashboard. October 20 user outcome: open Phone App directly,
   see stored artifacts, effective hit rate and cache types first, then navigate
   focused Activity, Infrastructure, Storage and Settings pages with shareable
@@ -32,11 +32,16 @@ workspaces and filesystem migration are outside the current product scope.
   Acceptance: route/history/reload, stale-response and scroll/focus browser
   checks; permission, quota concurrency and restart controls; independent
   reviews, required CI, and authenticated deployed Phone App QA.
-  [Source qualification](docs/evidence/project-dashboard-ux-20261020.md) now
-  records 201 hosted browser checks, shared/local compatibility and real
-  PostgreSQL concurrency/restart controls. Reviewed implementation is
-  [`52944c0`](https://github.com/ziahamza/layercache/commit/52944c0).
-  Hosted deployment and current-account Phone acceptance remain pending.
+  [Qualification](docs/evidence/project-dashboard-ux-20261020.md) records
+  201 hosted browser checks, 273 shared/local browser checks and real
+  PostgreSQL concurrency/restart controls. [PR #79](https://github.com/ziahamza/layercache/pull/79)
+  merged after all eighteen PR checks passed. Its merged source
+  [`c6d120d`](https://github.com/ziahamza/layercache/commit/c6d120db672fc81b5d5a81faa6cb6c539c075962)
+  is deployed. All 39 authenticated live checks passed across Chromium,
+  Firefox and WebKit, including the active project's direct links, in-place
+  period changes, UI/API agreement, infrastructure rollups and mobile layout.
+  Existing permissions, sessions, grants and other containers were preserved.
+  Native coverage and matched resource/cost measurement remain open below.
 
 - [ ] **Match native reuse to original execution resources and cost.**
   Owner: LayerCache measurement/native integrations. Extend native Gradle,
