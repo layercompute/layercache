@@ -138,6 +138,56 @@ func TestClosedStoreURICharactersReadOnlyOriginalDatabase(t *testing.T) {
 	}
 }
 
+func TestDeclaredNativeReferenceLinksRejectedTargetByOrdinalOnly(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := artifact.Open(ctx, root, 16<<20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, profile := "github.com/layercache/xcode-standalone-qa", "xcode-standalone-v1-linked"
+	// The action explicitly declares this as a native node. Its alternate chunk
+	// is unsupported, which must stay a rejection while its shape is observable.
+	node := wireBytes(1, wireBytes(2, []byte{2}))
+	data, _ := proto.Marshal(&cas.CASObject{Blob: &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: node}}})
+	sum := sha256.Sum256(data)
+	put := func(kind string, id [32]byte, payload []byte) {
+		t.Helper()
+		key := artifact.Key{Integration: "xcode", Project: project, Compatibility: profile, Native: kind + "-" + hex.EncodeToString(id[:]), Version: "1"}
+		if _, _, err := store.Put(ctx, key, artifact.Metadata{}, bytes.NewReader(payload)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("cas", sum, data)
+	desc := append(wireBytes(1, bytes.Repeat([]byte{9}, 65)), wireBytes(2, sum[:])...)
+	desc = protowire.AppendVarint(protowire.AppendTag(desc, 3, protowire.VarintType), 1)
+	rootNode := append(wireBytes(1, wireBytes(1, []byte("private opaque result"))), wireBytes(2, wireBytes(2, desc))...)
+	action, _ := proto.Marshal(&kv.Value{Entries: map[string][]byte{"value": rootNode}})
+	put("kv", sha256.Sum256([]byte("private action key")), action)
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	value, err := inspect(ctx, root, project, profile)
+	if err != nil || len(value.Objects) != 2 {
+		t.Fatalf("linked fixture inspection failed: %v", err)
+	}
+	target, source := value.Objects[0], value.Objects[1]
+	if target.Ordinal != 1 || !target.ExpectedNativeNode || target.Node.StrictAccepted || len(target.Node.Chunks) != 1 {
+		t.Fatalf("declared native target lost its rejection/context: %+v", target)
+	}
+	chunk := target.Node.Chunks[0]
+	if chunk.Field.Number != 2 || chunk.Field.Wire != int(protowire.BytesType) || chunk.Field.Length != 2 || chunk.IsSingleByteOne {
+		t.Fatalf("unexpected bounded nested chunk: %+v", chunk)
+	}
+	if !source.ActionAccepted || len(source.Links) != 1 || source.Links[0] != (linkedReference{TargetOrdinal: 1, Present: true, NativeNode: true}) {
+		t.Fatalf("action did not link declared native node ordinal: %+v", source)
+	}
+	output, err := encodeReport(value)
+	if err != nil || bytes.Contains(output, []byte(hex.EncodeToString(sum[:]))) || bytes.Contains(output, []byte("private opaque result")) || bytes.Contains(output, []byte(root)) {
+		t.Fatal("linked shape leaked private identifiers or payloads")
+	}
+}
+
 func TestShapeOutputBoundFailsWithoutReturningPartialReport(t *testing.T) {
 	value := report{Objects: make([]objectShape, maxRows)}
 	for index := range value.Objects {

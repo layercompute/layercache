@@ -43,6 +43,15 @@ type descriptorFlags struct {
 	Flag3 string `json:"flag3"`
 	Flag4 string `json:"flag4"`
 }
+type chunkShape struct {
+	Field           fieldShape `json:"field"`
+	IsSingleByteOne bool       `json:"isSingleByteOne"`
+}
+type linkedReference struct {
+	TargetOrdinal int  `json:"targetOrdinal"`
+	Present       bool `json:"present"`
+	NativeNode    bool `json:"nativeNode"`
+}
 type nodeShape struct {
 	Bytes                int               `json:"bytes"`
 	StrictAccepted       bool              `json:"strictAccepted"`
@@ -51,16 +60,22 @@ type nodeShape struct {
 	FieldsTruncated      bool              `json:"fieldsTruncated"`
 	Descriptors          []descriptorFlags `json:"descriptors"`
 	DescriptorsTruncated bool              `json:"descriptorsTruncated"`
+	Chunks               []chunkShape      `json:"chunks"`
+	ChunksTruncated      bool              `json:"chunksTruncated"`
 }
 type objectShape struct {
-	Kind             string     `json:"kind"`
-	EncodedBytes     int        `json:"encodedBytes"`
-	EnvelopeRefs     int        `json:"envelopeReferences"`
-	BlobBytes        int        `json:"blobBytes"`
-	Entries          int        `json:"entries"`
-	ActionAccepted   bool       `json:"actionAccepted"`
-	ActionReferences int        `json:"actionReferences"`
-	Node             *nodeShape `json:"node,omitempty"`
+	Ordinal            int               `json:"ordinal"`
+	ExpectedNativeNode bool              `json:"expectedNativeNode"`
+	Links              []linkedReference `json:"declaredReferences"`
+	LinksTruncated     bool              `json:"declaredReferencesTruncated"`
+	Kind               string            `json:"kind"`
+	EncodedBytes       int               `json:"encodedBytes"`
+	EnvelopeRefs       int               `json:"envelopeReferences"`
+	BlobBytes          int               `json:"blobBytes"`
+	Entries            int               `json:"entries"`
+	ActionAccepted     bool              `json:"actionAccepted"`
+	ActionReferences   int               `json:"actionReferences"`
+	Node               *nodeShape        `json:"node,omitempty"`
 }
 type report struct {
 	Version        int           `json:"version"`
@@ -129,7 +144,7 @@ func descriptor(data []byte) descriptorFlags {
 
 func describeNode(data []byte) *nodeShape {
 	refs, err := xcodecache.NativeNodeReferences(data)
-	result := &nodeShape{Bytes: len(data), StrictAccepted: err == nil, Fields: []fieldShape{}, Descriptors: []descriptorFlags{}}
+	result := &nodeShape{Bytes: len(data), StrictAccepted: err == nil, Fields: []fieldShape{}, Descriptors: []descriptorFlags{}, Chunks: []chunkShape{}}
 	if err == nil {
 		result.References = len(refs)
 	}
@@ -144,6 +159,16 @@ func describeNode(data []byte) *nodeShape {
 		} else {
 			result.FieldsTruncated = true
 		}
+		if shape.Number == 1 && shape.Wire == int(protowire.BytesType) {
+			chunk, payload, tail, valid := parseField(value)
+			if valid && len(tail) == 0 {
+				if len(result.Chunks) < maxFields {
+					result.Chunks = append(result.Chunks, chunkShape{chunk, len(payload) == 1 && payload[0] == 1})
+				} else {
+					result.ChunksTruncated = true
+				}
+			}
+		}
 		if shape.Number == 2 && shape.Wire == int(protowire.BytesType) {
 			union, external, tail, valid := parseField(value)
 			if valid && len(tail) == 0 && union.Number == 2 && union.Wire == int(protowire.BytesType) {
@@ -157,7 +182,7 @@ func describeNode(data []byte) *nodeShape {
 		data = rest
 	}
 	if len(data) != 0 {
-		result.FieldsTruncated, result.DescriptorsTruncated = true, true
+		result.FieldsTruncated, result.DescriptorsTruncated, result.ChunksTruncated = true, true, true
 	}
 	return result
 }
@@ -193,6 +218,37 @@ func describe(kind string, data []byte) (objectShape, error) {
 	return result, nil
 }
 
+// Linking uses only references accepted by the production parser. Rejected
+// native nodes still expose their bounded chunk shape, never speculative edges.
+func declaredReferences(kind string, data []byte) []xcodecache.GraphReference {
+	if kind == "kv" {
+		value := new(kv.Value)
+		if proto.Unmarshal(data, value) != nil {
+			return nil
+		}
+		refs, _ := xcodecache.ActionReferences(value)
+		return refs
+	}
+	value := new(cas.CASObject)
+	if proto.Unmarshal(data, value) != nil {
+		return nil
+	}
+	var refs []xcodecache.GraphReference
+	for _, child := range value.References {
+		refs = append(refs, xcodecache.GraphReference{ID: child.GetId()})
+	}
+	native, err := xcodecache.NativeNodeReferences(value.GetBlob().GetData())
+	if err == nil {
+		refs = append(refs, native...)
+	}
+	return refs
+}
+
+type privateRecord struct {
+	kind string
+	data []byte
+}
+
 func inspect(ctx context.Context, store, project, profile string) (report, error) {
 	result := report{Version: 1, Available: true, Objects: []objectShape{}}
 	if !filepath.IsAbs(store) || filepath.Clean(store) != store || project != "github.com/layercache/xcode-standalone-qa" || !strings.HasPrefix(profile, "xcode-standalone-v1-") {
@@ -216,6 +272,8 @@ func inspect(ctx context.Context, store, project, profile string) (report, error
 		return result, err
 	}
 	defer rows.Close()
+	var records []privateRecord
+	casOrdinals := map[string]int{}
 	for rows.Next() {
 		result.Rows++
 		if result.Rows > maxRows {
@@ -250,9 +308,31 @@ func inspect(ctx context.Context, store, project, profile string) (report, error
 		if err != nil {
 			return result, err
 		}
+		shape.Ordinal, shape.Links = result.Rows, []linkedReference{}
 		result.Objects = append(result.Objects, shape)
+		records = append(records, privateRecord{kind, data})
+		if kind == "cas" {
+			casOrdinals[nativeDigest] = shape.Ordinal
+		}
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
+	for index, record := range records {
+		refs := declaredReferences(record.kind, record.data)
+		result.Objects[index].LinksTruncated = len(refs) > maxFields
+		for _, ref := range refs {
+			if len(result.Objects[index].Links) >= maxFields {
+				break
+			}
+			ordinal, found := casOrdinals[hex.EncodeToString(ref.ID)]
+			result.Objects[index].Links = append(result.Objects[index].Links, linkedReference{ordinal, found, ref.NativeNode})
+			if found && ref.NativeNode {
+				result.Objects[ordinal-1].ExpectedNativeNode = true
+			}
+		}
+	}
+	return result, nil
 }
 
 func encodeReport(value report) ([]byte, error) {

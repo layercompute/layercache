@@ -69,6 +69,28 @@ def validate_output(disassembly, value):
     require(re.search(r"\bret\b", function.group(1)), "compiled function has no return")
 
 
+ARCHIVE_FAILURE_CODES = frozenset("""
+metadata-invalid integrity-failed archive-path-collision archive-path-unsafe
+archive-entry-unsupported archive-permissions-unsupported archive-link-unsafe
+archive-link-cycle archive-empty archive-invalid archive-entry-limit
+cache-budget-exceeded cache-busy filesystem-exists filesystem-missing
+filesystem-permission filesystem-full filesystem-read-only filesystem-path-invalid
+filesystem-busy compression-invalid archive-extraction-failed timeout canceled
+input-unsupported configuration-invalid
+""".split())
+
+
+def archive_failure_code(log):
+    # Parse only a fixed native CLI contract, never publish its arbitrary output.
+    for line in log.splitlines():
+        if line == "Snapshot archive operation failed":
+            return "unknown"
+        prefix = "Snapshot archive operation failed: "
+        if line.startswith(prefix) and line[len(prefix):] in ARCHIVE_FAILURE_CODES:
+            return line[len(prefix):]
+    return None
+
+
 class Audit(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
@@ -77,7 +99,33 @@ class Audit(http.server.ThreadingHTTPServer):
         self.target = target
         self.phase = "setup"
         self.records = []
+        self.published_digests = {}
         self.lock = threading.Lock()
+
+
+class RequestBody:
+    """Stream one explicitly sized request; digests never enter public reports."""
+    def __init__(self, source, length):
+        self.source, self.remaining = source, length
+        self.hash = hashlib.sha256()
+
+    def read(self, size=-1):
+        if not self.remaining:
+            return b""
+        size = self.remaining if size < 0 else min(size, self.remaining)
+        block = self.source.read(size)
+        require(bool(block) and len(block) <= self.remaining, "fixture request was partial")
+        self.remaining -= len(block)
+        self.hash.update(block)
+        return block
+
+
+def body_verification(length, received, digest_value, header, published_digest):
+    complete = length is not None and length == received
+    valid_header = isinstance(header, str) and re.fullmatch(r"sha256:[a-f0-9]{64}", header) is not None
+    return {"responseBodyComplete": complete,
+            "responseDigestMatchesHeader": bool(complete and valid_header and digest_value.hex() == header[7:]),
+            "responseMatchesPublishedPUT": bool(complete and published_digest is not None and digest_value == published_digest)}
 
 
 class AuditHandler(http.server.BaseHTTPRequestHandler):
@@ -90,16 +138,18 @@ class AuditHandler(http.server.BaseHTTPRequestHandler):
         started = time.monotonic()
         length = int(self.headers.get("Content-Length", "0"))
         require(0 <= length <= BUDGET, "fixture request exceeds bound")
-        body = self.rfile.read(length) if length else None
-        require(body is None or len(body) == length, "fixture request was partial")
+        body = RequestBody(self.rfile, length) if length else None
         connection = http.client.HTTPConnection(*self.server.target, timeout=120)
         headers = {name: value for name, value in self.headers.items()
                    if name.lower() not in {"host", "connection", "transfer-encoding"}}
         sent = 0
+        response_hash = hashlib.sha256()
+        artifact = self.path.startswith("/v8/artifacts/")
         with self.server.lock:
             phase = self.server.phase
         try:
             connection.request(self.command, self.path, body=body, headers=headers)
+            require(body is None or body.remaining == 0, "fixture request was partial")
             response = connection.getresponse()
             self.send_response(response.status)
             for name, value in response.getheaders():
@@ -110,13 +160,23 @@ class AuditHandler(http.server.BaseHTTPRequestHandler):
             if self.command != "HEAD":
                 while block := response.read(256 << 10):
                     sent += len(block)
+                    response_hash.update(block)
                     require(sent <= BUDGET, "fixture response exceeds bound")
                     self.wfile.write(block)
             with self.server.lock:
+                verification = {}
+                if artifact and self.command == "PUT" and 200 <= response.status < 300 and body is not None:
+                    self.server.published_digests[self.path] = body.hash.digest()
+                    verification["publishedRequestComplete"] = body.remaining == 0
+                if artifact and self.command == "GET" and response.status == 200:
+                    declared_size = response.getheader("Content-Length")
+                    declared_size = int(declared_size) if declared_size and declared_size.isdigit() else None
+                    verification = body_verification(declared_size, sent, response_hash.digest(),
+                        response.getheader("X-LayerCache-Digest"), self.server.published_digests.get(self.path))
                 self.server.records.append({"phase": phase, "method": self.command,
-                    "artifact": self.path.startswith("/v8/artifacts/"), "status": response.status,
+                    "artifact": artifact, "status": response.status,
                     "requestBytes": length, "responseBytes": sent,
-                    "elapsedMs": round((time.monotonic() - started) * 1000, 3)})
+                    "elapsedMs": round((time.monotonic() - started) * 1000, 3), **verification})
         finally:
             connection.close()
             self.close_connection = True
@@ -142,6 +202,7 @@ class Probe:
         self.timings = {}
         self.diagnostic_store = None
         self.shape_helper = None
+        self.last_archive_failure_code = None
 
     def run(self, name, args, timeout=120, public=False):
         started = time.monotonic()
@@ -150,6 +211,9 @@ class Probe:
             process = subprocess.run([str(value) for value in args], cwd=self.private, env=self.env,
                                      stdout=output, stderr=subprocess.STDOUT, timeout=timeout, check=False)
         self.timings[name] = round((time.monotonic() - started) * 1000, 3)
+        if process.returncode != 0 and name in ("writer-save", "reader-restore"):
+            with path.open() as output:
+                self.last_archive_failure_code = archive_failure_code(output.read(4096))
         require(process.returncode == 0, f"{name} failed; inspect its retained log")
         return path.read_text()
 
@@ -372,6 +436,8 @@ scheme.save_as(project.path, 'Probe', true)
         gets = [row for row in records if row["artifact"] and row["method"] == "GET"]
         require(len(puts) == 1 and puts[0]["phase"] == "writer" and 200 <= puts[0]["status"] < 300, "unexpected archive writer requests")
         require(len(gets) == 1 and gets[0]["phase"] == "reader" and gets[0]["status"] == 200, "reader did not download one remote archive")
+        require(gets[0]["responseBodyComplete"] and gets[0]["responseDigestMatchesHeader"] and gets[0]["responseMatchesPublishedPUT"],
+                "remote reader bytes differ from acknowledged publication")
         write_json(self.root / "transfer-audit.json", records)
         write_json(self.root / "result.json", {"passed": True, "compiler": "Clang/PCH", "swiftReplayQualified": False,
             "simulatorRuntimeExecuted": False, "signedDeviceBuildQualified": False, "xcodeCloudAdoptionQualified": False,
@@ -399,6 +465,7 @@ scheme.save_as(project.path, 'Probe', true)
         (self.root / "failure-shapes.json").chmod(0o600)
         write_json(self.root / "failure-summary.json", {"passed": False,
             "confirmedClosedProducerPreserved": self.diagnostic_store is not None,
+            "archiveFailureCode": self.last_archive_failure_code,
             "commandElapsedMs": self.timings})
         if hasattr(self, "audit"):
             write_json(self.root / "transfer-audit.json", self.audit.records)

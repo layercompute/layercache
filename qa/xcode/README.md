@@ -89,7 +89,10 @@ Clang miss and a newly compiled arm64 function returning 43 instead of 42.
 Object markers and disassembly verify the outputs; generic protocol counters
 alone cannot pass. The read-only consumer must issue zero archive PUTs. Total
 save and restore command times include authentication, packing or verification,
-transfer and extraction. The separate request timings are not a network
+transfer and extraction. The proxy hashes streamed archive bytes in memory and
+reports only complete-body, digest-header and published-PUT match booleans.
+Failures expose only the native CLI's fixed allowlisted error classification.
+The separate request timings are not a network
 bandwidth measurement or a whole-application speedup.
 
 Server configuration, grants, credentials, source and caches stay under the
@@ -112,7 +115,10 @@ adapter reopens the diagnostic store. The helper opens SQLite in read-only
 immutable mode, selects only the fixture's exact project/profile and uses the
 production native-node and action-reference parsers. It reports acceptance,
 reference counts, blob sizes, descriptor flag classes and at most 16 field
-number/wire-type/length entries per node. It reads at most 256 matching rows and
+number/wire-type/length entries per node. Numeric row ordinals link accepted
+references to declared native nodes, keeping ordinary raw output rejection
+separate. Nested chunk shapes include only field/wire/length and a
+`isSingleByteOne` boolean. Truncated lists are explicit. It reads at most 256 matching rows and
 64 MiB, and emits at most 256 KiB. Raw SDK bytes, paths, cache IDs and digests
 never enter this shape report. The failed compiler verdict stays red. These
 shapes help diagnose format coverage; the older aggregate-hit fixture does not
