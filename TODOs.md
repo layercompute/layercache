@@ -267,7 +267,7 @@ workspaces and filesystem migration are outside the current product scope.
   Unknown publication must reconcile without duplicate work. GitHub artifacts
   remain required until application retained-handoff acceptance passes.
 
-- [ ] **Release the merged CLI capabilities as beta.7.**
+- [x] **Release the merged CLI capabilities as beta.7.**
   Owner: LayerCache release. The immutable beta.5 binary predates native Bazel,
   storage inspection and hosted storage plans. Qualify the current candidate
   and downloaded binary with the existing real Bazel client on Linux amd64;
@@ -285,10 +285,16 @@ workspaces and filesystem migration are outside the current product scope.
   macOS worker-test environment assertion failed. Node's
   [Darwin test](https://github.com/nodejs/node/blob/3e5c8afba6dcff91d46b8204276d62e3843b23b6/test/embedding/test-embedding-permission-env.js#L28-L30)
   accounts for `__CF_USER_TEXT_ENCODING` despite a minimal supplied environment,
-  so the empty-environment assertion needs a reviewed test correction.
-  Keep the existing tag unchanged. Beta.7 follows
-  the test correction and qualification documentation merging with all required
-  CI green. The macOS correction remains unqualified until its CI job passes.
+  so [PR #77](https://github.com/ziahamza/layercache/pull/77) corrected that test
+  while preserving production isolation. All 15 required checks passed,
+  including all 14 native macOS worker tests and the full macOS Go suite.
+  Immutable [beta.7](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.7)
+  is published at source `104b3fb7483986dcad485ceb30e9c8b37973b286`;
+  its [release qualification](https://github.com/ziahamza/layercache/actions/runs/39474876385)
+  and all post-merge checks passed. Keep beta.6 unchanged. The published
+  installer workflow binds provenance, platform metadata and 24 lifecycle/archive
+  controls to the downloaded binary on three fresh platforms. These checks must
+  pass before merging the default pin refresh or updating a Local daemon.
 
 - [x] **Expose an honest local storage inventory.**
   Owner: LayerCache. User outcome: identify the owners of disk growth before
@@ -869,7 +875,7 @@ workspaces and filesystem migration are outside the current product scope.
   [PR #76](https://github.com/ziahamza/layercache/pull/76) merged standalone
   readiness/closure, revocable scoped grants and the existing native immutable
   archive client. The actual server/CLI fixture passes 24 synthetic-CAS controls
-  locally and in the [hosted macOS job](https://github.com/ziahamza/layercache/actions/runs/39456825681/job/118745782258).
+  locally and in the [hosted macOS job](https://github.com/ziahamza/layercache/actions/runs/39467518289/job/118782677413).
   The strict Xcode 27 gate passed at `fc8b449` in the
   [candidate job](https://github.com/ziahamza/layercache/actions/runs/39467518317/job/118783279071)
   and repeated after merge at `86d2383d` in the
@@ -879,13 +885,17 @@ workspaces and filesystem migration are outside the current product scope.
   disassembly. This is Clang/Objective-C and PCH proof on the same VM and source
   path with fresh processes, native CAS and DerivedData, not fresh-worker or
   managed Cloud acceptance. Its phase timings establish no application savings.
-  The merged `86d2383d` server image is live and healthy; scoped snapshot
-  authorization has not been activated. The beta.6 tag stays at `86d2383d`
-  without a published release after a macOS worker-test environment assertion
-  failed. Beta.7 awaits the reviewed test correction and documentation merging
-  with all required CI green; the macOS correction is not yet qualified.
-  Installed pins, restoration on fresh workers, managed Xcode Cloud
-  producer/consumer acceptance and external Swift replay remain unfinished.
+  Merged source `86d2383d` is live and healthy with scoped reader and
+  trusted-publisher grants active. All 13 live gateway controls passed. An
+  independent read-only audit checked SQL/R2 metadata and verified SHA256 over
+  the complete 4,443-byte archive. Six live revocation controls passed; the
+  original grant-file identity and bytes were restored without restart or
+  bootstrap rotation. All 132 dashboard checks pass. Beta.6 stays
+  tagged at `86d2383d` and unpublished. Beta.7 is published and immutable at
+  `104b3fb7`; its installer and application acceptance remain separate gates.
+  No managed Xcode Cloud seed is available;
+  fresh-worker producer/consumer acceptance, external Swift replay and
+  application savings remain unqualified.
   The [native qualification contract](docs/xcode-cache.md#compiler-behavior-and-native-qualification)
   records the bounded inline-leaf grammar and native API proof. Its QA manifest
   fails closed above 64 KiB per child, 256 children per target or 1,024 overall;

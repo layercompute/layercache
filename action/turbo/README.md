@@ -17,14 +17,14 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@v4
-  - uses: ziahamza/layercache/action/turbo@53ec27443a406a508b7e8faeab3f46292e0ba07b
+  - uses: ziahamza/layercache/action/turbo@104b3fb7483986dcad485ceb30e9c8b37973b286
     with:
-      team-url: https://layer-cache.ziahamza.com
+      team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
   - run: pnpm turbo run build
 ```
 
-The examples pin beta.5's reviewed source commit so workflow reruns use the same
+The examples pin beta.7's reviewed source commit so workflow reruns use the same
 action code. Repository visibility and action access must
 permit the caller to use it. Configure the language tools
 and dependencies as usual. The project defaults to the lowercase GitHub repository
@@ -61,9 +61,9 @@ Required PR checks can keep running their Turbo commands while reusing matching
 results. To force fresh tasks on main, choose a policy in the workflow:
 
 ```yaml
-- uses: ziahamza/layercache/action/turbo@53ec27443a406a508b7e8faeab3f46292e0ba07b
+- uses: ziahamza/layercache/action/turbo@104b3fb7483986dcad485ceb30e9c8b37973b286
   with:
-    team-url: https://layer-cache.ziahamza.com
+    team-url: https://cache.example.com
     compatibility: linux-amd64-node24-schema1
     cache-mode: ${{ github.ref == 'refs/heads/main' && 'fresh' || 'read-only' }}
 - run: pnpm turbo run test build

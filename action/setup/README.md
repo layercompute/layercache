@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: ziahamza/layercache/action/setup@53ec27443a406a508b7e8faeab3f46292e0ba07b
+  - uses: ziahamza/layercache/action/setup@104b3fb7483986dcad485ceb30e9c8b37973b286
     id: layercache
     with:
       repository: ziahamza/layercache
-      version: v0.1.0-beta.5
+      version: v0.1.0-beta.7
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: ziahamza/layercache/action/cache@53ec27443a406a508b7e8faeab3f46292e0ba07b
+  - uses: ziahamza/layercache/action/cache@104b3fb7483986dcad485ceb30e9c8b37973b286
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,11 +30,13 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The action and release are pinned to CLI beta.5. It includes confirmed Turbo
+The action and release are pinned to CLI beta.7. It includes confirmed Turbo
 publication, permanent-conflict pin retirement, owner-only Personal projects,
-native Nx Local/direct private endpoints, and complete Xcode graph retention
-qualified under quota pressure. Nx Local-to-private forwarding remains future
-work; see the [Nx integration](../../docs/nx-cache.md).
+native Nx Local/direct private endpoints, native Bazel HTTP integration, storage
+inspection and standalone Xcode cache lifecycle with scoped snapshot access.
+Xcode graph retention is qualified under quota pressure; managed Xcode Cloud
+builds and external Swift replay require separate acceptance. Nx Local-to-private
+forwarding remains future work; see the [Nx integration](../../docs/nx-cache.md).
 
 For required CI checks that read Team results
 without a local daemon, use the [Turbo action's cache modes](../turbo/README.md#cache-policy).

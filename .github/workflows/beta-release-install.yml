@@ -27,19 +27,26 @@ jobs:
           - name: Linux x64
             runner: ubuntu-24.04
             system: Linux/x86_64
+            goos: linux
+            goarch: amd64
           - name: Linux arm64
             runner: ubuntu-24.04-arm
             system: Linux/aarch64
+            goos: linux
+            goarch: arm64
           - name: macOS arm64
             runner: macos-26
             system: Darwin/arm64
+            goos: darwin
+            goarch: arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.1.0-beta.5
-      SOURCE_SHA: 53ec27443a406a508b7e8faeab3f46292e0ba07b
+      RELEASE_TAG: v0.1.0-beta.7
+      SOURCE_SHA: 104b3fb7483986dcad485ceb30e9c8b37973b286
       RELEASE_REPOSITORY: ziahamza/layercache
+      NATIVE_BUNDLE_SHA256: 7a1cfc2d035ea7489bcb3fc1e0ed40957f79e413267075ddc7108f0d145a5070
     steps:
       # The workflow is reviewed on this PR; the script comes from the exact
       # commit that published the release, independent of PR branch contents.
@@ -47,7 +54,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ziahamza/layercache
-          ref: 53ec27443a406a508b7e8faeab3f46292e0ba07b
+          ref: 104b3fb7483986dcad485ceb30e9c8b37973b286
           persist-credentials: false
 
       - name: Check published release and exact source commit
@@ -107,13 +114,43 @@ jobs:
         with:
           node-version: "24.13.0"
 
-      # Only the QA credential helper is compiled. All cache traffic uses the
-      # installed, provenance-verified release binary.
-      - name: Set up Go for the Nx QA credential helper
+      # Only acceptance harnesses and the QA credential helper are compiled.
+      # Services and lifecycle operations use the provenance-verified binary.
+      - name: Set up Go for installed-binary acceptance harnesses
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.25.13"
           cache: false
+
+      - name: Verify installed binary provenance and source revision
+        env:
+          EXPECTED_GOOS: ${{ matrix.goos }}
+          EXPECTED_GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/layercache-beta-install/layercache"
+          gh attestation verify "$binary" --repo "$RELEASE_REPOSITORY" \
+            --signer-workflow "$RELEASE_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref "refs/tags/$RELEASE_TAG" --source-digest "$SOURCE_SHA" \
+            --deny-self-hosted-runners >/dev/null
+          go version -m "$binary" >"$RUNNER_TEMP/beta7-go-build-metadata.txt"
+          awk -v revision="vcs.revision=$SOURCE_SHA" \
+            -v goos="GOOS=$EXPECTED_GOOS" -v goarch="GOARCH=$EXPECTED_GOARCH" '
+            $1 == "build" && $2 == "vcs=git" { git++ }
+            $1 == "build" && $2 == revision { revision_count++ }
+            $1 == "build" && $2 == "vcs.modified=false" { clean++ }
+            $1 == "build" && $2 == goos { os_count++ }
+            $1 == "build" && $2 == goarch { arch_count++ }
+            $1 == "build" && $2 == "CGO_ENABLED=0" { cgo_count++ }
+            END { exit !(git == 1 && revision_count == 1 && clean == 1 &&
+                         os_count == 1 && arch_count == 1 && cgo_count == 1) }
+          ' "$RUNNER_TEMP/beta7-go-build-metadata.txt"
+          test "$(shasum -a 256 native/dist/cli.js | awk '{print $1}')" = "$NATIVE_BUNDLE_SHA256"
+
+      - name: Check installer and setup integrity with the installed binary
+        env:
+          LAYERCACHE_SETUP_BINARY: ${{ runner.temp }}/layercache-beta-install/layercache
+        run: node --test action/setup/setup.test.mjs action/gradle/*.test.mjs scripts/install.test.mjs
 
       - name: Install the locked real Turbo client
         run: |
@@ -126,24 +163,69 @@ jobs:
           python3 qa/local-ci-reuse/run.py \
             --binary "$RUNNER_TEMP/layercache-beta-install/layercache" \
             --turbo "$GITHUB_WORKSPACE/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
-            --output "$RUNNER_TEMP/beta5-local-ci-reuse.json"
+            --output "$RUNNER_TEMP/beta7-local-ci-reuse.json"
           jq -e '
             .schemaVersion == "local-ci-reuse-v1" and .passed == true and
             (.scenarios | length) == 17
-          ' "$RUNNER_TEMP/beta5-local-ci-reuse.json" >/dev/null
+          ' "$RUNNER_TEMP/beta7-local-ci-reuse.json" >/dev/null
 
       - name: Prove native Nx replay using the published binary
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
-          NX_QA_OUTPUT: ${{ runner.temp }}/beta5-nx-native.json
+          NX_QA_OUTPUT: ${{ runner.temp }}/beta7-nx-native.json
         run: node qa/nx-native/run.mjs
+
+      - name: Qualify standalone lifecycle and scoped archives using the published binary
+        id: xcode-lifecycle
+        env:
+          LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
+          NATIVE_CACHE_CLI: ${{ github.workspace }}/native/dist/cli.js
+          LAYER_CACHE_XCODE_LIFECYCLE_REPORT: ${{ runner.temp }}/beta7-xcode-lifecycle/receipt.json
+          GOMAXPROCS: "2"
+          INSTALLER_PLATFORM: ${{ matrix.system }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/beta7-xcode-lifecycle"
+          test -x "$LAYERCACHE_BIN"
+          test -f "$NATIVE_CACHE_CLI"
+          test ! -e "$LAYER_CACHE_XCODE_LIFECYCLE_REPORT"
+          git ls-files --error-unmatch native/dist/cli.js >/dev/null
+          git diff --quiet -- native/dist/cli.js
+          test "$(shasum -a 256 "$NATIVE_CACHE_CLI" | awk '{print $1}')" = "$NATIVE_BUNDLE_SHA256"
+          go test ./qa/xcode-lifecycle \
+            -run '^TestScopedClosedStoreRoundTrip$' -count=1 -timeout=4m -v
+          binary_digest="$(shasum -a 256 "$LAYERCACHE_BIN" | awk '{print $1}')"
+          bundle_digest="$(shasum -a 256 "$NATIVE_CACHE_CLI" | awk '{print $1}')"
+          jq -e --arg binary "$binary_digest" --arg bundle "$bundle_digest" '
+            .version == 1 and .passed == true and
+            (.checks | length) == 24 and
+            .goBinarySha256 == $binary and
+            .nativeBundleSha256 == $bundle and
+            .archiveBytes > 0 and .nativeCompilation == false
+          ' "$LAYER_CACHE_XCODE_LIFECYCLE_REPORT" >/dev/null
+          jq --arg source "$SOURCE_SHA" --arg release "$RELEASE_TAG" \
+            --arg platform "$INSTALLER_PLATFORM" '
+            . + {sourceRevision:$source,releaseTag:$release,platform:$platform,
+                 installedBinary:true,
+                 boundary:"loopback lifecycle and scoped archives; synthetic CAS; no native compilation or Apple-managed build"}
+          ' "$LAYER_CACHE_XCODE_LIFECYCLE_REPORT" \
+            >"$RUNNER_TEMP/beta7-installed-xcode-lifecycle.json"
+
+      - name: Preserve installed lifecycle and scoped archive evidence
+        if: always() && steps.xcode-lifecycle.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: beta7-installed-xcode-lifecycle-${{ matrix.name }}
+          path: ${{ runner.temp }}/beta7-installed-xcode-lifecycle.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Qualify native Gradle HTTP caching using the published binary
         id: gradle-native
         if: matrix.system == 'Linux/x86_64'
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
-          GRADLE_QA_OUTPUT: ${{ runner.temp }}/beta5-gradle-native.json
+          GRADLE_QA_OUTPUT: ${{ runner.temp }}/beta7-gradle-native.json
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location --retry 2 \
@@ -170,8 +252,8 @@ jobs:
         if: always() && steps.gradle-native.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: beta5-installed-gradle-${{ matrix.name }}
-          path: ${{ runner.temp }}/beta5-gradle-native.json
+          name: beta7-installed-gradle-${{ matrix.name }}
+          path: ${{ runner.temp }}/beta7-gradle-native.json
           if-no-files-found: error
           retention-days: 30
 
@@ -179,9 +261,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: beta5-installed-reuse-${{ matrix.name }}
+          name: beta7-installed-reuse-${{ matrix.name }}
           path: |
-            ${{ runner.temp }}/beta5-local-ci-reuse.json
-            ${{ runner.temp }}/beta5-nx-native.json
+            ${{ runner.temp }}/beta7-local-ci-reuse.json
+            ${{ runner.temp }}/beta7-nx-native.json
           if-no-files-found: warn
           retention-days: 30

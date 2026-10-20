@@ -26,30 +26,32 @@ cache v1, Docker Buildx/BuildKit, Xcode 26's LLVM compilation-cache protocol, an
 [Nx's native private HTTP cache](docs/nx-cache.md). Xcode's qualified external
 replay covers Clang/C-family work; Swift source compilation replay remains
 [unqualified](docs/research/xcode26-compilation-cache-20261019.md).
-The source also adds an opt-in [native Bazel HTTP cache](docs/bazel-cache.md)
-through an isolated `bazel-remote` engine. It is separate from the published
-beta.5 CLI and existing gateway installation.
+The opt-in [native Bazel HTTP cache](docs/bazel-cache.md) uses an isolated
+`bazel-remote` engine, which requires its own deployment.
 The Nx adapter supports Local
 and direct private endpoints; remote read-through and queued Nx publication are
 not implemented.
 It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
 signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest
-CLI beta, [v0.1.0-beta.5](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.5),
-includes owner-only Personal projects, native Nx Local/direct private endpoints,
-permanent-conflict pin retirement, and complete Xcode graph retention qualified
-under quota pressure. Successful local Turbo results can be confirmed for CI
-reuse. Nx Local-to-private forwarding remains future work.
+CLI beta, [v0.1.0-beta.7](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.7),
+includes native Bazel HTTP integration, local storage inspection, hosted storage
+plans and standalone Xcode cache lifecycle with scoped snapshot access. It
+retains owner-only Personal projects, native Nx Local/direct private endpoints,
+permanent-conflict pin retirement and complete Xcode graph retention under quota
+pressure. Successful local Turbo results can be confirmed for CI reuse.
+Managed Xcode Cloud acceptance and external Swift replay remain separate gates.
+Nx Local-to-private forwarding remains future work.
 Public Builds are not qualified by this beta, and the hosted self-serve cloud
 requires a separate deployment. npm/CDN mirrors, Vite, Next.js, Windows,
 Actions cache v2, and a general adapter SDK remain out of scope.
 
 Release and deployment instructions are in the [verified installer](scripts/README.md), [GitHub runner setup](action/setup/README.md), and [Team Cache deployment guide](docs/deployment.md). See [quota administration](docs/cache-administration.md), [retention policies](docs/retention.md), [trust-key rotation](docs/public-trust.md), and [performance qualification](docs/performance.md) for operations. The beta release qualifies native Local/Team Cache clients; it does not establish a hosted cloud service or qualify Public Builds.
 
-To install the beta from an inspected checkout of commit `53ec27443a406a508b7e8faeab3f46292e0ba07b`:
+To install the beta from an inspected checkout of commit `104b3fb7483986dcad485ceb30e9c8b37973b286`:
 
 ```bash
 bash scripts/install.sh --repository ziahamza/layercache \
-  --version v0.1.0-beta.5 --prefix "$HOME/.local/bin"
+  --version v0.1.0-beta.7 --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
 
@@ -188,7 +190,7 @@ permissions:
   id-token: write
 steps:
   # Check out the project, configure Node/pnpm, and install dependencies first.
-  - uses: ziahamza/layercache/action/turbo@53ec27443a406a508b7e8faeab3f46292e0ba07b
+  - uses: ziahamza/layercache/action/turbo@104b3fb7483986dcad485ceb30e9c8b37973b286
     with:
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
@@ -197,7 +199,7 @@ steps:
 ```
 
 Use your Team Cache origin and a compatibility identity for your build toolchain.
-The server must authorize your repository. This action is pinned to beta.5's
+The server must authorize your repository. This action is pinned to beta.7's
 source commit and reads Team results while keeping required task commands present.
 Use `cache-mode: read-write` for an authorized publishing lane or `cache-mode: fresh`
 to execute without Turbo task-result reads or writes. Public action source does
