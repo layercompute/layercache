@@ -54,15 +54,19 @@ jobs:
       - run: go test -race ./internal/xcodecache/...
       - run: go test -race ./qa/xcode/pressure-proxy
       - name: Check standalone qualifier controls
-        run: python3 qa/xcode/standalone-snapshot-probe.test.py
+        run: |
+          python3 qa/xcode/standalone-snapshot-probe.test.py
+          go test -race ./qa/xcode
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/layercache" ./cmd/layercache
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/xcode-pressure-proxy" ./qa/xcode/pressure-proxy
+      - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/xcode-shape-diagnostic" ./qa/xcode
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: xcode-cache-adapter
           path: |
             ${{ runner.temp }}/layercache
             ${{ runner.temp }}/xcode-pressure-proxy
+            ${{ runner.temp }}/xcode-shape-diagnostic
           if-no-files-found: error
           retention-days: 1
   qualify:
@@ -107,11 +111,11 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
-      - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache"
+      - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-adapter/xcode-shape-diagnostic"
       - name: Install the pinned project generator
         run: gem install --user-install xcodeproj --version 1.27.0 --no-document
       - name: Publish closed store and replay in independent Clang consumer
-        run: python3 qa/xcode/standalone-snapshot-probe.py "$RUNNER_TEMP/xcode-adapter/layercache" "$GITHUB_WORKSPACE/native/dist/cli.js" "$RUNNER_TEMP/xcode-standalone-evidence"
+        run: python3 qa/xcode/standalone-snapshot-probe.py "$RUNNER_TEMP/xcode-adapter/layercache" "$GITHUB_WORKSPACE/native/dist/cli.js" "$RUNNER_TEMP/xcode-standalone-evidence" --shape-helper "$RUNNER_TEMP/xcode-adapter/xcode-shape-diagnostic"
       - name: Upload only sanitized compiler and transfer evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -121,6 +125,8 @@ jobs:
             ${{ runner.temp }}/xcode-standalone-evidence/toolchain.json
             ${{ runner.temp }}/xcode-standalone-evidence/result.json
             ${{ runner.temp }}/xcode-standalone-evidence/transfer-audit.json
+            ${{ runner.temp }}/xcode-standalone-evidence/failure-shapes.json
+            ${{ runner.temp }}/xcode-standalone-evidence/failure-summary.json
             ${{ runner.temp }}/xcode-standalone-evidence/producer-build.log
             ${{ runner.temp }}/xcode-standalone-evidence/consumer-build.log
             ${{ runner.temp }}/xcode-standalone-evidence/changed-build.log

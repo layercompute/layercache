@@ -78,8 +78,9 @@ with the plugin settings and the ready standalone socket. Only after stop
 acknowledges that exact instance's closed store, removes its socket and the
 process exits can the scoped writer archive it. The fixture publishes one
 immutable generation through a real isolated Team server, using generated,
-short-lived fixture grants. It removes the producer store, restores through a
-fresh reader archive cache into a new destination, then starts another adapter
+short-lived fixture grants. It moves the closed producer to a private diagnostic
+path, restores through a fresh reader archive cache into a new destination,
+then starts another adapter
 and builds with fresh DerivedData and native CAS.
 
 Passing requires Clang compilation and PCH hit diagnostics, adapter action/CAS
@@ -104,3 +105,15 @@ Apple-owned Xcode Cloud lifecycle. Application adoption still needs its exact
 compiler fingerprint, supported workflow settings, scoped trusted publication
 and fresh producer/consumer acceptance. Apple's own compilation cache stays
 separate and enabled under its owning workflow policy.
+
+On failure only, the optional `--shape-helper` executable inspects that preserved
+closed producer store, before any consumer writes could affect its data. No
+adapter reopens the diagnostic store. The helper opens SQLite in read-only
+immutable mode, selects only the fixture's exact project/profile and uses the
+production native-node and action-reference parsers. It reports acceptance,
+reference counts, blob sizes, descriptor flag classes and at most 16 field
+number/wire-type/length entries per node. It reads at most 256 matching rows and
+64 MiB, and emits at most 256 KiB. Raw SDK bytes, paths, cache IDs and digests
+never enter this shape report. The failed compiler verdict stays red. These
+shapes help diagnose format coverage; the older aggregate-hit fixture does not
+establish that every compiler or PCH format previously replayed successfully.

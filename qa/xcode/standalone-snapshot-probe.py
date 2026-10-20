@@ -140,6 +140,8 @@ class Probe:
                          "XDG_CONFIG_HOME": str(self.private / "config"), "XDG_CACHE_HOME": str(self.private / "cache"),
                          "XDG_STATE_HOME": str(self.private / "state")})
         self.timings = {}
+        self.diagnostic_store = None
+        self.shape_helper = None
 
     def run(self, name, args, timeout=120, public=False):
         started = time.monotonic()
@@ -339,8 +341,11 @@ scheme.save_as(project.path, 'Probe', true)
         published = self.archive("writer", "save", producer_store)
         require(published["source"] == "team" and published["bytes"] > 0 and re.fullmatch(r"[a-f0-9]{64}", published["digest"]),
                 "Team snapshot publication was not acknowledged with a complete digest")
-        # Remove the producer store before creating an independent restore and adapter.
-        shutil.rmtree(producer_store)
+        # Preserve the exact closed producer only for failure diagnosis. Its old
+        # path disappears, and no consumer adapter ever opens this renamed tree.
+        self.diagnostic_store = self.private / "closed-producer-diagnostic"
+        producer_store.rename(self.diagnostic_store)
+        require(not producer_store.exists(), "producer path must be absent before remote restore")
         destination = self.private / "restored"
         restored = self.archive("reader", "restore", destination)
         require(restored["hit"] and restored["source"] == "team" and restored["digest"] == published["digest"]
@@ -372,8 +377,31 @@ scheme.save_as(project.path, 'Probe', true)
             "simulatorRuntimeExecuted": False, "signedDeviceBuildQualified": False, "xcodeCloudAdoptionQualified": False,
             "remote": "isolated-loopback-Team", "profile": self.profile, "producer": cold, "consumer": warm, "changed": changed,
             "readerPUTs": 0, "closedBeforeSave": True, "producerStoreAbsentBeforeRestore": True,
+            "producerPreservedOnlyForFailureDiagnostic": True,
             "archiveSHA256": restored["digest"], "archiveBytes": restored["bytes"], "commandElapsedMs": self.timings,
             "timingBoundary": "archive save/restore includes auth, packing/verification/transfer/extraction; not pure network bandwidth"})
+
+
+    def capture_failure_shapes(self):
+        """Called after all owned children stop; never inspect a live store."""
+        if self.shape_helper and self.diagnostic_store and self.diagnostic_store.is_dir():
+            try:
+                output = self.run("failure-shapes", [self.shape_helper, self.diagnostic_store, PROJECT, self.profile], timeout=15)
+                require(len(output.encode()) <= 256 << 10, "shape report exceeds fixed limit")
+                value = json.loads(output)
+            except Exception:
+                value = {"version": 1, "available": False}
+        else:
+            value = {"version": 1, "available": False}
+        encoded = json.dumps(value, separators=(",", ":")).encode() + b"\n"
+        require(len(encoded) <= 256 << 10, "shape report exceeds fixed limit")
+        (self.root / "failure-shapes.json").write_bytes(encoded)
+        (self.root / "failure-shapes.json").chmod(0o600)
+        write_json(self.root / "failure-summary.json", {"passed": False,
+            "confirmedClosedProducerPreserved": self.diagnostic_store is not None,
+            "commandElapsedMs": self.timings})
+        if hasattr(self, "audit"):
+            write_json(self.root / "transfer-audit.json", self.audit.records)
 
 
 def main():
@@ -381,18 +409,26 @@ def main():
     parser.add_argument("binary", type=Path)
     parser.add_argument("native_cli", type=Path)
     parser.add_argument("evidence", type=Path)
+    parser.add_argument("--shape-helper", type=Path, help="QA-only bounded closed-store diagnostic executable")
     args = parser.parse_args()
     require(os.uname().sysname == "Darwin", "real Apple compiler gate requires macOS")
     os.umask(0o077)
     probe = Probe(args.binary.resolve(strict=True), args.native_cli.resolve(strict=True), args.evidence.resolve())
+    probe.shape_helper = args.shape_helper.resolve(strict=True) if args.shape_helper else None
+    failed = False
     try:
         probe.qualify()
         print("Qualified standalone remote Clang/PCH snapshot replay and changed-input miss; Swift/Cloud adoption remain unqualified.")
+    except BaseException:
+        failed = True
+        raise
     finally:
         if hasattr(probe, "audit"):
             probe.audit.shutdown()
             probe.audit.server_close()
         probe.close()
+        if failed:
+            probe.capture_failure_shapes()
 
 
 if __name__ == "__main__":
