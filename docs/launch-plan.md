@@ -1,13 +1,15 @@
-# LayerCache launch plan, 2026-10-17
+# LayerCache launch plan, 2026-10-20
 
 [TODOs.md](../TODOs.md) owns current priorities and outstanding acceptance.
 Reuse successful local tasks in required CI checks, preserve reliable required
 handoffs, and measure Phone whole-job savings. Keep task commands present,
 restore compatible deterministic results, and execute on a miss. Protect
 useful outputs and bounded storage before expanding machine management or
-hosted runners. The existing operator-managed
-Team Cache is available again. The self-serve cloud implementation is present,
-but its public service has not been deployed.
+hosted runners. The existing operator cohort now uses R2-backed artifacts,
+cloud-only clients and an authenticated hosted dashboard. The
+[October 20 rollout](evidence/operator-cloud-migration-20261020.md) records
+the deployed source, live checks and verified legacy-storage retirement.
+Public self-serve enrollment remains gated.
 
 The product has three visibility tiers: Personal Cache, Team Cache and Public
 Cache. Local Cache is each machine's bounded storage under those tiers. Private
@@ -20,7 +22,7 @@ hashing and execution as we add integrations.
 
 | Area | State | Next acceptance target |
 | --- | --- | --- |
-| Existing Team Cache | The [retained gateway rollout](evidence/retained-gateway-20261017.json) passed on October 17 after a fresh full cold backup and 191 isolated checks. All five projects preserve authenticated legacy/Gradle behavior. Host CLI and Local daemons retain the qualified [beta.5 installation](evidence/gateway-beta5-rollout-20261016.json). | Preserve monitoring and storage limits; measure useful fresh-runner restores for each adopted integration. |
+| Existing Team Cache | The [October 20 operator rollout](evidence/operator-cloud-migration-20261020.md) migrated the five-project cohort to R2-backed artifacts, cloud-only CLI operation and the authenticated hosted dashboard. Original identities and native authority remain. Legacy storage retirement passed after encrypted recovery verification. | Keep monitoring and capacity bounds. Move API/SQL hosting off the current operator host and qualify ongoing recovery; measure useful fresh-runner restores for each adopted integration. |
 | Local results available to CI | [#23](https://github.com/ziahamza/layercache/pull/23) added Turbo publication confirmation, durable repair and explicit CI cache modes. [Phone #241](https://github.com/ziahamza/phone-app/pull/241) merged main-writer and same-repository PR-reader lanes. Installed-release QA corrections merged in [#29](https://github.com/ziahamza/layercache/pull/29). | Prove a directly observed main-to-PR remote restore with an empty native cache, and measure whole-job time including setup, transfer and publication. Native snapshot hits alone do not attribute savings to LayerCache. The Phone CI chat owns application adoption. |
 | Phone test groups | [Phone #298](https://github.com/ziahamza/phone-app/pull/298) merged as `3bae98fe`, preserving thirty isolated workflow invocations under ten Turbo groups and required typechecking. [Qualification](phone-test-reuse.md) includes private publication/fresh consumption and current hosted Check plus Android Contacts/iOS startup-CallKit acceptance. The simulator entitlement repair is qualified with unchanged strict verification. The installed Local service restores all 28 tasks in an 807ms native stage and confirms Team availability. | Measure representative follow-up whole jobs and direct Team versus snapshot attribution. Current unit observations are 8m28s and 7m13s, not monthly or controlled savings. Production RunCloud-to-TestFlight qualified in [#305](https://github.com/ziahamza/phone-app/pull/305#issuecomment-6178375570); exact-source release-validation reuse is now measured in #310 below. |
 | Phone release-validation reuse | [Phone #310](https://github.com/ziahamza/phone-app/pull/310) merged as `9f38e36d`. Exact-source main Check and [signed canary](https://github.com/ziahamza/phone-app/actions/runs/38730000568) pass. Preparation is 3m16s versus 28m18s previously; matching native-QA reuse is 2m12s versus 19m46s fresh. | Build-only canary skips TestFlight/deployed smoke. Preserve fresh fallback and signing/inspection gates; other stage changes and workflow totals are not controlled savings. |
@@ -34,9 +36,9 @@ hashing and execution as we add integrations.
 | Phone Xcode integration | [#20](https://github.com/ziahamza/layercache/pull/20) added the adapter. [#30](https://github.com/ziahamza/layercache/pull/30) merged native graph retention after real multiple-root Xcode replay under quota pressure. | Qualify Phone-scale lookup/restore timing and its pinned toolchain before expanding shared native use. Swift cache hits and signed-release timing remain separate measurements. The Phone CI chat owns application workflows. |
 | Cloud input integrity | Source `3d5e2df` rejects failed input streams at shared S3 staging, including failures after an observed multipart upload. [Contract and evidence](retention.md#upload-completion) preserve exact complete bytes, quota behavior and the global error sanitizer. | Beta.5 installation and the [existing private gateway rollout](evidence/gateway-beta5-rollout-20261016.json) are complete. Endpoint-outage cleanup and the historical Actions HTTP 204 cause remain unqualified. |
 | Storage correctness | [#27](https://github.com/ziahamza/layercache/pull/27) merged permanent Turbo conflict handling and pin retirement for [#24](https://github.com/ziahamza/layercache/issues/24). Existing byte quotas, LRU, pins and durable uploads remain the foundation. | Preserve conflict retirement and bounded graph leases in future native publication work. Retain LRU until representative workload traces justify another policy. |
-| Cloud authentication and acceptance | [#16](https://github.com/ziahamza/layercache/pull/16), [#17](https://github.com/ziahamza/layercache/pull/17), and [#18](https://github.com/ziahamza/layercache/pull/18) are merged. Recovery [#21](https://github.com/ziahamza/layercache/pull/21) merged at `447095385671323a186299e0718d10c6459abb6f`, including the unchanged device-flow fix from closed, superseded [#19](https://github.com/ziahamza/layercache/pull/19). Beta.2 passed fresh native installation; beta.3 retains those fixes. | Use the verified release for the limited cloud deployment once its real inputs are configured. |
-| Hosted storage pools | [PR #61](https://github.com/ziahamza/layercache/pull/61) merged named pools and capacity plans with atomic admission and managed quota enforcement. [Actual R2 qualification](evidence/r2-private-source-20261019.md) passes persistence, publication, quota and expiry. [Operator hosting](evidence/r2-operator-hosting-20261019.md) is live with two explicit private projects, real human authentication, API/SQL restart reads and trusted TLS. [External native Turbo](evidence/r2-native-oidc-20261019.md) adds real GitHub OIDC, matching native outputs and zero-execution read-only restores on fresh runners. | Actual workload adoption, supported recovery and scoped migration of existing namespaces. Managed signup/billing remain separate. Synthetic timings establish no application speedup or monthly savings. |
-| Public self-serve cloud | Obsolete [config #27](https://github.com/ziahamza/config/pull/27) is closed. [Config #29](https://github.com/ziahamza/config/pull/29) records the current operator deployment; a new portal deployment must use current source and R2. No self-serve portal service or portal route has been activated. | Real GitHub OAuth, an approved creator cohort, isolated bounded storage, and live two-user acceptance before declaring a hosted beta. Operator-provisioned private caches are qualified separately above. |
+| Cloud authentication and acceptance | The earlier OAuth/device-flow source work is merged. The [October 20 operator cohort](evidence/operator-cloud-migration-20261020.md) now uses explicitly provisioned password sign-in for its hosted dashboard and real GitHub CLI credentials for native cache access. | Public GitHub OAuth enrollment, live second-identity acceptance and application OIDC remain separate gates. The operator-signed reader fixture does not establish those outcomes. |
+| Hosted storage pools | [PR #61](https://github.com/ziahamza/layercache/pull/61) merged named pools and capacity plans with atomic admission and managed quota enforcement. [Actual R2 qualification](evidence/r2-private-source-20261019.md) and [external native Turbo](evidence/r2-native-oidc-20261019.md) cover isolated persistence and native OIDC fixtures. The [October 20 rollout](evidence/operator-cloud-migration-20261020.md) adds existing-workload namespace migration and verified full object copies for the operator cohort. | Ongoing metadata/key recovery and remote API/SQL hosting. Managed signup and billing remain separate. These checks establish no application speedup or monthly savings. |
+| Public self-serve cloud | [Config #29](https://github.com/ziahamza/config/pull/29) records initial R2 hosting; [config #30](https://github.com/ziahamza/config/pull/30) records the operator-cohort migration. Its authenticated hosted portal is live. Public self-serve signup has not been activated. | Qualify real GitHub OAuth, creator admission, bounded storage and live two-user acceptance for public enrollment. Operator-provisioned private access remains limited to its explicit cohort. |
 | Machine enrollment and hosted runners | Deferred. | Useful cross-machine cache reuse and operating costs measured first. |
 
 The LayerCache recovery effort owns integration, PR disposition, deployment
@@ -46,7 +48,11 @@ cache qualification and bounded simulator repair explicitly delegated in
 The Phone CI chat owns workflow and production release routing. Coordinate
 separate branches and acceptance evidence for follow-ups.
 
-## Recovery evidence
+## Historical recovery evidence
+
+These earlier recovery and installation records describe their original
+topology. The [October 20 operator migration](evidence/operator-cloud-migration-20261020.md)
+supersedes their Local daemon and legacy-pool deployment state.
 
 The public Caddy proxy stopped cleanly on September 26 at 23:00:01 UTC. Its
 `unless-stopped` restart policy kept it down. Cache processes and their loopback
@@ -174,15 +180,18 @@ GitHub artifacts remain the required-transfer path.
 ## Outstanding work and priorities
 
 [TODOs.md](../TODOs.md) owns the active backlog and acceptance targets. Its
-current order puts reliable Phone handoffs and reusable test groups first,
-then exact LLM result replay and shared native outputs. Protocol expansion and
-cloud/runners follow measured personal value. Follow
+current order follows the completed operator-cohort migration with remote
+API/SQL hosting, ongoing recovery and reliable application handoffs. Reusable
+test groups, exact LLM replay and shared native outputs retain their measured
+acceptance targets. Hosted runners follow useful reuse and operating-cost
+evidence. Follow
 [the roadmap review](roadmap-review.md) when new evidence changes that order.
 
 This document retains qualification and deployment status. A published CLI,
 installed client, accepted application workflow and deployed service are
-separate outcomes. The limited cloud still needs real OAuth, an approved
-numeric cohort, isolated storage and live two-user acceptance. Public Builds
+separate outcomes. The operator cohort's portal is live with explicitly
+provisioned password access. Public self-serve enrollment still needs real
+OAuth, creator admission and live two-user acceptance. Public Builds
 retain their separate trusted-publisher and native KVM qualification.
 
 The beta stays limited to an explicit cohort and operator budget. Admission is
@@ -190,4 +199,6 @@ bounded in code, and managed projects bind to signed numeric repository IDs.
 Before unrestricted signup, add billing/quotas, account and project lifecycle,
 and support escalation. The
 [v0.1.0-beta.5 CLI beta](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.5)
-does not make the hosted service live. Public Builds remain unqualified.
+does not establish hosted acceptance by itself. The operator rollout has its
+own [deployment record](evidence/operator-cloud-migration-20261020.md).
+Public Builds remain unqualified.

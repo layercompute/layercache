@@ -15,7 +15,7 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
-- [ ] **Move existing projects to hosted R2 and retire their Local stores.**
+- [x] **Move the existing operator cohort to hosted R2 and the cloud dashboard.**
   Owner: LayerCache cloud/operator. The October 20 user outcome is one hosted
   customer dashboard for every currently configured project, remote artifact
   storage, and ordinary local commands that work without a Local daemon.
@@ -32,13 +32,48 @@ workspaces and filesystem migration are outside the current product scope.
   authentication/revocation, expiry and exact repository scope, reporting limits
   and failure fallback. Migrate SQL metadata with verified complete R2 objects;
   freeze writes and recheck retained obligations before cutover. Keep compatible
-  existing endpoints while clients move. Retire only the exact migrated cache
-  services, Local directories and legacy sparse filesystem after recovery and
-  fresh dependency checks; preserve source, credentials, shared stores and
-  evidence. Record physical allocation separately from logical/sparse capacity.
-  R2 stores artifact bytes; API, SQL and bounded verification staging still
-  require a host. Source qualification, client installation, live portal
-  adoption, remote compute hosting and storage retirement are separate outcomes.
+  existing endpoints while clients move.
+  [PR #68](https://github.com/ziahamza/layercache/pull/68) merged with all
+  seventeen checks green. The exact
+  [deployed backend](https://github.com/ziahamza/layercache/commit/95c418b92e2f41076d97c975972b71bc706cc206)
+  and [installed CLI](https://github.com/ziahamza/layercache/commit/3da910fc6d9486517230b63bd96e63db81dec2dc)
+  are recorded with the [sanitized rollout results](docs/evidence/operator-cloud-migration-20261020.md).
+  The October 20 operator rollout now provides
+  authenticated hosted project views, R2-backed artifacts and cloud-only
+  clients while preserving existing project identities and native authority.
+  All five cohort projects authenticated through real GitHub CLI credentials;
+  ten legacy artifact reads passed in total, followed by restart checks.
+  A synthetic publication and an operator-signed read-only fixture in a new
+  HTTP session passed reader and scope-denial controls. These live checks do
+  not establish a second user identity, application OIDC adoption or a live
+  membership-revocation mutation. Separate PostgreSQL source tests cover
+  revocation across adoption and restart. The physical recovery copy uses
+  the matching PostgreSQL major version. TCP password authentication passed
+  and the server rejected incorrect credentials. The
+  [migration guide](docs/cloud-migration.md) records the reusable checks.
+  This completes the bounded operator cohort, not public signup or paid plans.
+
+- [x] **Retire verified legacy cache storage after recovery and dependency checks.**
+  Owner: LayerCache cloud/operator. October 20 retirement followed a full R2
+  recovery download, authenticated decryption and complete archive/hash
+  verification. The operator removed obsolete containers, normally unmounted
+  the exact old filesystem and detached its backing device. Every active
+  mount namespace was clear before the exact sparse backing file was removed.
+  Source, credentials, shared stores and evidence remain protected. Physical
+  allocation was recorded separately from logical/sparse capacity. The
+  [migration guide](docs/cloud-migration.md) keeps these retirement gates
+  explicit for future moves. The
+  [deployed source](https://github.com/ziahamza/layercache/commit/95c418b92e2f41076d97c975972b71bc706cc206)
+  and [retirement results](docs/evidence/operator-cloud-migration-20261020.md#recovery-and-retirement)
+  record the completed scope and its recovery limits.
+
+- [ ] **Move API and SQL hosting off this machine and qualify ongoing recovery.**
+  Owner: LayerCache cloud/operator. R2 stores artifact bytes; API, PostgreSQL
+  and bounded verification staging still run on the current operator host.
+  Provisioning remote compute, independently recoverable encryption keys and
+  current off-host SQL backups remain separate work. Qualify restoration and
+  authorization on the replacement host before retiring its local counterpart.
+  The verified legacy archive does not back up later writes to the new service.
 
 - [x] **Deliver the first customer dashboard locally and on the web.**
   Owner: LayerCache dashboard. User outcome: inspect effective cache reuse,
@@ -58,9 +93,10 @@ workspaces and filesystem migration are outside the current product scope.
   passes affected Go suites and race checks, type checking, builds, vet, lint
   and 222 isolated browser checks across Chromium, Firefox and WebKit.
   [Qualification](docs/evidence/customer-dashboard-20261020.md) records actual
-  pruning, read-only denial, lifecycle and exact-currency controls. This is
-  source qualification; a CLI release and hosted portal deployment remain
-  separate gates. Full native usage and provider billing remain open below.
+  pruning, read-only denial, lifecycle and exact-currency controls. These are
+  the original source checks. The October 20 operator cohort now also uses
+  the hosted portal. An immutable CLI release, full native usage and provider
+  billing remain open below.
   [PR #67](https://github.com/ziahamza/layercache/pull/67) tracks hosted source
   checks. Initial remote authentication now precedes owned-backend construction,
   with restored and published native bytes tested from an empty capability.
@@ -92,9 +128,11 @@ workspaces and filesystem migration are outside the current product scope.
   application or economic acceptance. The operator-run
   [fixture](qa/r2-native-oidc/README.md) preserves service permissions and reports
   denied optional reader telemetry separately from artifact failures.
-  Next: actual workload adoption, supported recovery, scoped migration of
-  existing namespaces, then OAuth signup and paid-plan activation. The API and
-  SQL still run on the existing cloud host. Operator hosting does not activate
+  The October 20 operator rollout adds existing-workload namespace migration,
+  cloud-only clients and an authenticated hosted dashboard. Next: supported
+  ongoing recovery, remote compute hosting, OAuth signup and paid-plan
+  activation. The API and SQL still run on the current operator host.
+  Operator hosting does not activate
   managed billing or the portal's plan lifecycle.
   See [hosted storage](docs/hosted-storage.md). Prepare and review the complete
   runtime candidate before changing operator services.
