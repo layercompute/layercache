@@ -12,6 +12,8 @@ const aliceContext=await browser.newContext({viewport:{width:1440,height:1050}})
 const alice=await aliceContext.newPage(),bob=await bobContext.newPage();
 const errors:string[]=[];for(const page of [alice,bob])page.on('pageerror',error=>errors.push(error.message));
 const requests:{method:string;path:string;status:number}[]=[];
+const apiURLs:string[]=[];
+for(const page of [alice,bob])page.on('request',request=>{const url=new URL(request.url());if(url.pathname.startsWith('/api/'))apiURLs.push(url.href);});
 for(const page of [alice,bob])page.on('response',response=>{const url=new URL(response.url());if(url.origin===origin&&url.pathname.startsWith('/api/')){requests.push({method:response.request().method(),path:url.pathname,status:response.status()});if(requests.length>20)requests.shift();}});
 const results:{name:string;passed:boolean;error?:string}[]=[];
 async function check(name:string,fn:()=>Promise<void>){try{await fn();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error instanceof Error?error.message:String(error)});const diagnostics=await alice.evaluate(()=>({notice:document.querySelector('#notice')?.textContent,invalidFields:Array.from(document.querySelectorAll<HTMLInputElement>('input')).filter(input=>!input.validity.valid).map(input=>({name:input.name,message:input.validationMessage})),headings:Array.from(document.querySelectorAll('h1')).map(node=>node.textContent)}));console.error(JSON.stringify({failedCheck:name,diagnostics,requests}));await alice.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true});throw error;}}
@@ -85,7 +87,42 @@ try{
  await check('CLI connect exchanges GitHub credentials and uploads real cache bytes',async()=>{const cliRoot=fs.mkdtempSync('/tmp/layercache-cloud-cli-');fs.writeFileSync(path.join(cliRoot,'gh'),'#!/bin/sh\nprintf \'fixture-github-alice\\n\'\n',{mode:0o700});const configPath=path.join(cliRoot,'project.json');const connected=spawnSync(process.env.LAYERCACHE_BIN!,['connect','--cloud',origin,'--project',project,'--github-cli','--config',configPath,'--json'],{encoding:'utf8',timeout:20000,env:{...process.env,PATH:cliRoot+path.delimiter+process.env.PATH,XDG_CACHE_HOME:path.join(cliRoot,'cache'),XDG_CONFIG_HOME:path.join(cliRoot,'config')}});assert.equal(connected.status,0,connected.stderr);const config: {teamToken:string;compatibilityId:string;projectId:string;teamUrl:string}=JSON.parse(fs.readFileSync(configPath,'utf8'));assert.equal(config.projectId,project);assert.equal(config.teamUrl,origin);const token=config.teamToken;const put=await alice.request.put(origin+'/v8/artifacts/qa-ui-artifact',{headers:{Authorization:'Bearer '+token,'X-LayerCache-Compatibility':config.compatibilityId},data:'cache-data'.repeat(1024)});assert.equal(put.status(),200);await alice.getByRole('button',{name:'Refresh',exact:true}).click();await alice.getByText('10.0 KiB',{exact:true}).waitFor();});
  await check('invite reader and accept as intended account',async()=>{const f=form(alice,'Invite teammate');await f.getByLabel('GitHub username').fill('bob');await f.getByRole('combobox').selectOption('reader');await f.getByRole('button',{name:'Send invitation'}).click();await alice.getByText('Invitation ready.',{exact:false}).waitFor();await bob.getByRole('button',{name:'Refresh',exact:true}).click();await bob.getByRole('heading',{name:'Join Acme engineering'}).waitFor();await bob.getByRole('button',{name:'Accept invitation'}).click();await bob.getByText('Invitation accepted.',{exact:true}).waitFor();await bob.getByText('10.0 KiB',{exact:true}).waitFor();});
  await check('reader can see cache and cannot administer or create teams',async()=>{assert.equal(await bob.getByRole('button',{name:'Create team',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Create project',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Send invitation',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Save role',exact:true}).count(),0);assert.match(await bob.locator('main').innerText(),/reader/);});
+ await check('reader cannot prune at either UI or API',async()=>{
+  assert.equal(await bob.getByRole('button',{name:/^Prune /}).count(),0);
+  const info=await (await bob.request.get(origin+'/api/session')).json() as {csrfToken:string};
+  assert.equal((await bob.request.post(origin+`/api/projects/${project}/prune`,{headers:{Origin:origin,'X-CSRF-Token':info.csrfToken},data:{targetBytes:0,confirm:true}})).status(),403);
+ });
  await check('administrator promotes reader to writer',async()=>{await alice.getByRole('button',{name:'Refresh',exact:true}).click();await alice.getByLabel('Role for bob').selectOption('writer');const member=alice.locator('.member').filter({has:alice.getByText('@bob',{exact:true})});await member.getByRole('button',{name:'Save role'}).click();await alice.getByText('Role updated.',{exact:true}).waitFor();await bob.getByRole('button',{name:'Refresh',exact:true}).click();await bob.getByText('Acme engineering / writer',{exact:true}).waitFor();assert.equal(await bob.getByRole('button',{name:'Create project',exact:true}).count(),0);});
+ await check('writer cannot prune at either UI or API',async()=>{
+  await bob.getByText('10.0 KiB',{exact:true}).waitFor();assert.equal(await bob.getByRole('button',{name:/^Prune /}).count(),0);
+  const info=await (await bob.request.get(origin+'/api/session')).json() as {csrfToken:string};
+  assert.equal((await bob.request.post(origin+`/api/projects/${project}/prune`,{headers:{Origin:origin,'X-CSRF-Token':info.csrfToken},data:{targetBytes:0,confirm:true}})).status(),403);
+ });
+ await check('legacy allocation remains unknown in actual API and UI',async()=>{
+  const session=await (await alice.request.get(origin+'/api/session')).json() as {teams:{id:string;kind:string}[]};const team=session.teams.find(team=>team.kind==='team')!;
+  const response=await alice.request.get(origin+`/api/teams/${team.id}/usage`);assert.equal(response.status(),200);
+  const usage=await response.json() as {projectCount:number;allocatedCacheBytes:number|null;allocationComplete:boolean};
+  assert.equal(usage.projectCount,1);assert.equal(usage.allocatedCacheBytes,null);assert.equal(usage.allocationComplete,false);
+  const account=alice.getByRole('region',{name:'Account usage',exact:true});await account.getByText('1 project · Allocated capacity unavailable',{exact:true}).waitFor();
+  assert.doesNotMatch(await account.innerText(),/0 B allocated cache capacity/);
+ });
+ await check('hosted evidence and account costs keep scope and coverage',async()=>{
+  const snapshot=await (await alice.request.get(origin+`/api/projects/${project}/snapshot`)).json();
+  snapshot.cache.report={eligible:10,hits:7,misses:3,runs:13,degraded:false,hitRate:0,netEstimatedBuildTimeSaved:{milliseconds:3000,known:2,total:4,confidence:'low'},bytes:{downloaded:7168,uploaded:2048},timing:{lookupMs:10,downloadMs:200,verificationMs:30,restoreMs:400,uploadMs:50},sources:[{source:'teamCache',hits:6,downloadedBytes:6144,uploadedBytes:2048},{source:'publicCache',hits:1,downloadedBytes:1024,uploadedBytes:0}],integrations:[{integration:'turbo',hits:7,eligible:10}]};
+  snapshot.cost={state:'estimate',currency:'EUR',periodStart:'2026-10-01T00:00:00Z',periodEnd:'2026-11-01T00:00:00Z',complete:false,items:[{name:'Known project estimate',amountMinor:80}],knownSubtotalMinor:80,totalMinor:null};
+  const session=await (await alice.request.get(origin+'/api/session')).json() as {teams:{id:string;kind:string}[]};const team=session.teams.find(team=>team.kind==='team')!;
+  const usage=await (await alice.request.get(origin+`/api/teams/${team.id}/usage`)).json();usage.cost={state:'recorded',currency:'USD',periodStart:'2026-10-01T00:00:00Z',periodEnd:'2026-11-01T00:00:00Z',complete:true,items:[{name:'Team storage',amountMinor:175}],knownSubtotalMinor:175,totalMinor:175};
+  await alice.route(`**/api/projects/${project}/snapshot?*`,route=>route.fulfill({json:snapshot}));await alice.route(`**/api/teams/${team.id}/usage`,route=>route.fulfill({json:usage}));
+  await alice.getByRole('button',{name:'Refresh',exact:true}).click();await alice.getByText('70%',{exact:true}).waitFor();
+  const cache=alice.getByRole('region',{name:'Team Cache',exact:true});assert.match(await cache.innerText(),/Access · Team Cache/);
+  assert.equal(await cache.locator('.source-row[data-source="teamCache"] th').innerText(),'Team Cache');assert.equal(await cache.locator('.source-row[data-source="publicCache"] td').first().innerText(),'1');
+  assert.match(await cache.innerText(),/Native Gradle, Nx, Bazel and Xcode usage is not yet fully metered/);
+  const projectCost=alice.getByRole('region',{name:'Project cost',exact:true});assert.equal(await projectCost.locator('.cost-total').innerText(),'Unknown');assert.match(await projectCost.innerText(),/Known subtotal[\s\S]*0\.80.*EUR/);
+  const teamCost=alice.getByRole('region',{name:'Team cost',exact:true});assert.match(await teamCost.locator('.cost-total').innerText(),/1\.75.*USD/);assert.match(await teamCost.innerText(),/Operator-recorded/);
+  assert.match(await alice.locator('main').innerText(),/Project and account costs may overlap/);
+  await alice.unroute(`**/api/projects/${project}/snapshot?*`);await alice.unroute(`**/api/teams/${team.id}/usage`);await alice.getByRole('button',{name:'Refresh',exact:true}).click();await alice.getByText('10.0 KiB',{exact:true}).waitFor();
+  assert.equal(await alice.getByRole('region',{name:'Project cost',exact:true}).locator('.cost-total').innerText(),'Unknown');
+ });
  await check('session survives reload and reporting period changes',async()=>{await bob.reload();await bob.getByText('10.0 KiB',{exact:true}).waitFor();const response=bob.waitForResponse(r=>r.url().includes('/snapshot?period=7d'));await bob.getByLabel('Reporting period').selectOption('7d');assert.equal((await response).status(),200);});
  await check('personal cache is owner-only and preserves the shared project',async()=>{
   assert.equal(await bob.getByRole('button',{name:'Create Personal Cache',exact:true}).count(),0);
@@ -106,13 +143,31 @@ try{
   const personal=info.teams.find(t=>t.kind==='personal')!;
   assert.equal((await alice.request.post(origin+`/api/teams/${personal.id}/invitations`,{headers:{Origin:origin,'X-CSRF-Token':info.csrfToken},data:{login:'bob',role:'reader'}})).status(),403);
   await alice.reload();await alice.getByLabel('Team',{exact:true}).selectOption({label:'Personal Cache'});await alice.getByRole('heading',{name:'Private web',exact:true}).waitFor();
+  await alice.getByRole('button',{name:'Prune Personal Cache',exact:true}).waitFor();assert.match(await alice.getByRole('region',{name:'Personal Cache',exact:true}).innerText(),/Access · Personal Cache/);
   assert.equal(await alice.getByRole('button',{name:'Create Personal Cache',exact:true}).count(),0);
   await alice.getByLabel('Team',{exact:true}).selectOption({label:'Acme engineering'});await alice.getByText('10.0 KiB',{exact:true}).waitFor();
  });
  for(const width of [320,390,768,1440])await check(`viewport ${width}`,async()=>{await alice.setViewportSize({width,height:900});assert.equal(await alice.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await alice.screenshot({path:path.join(output,`viewport-${width}.png`),fullPage:true});});
+ await check('hosted prune confirmation cancellation and uncertain mutation',async()=>{
+  let posts=0,snapshots=0;const listener=(request:import('@playwright/test').Request)=>{const url=new URL(request.url());if(url.pathname===`/api/projects/${project}/prune`&&request.method()==='POST')posts++;if(url.pathname===`/api/projects/${project}/snapshot`)snapshots++;};alice.on('request',listener);
+  const prune=alice.getByRole('button',{name:'Prune Team Cache',exact:true});await prune.click();let dialog=alice.getByRole('dialog',{name:'Prune Team Cache'});
+  await dialog.getByLabel('Target storage in bytes').fill('0');await dialog.getByLabel('I confirm deletion of eligible cached artifacts.').check();await dialog.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(posts,0);
+  await alice.route(`**/api/projects/${project}/prune`,route=>route.fulfill({status:503,json:{error:'cache pruning could not be confirmed; refresh cache status'}}));
+  await prune.click();dialog=alice.getByRole('dialog',{name:'Prune Team Cache'});await dialog.getByLabel('Target storage in bytes').fill('0');await dialog.getByLabel('I confirm deletion of eligible cached artifacts.').check();const before=snapshots;
+  await dialog.getByRole('button',{name:'Prune cache',exact:true}).click();await dialog.getByText('A snapshot refresh was requested.',{exact:false}).waitFor();assert.equal(posts,1);assert.ok(snapshots>before);
+  await alice.waitForTimeout(600);assert.equal(posts,1);await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await alice.unroute(`**/api/projects/${project}/prune`);alice.off('request',listener);
+ });
+ await check('administrator prunes real isolated project and sees fresh storage',async()=>{
+  await alice.getByRole('button',{name:'Prune Team Cache',exact:true}).click();const dialog=alice.getByRole('dialog',{name:'Prune Team Cache'});
+  await dialog.getByLabel('Target storage in bytes').fill('0');await dialog.getByLabel('I confirm deletion of eligible cached artifacts.').check();
+  const response=alice.waitForResponse(response=>new URL(response.url()).pathname===`/api/projects/${project}/prune`);await dialog.getByRole('button',{name:'Prune cache',exact:true}).click();assert.equal((await response).status(),200);
+  await alice.waitForFunction(()=>!document.querySelector('dialog[open]'));const cache=alice.getByRole('region',{name:'Team Cache',exact:true});assert.equal(await cache.locator('.stats .value').first().innerText(),'0 B');
+  await bob.getByRole('button',{name:'Refresh',exact:true}).click();await bob.getByRole('region',{name:'Team Cache',exact:true}).locator('.stats .value').first().filter({hasText:'0 B'}).waitFor();
+ });
  await check('last administrator protection reaches UI',async()=>{await alice.getByLabel('Role for alice').selectOption('reader');const member=alice.locator('.member').filter({has:alice.getByText('@alice',{exact:true})});await member.getByRole('button',{name:'Save role'}).click();await alice.getByRole('alert').filter({hasText:'last administrator'}).waitFor();});
  await check('remove member immediately removes project visibility',async()=>{alice.once('dialog',dialog=>dialog.accept());await alice.locator('.member').filter({has:alice.getByText('@bob',{exact:true})}).getByRole('button',{name:'Remove'}).click();await alice.getByText('Member removed.',{exact:true}).waitFor();await bob.getByRole('button',{name:'Refresh',exact:true}).click();await bob.getByRole('heading',{name:'Welcome to your cloud workspace'}).waitFor();assert.equal(await bob.getByRole('heading',{name:'Web app',exact:true}).count(),0);});
  await check('sign out destroys browser session',async()=>{await bob.getByRole('button',{name:'Sign out',exact:true}).click();await bob.getByRole('link',{name:'Continue with GitHub'}).waitFor();await bob.reload();await bob.getByRole('link',{name:'Continue with GitHub'}).waitFor();});
  await check('expired server session clears private workspace',async()=>{await alice.route('**/api/session',route=>route.fulfill({status:401,json:{error:'expired'}}));await alice.getByRole('button',{name:'Refresh',exact:true}).click();await alice.getByRole('link',{name:'Continue with GitHub'}).waitFor();assert.equal(await alice.locator('pre').count(),0);assert.equal(await alice.getByRole('heading',{name:'Web app',exact:true}).count(),0);});
+ await check('customer API request URLs use only the authenticated origin',async()=>{for(const raw of apiURLs){const url=new URL(raw);assert.equal(url.origin,origin);assert.equal(url.hash,'');for(const name of url.searchParams.keys())assert.ok(name==='period','Unexpected API query selector: '+name);}});
  await check('no browser exceptions',async()=>assert.deepEqual(errors,[]));
 }catch(error){console.error(error);}finally{fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify({browser:engine,output,results},null,2));await browser.close();if(results.some(r=>!r.passed))process.exitCode=1;}

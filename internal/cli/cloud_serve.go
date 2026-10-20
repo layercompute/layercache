@@ -21,6 +21,7 @@ import (
 )
 
 type cloudFile struct {
+	DashboardCostsFile      string                           `json:"dashboardCostsFile,omitempty"`
 	GitHubAPIURL            string                           `json:"githubApiUrl,omitempty"`
 	GitHubAuthorizeURL      string                           `json:"githubAuthorizeUrl,omitempty"`
 	GitHubTokenURL          string                           `json:"githubTokenUrl,omitempty"`
@@ -105,6 +106,7 @@ func loadCloud(path string) (cloudFile, portal.Config, error) {
 	cfg.Origin = file.Origin
 	cfg.DataDir = file.DataDir
 	cfg.GitHubClientID = file.GitHubClientID
+	cfg.DashboardCostsFile = file.DashboardCostsFile
 	cfg.TeamCreatorIDs = file.TeamCreatorIDs
 	cfg.StoragePool = file.StoragePool
 	cfg.HostedStoragePools = make(map[string]config.Config, len(file.HostedStoragePools))

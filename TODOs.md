@@ -15,6 +15,21 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
+- [ ] **Deliver customer observability and cache management locally and on the web.**
+  Owner: LayerCache dashboard. User outcome: inspect effective cache reuse,
+  source attribution, transfers, storage, maintenance and account costs through
+  the CLI without a cloud account, or through the authenticated hosted portal.
+  Reuse the existing dashboard, measurement repositories and administrative GC.
+  Separate Local placement from Personal/Team/Public access, and preserve
+  trusted Public publication. Share rendering between the two authentication
+  modes. Support an optional CLI-owned backend and an explicitly configured
+  remote backend. Require confirmed administrative pruning, current membership,
+  retained/read-lease protection and refreshed state after uncertain mutations.
+  Costs must distinguish recorded operator input, estimates, incomplete coverage
+  and unavailable invoices. Do not infer total spend from current stored bytes.
+  Acceptance and outstanding native metering/billing limits are recorded in the
+  [dashboard specification](docs/customer-dashboard-spec.md).
+
 - [ ] **Launch hosted private caches with R2-backed storage pools.**
   Owner: LayerCache cloud/storage. The October 19 user priority is a usable
   hosted service so teams can accumulate compatible results and restore them

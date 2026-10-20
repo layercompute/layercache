@@ -1,7 +1,5 @@
-type Estimate = { milliseconds: number | null; known: number; total: number; confidence: string };
-type Report = { eligible: number; hits: number; misses: number; runs: number; degraded: boolean; netEstimatedBuildTimeSaved: Estimate; integrations: {integration: string; hits: number; eligible: number}[] | null };
-type Cache = {state: string; reportState: string; status?: {usageBytes: number; maxBytes: number | null; artifacts: number; evictionPolicy: string}; report?: Report};
-type Snapshot = {projects: {id: string; local: Cache; team: Cache}[]; updatedAt: string};
+import {renderCache, renderCost, renderScopes, scopeName, type Cache, type CostReport} from './cache-view.js';
+type Snapshot = {projects: {id: string; local: Cache; team: Cache; cost?: CostReport}[]; updatedAt: string};
 
 function consumeSessionFragment(): string {
   const value = location.hash.slice(1);
@@ -10,6 +8,7 @@ function consumeSessionFragment(): string {
   return value;
 }
 let token = consumeSessionFragment();
+document.querySelector('#cache-scopes')!.replaceWith(renderScopes());
 const projects = document.querySelector<HTMLDivElement>("#projects")!;
 const notice = document.querySelector<HTMLParagraphElement>("#notice")!;
 const period = document.querySelector<HTMLSelectElement>("#period")!;
@@ -20,35 +19,6 @@ document.querySelector<HTMLAnchorElement>(".brand")!.onclick = (event) => { even
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag); node.className = className; node.textContent = text; return node;
-}
-function bytes(value: number): string { return value >= 2 ** 30 ? `${(value / 2 ** 30).toFixed(1)} GiB` : value >= 2 ** 20 ? `${(value / 2 ** 20).toFixed(1)} MiB` : value >= 1024 ? `${(value / 1024).toFixed(1)} KiB` : `${value} B`; }
-function duration(value: number | null): string { if (value === null) return "Unknown"; const sign = value < 0 ? "−" : ""; const seconds = Math.abs(value) / 1000; return sign + (seconds >= 3600 ? `${(seconds / 3600).toFixed(1)} h` : seconds >= 60 ? `${(seconds / 60).toFixed(1)} min` : `${seconds.toFixed(1)} s`); }
-function metric(label: string, value: string, detail: string): HTMLDivElement {
-  const node = el("div"); node.append(el("div", "label", label), el("div", "value", value), el("div", "detail", detail)); return node;
-}
-function cacheView(name: string, cache: Cache): HTMLElement {
-  const node = el("section", "cache");
-  const heading = el("div", "cache-heading");
-  const stateNames: Record<string, string> = {connected: "● Connected", unavailable: "Unavailable", "not-connected": "Not connected", "authentication-required": "Sign-in required"};
-  heading.append(el("h3", "", name), el("span", `state ${cache.state}`, stateNames[cache.state] ?? "Unavailable")); node.append(heading);
-  if (!cache.status) {
-    const messages: Record<string, string> = {"not-connected": "Connect this project's Team Cache to share artifacts with engineers and CI. Choose Connect a project for setup instructions.", "authentication-required": "Run layercache login for this project's configuration, then refresh. Your account needs project access.", unavailable: name === "Local Cache" ? "Start this project's daemon with layercache start, then refresh. Cache usage and reports are unavailable while it cannot be reached." : "Team Cache could not be reached. Check the project's endpoint and connection, then refresh."};
-    node.append(el("div", "empty", messages[cache.state] ?? "Cache information is unavailable.")); return node;
-  }
-  const {status, report} = cache;
-  const stats = el("div", "stats");
-  const usage = metric("Artifact storage", bytes(status.usageBytes), status.maxBytes === null ? "Capacity unavailable" : `of ${bytes(status.maxBytes)} artifact capacity`);
-  if (status.maxBytes !== null && status.maxBytes > 0) { const meter = el("progress", "meter"); meter.max = status.maxBytes; meter.value = status.usageBytes; meter.setAttribute("aria-label", `${name} artifact capacity used`); usage.append(meter); }
-  stats.append(usage, metric("Cache hit rate", report && report.eligible > 0 ? `${Math.round(report.hits / report.eligible * 100)}%` : "—", report ? report.eligible > 0 ? `${report.hits.toLocaleString()} hits · ${report.misses.toLocaleString()} misses` : "No eligible outcomes in this period" : cache.reportState === "authentication-required" ? "Sign in again to read reports" : "Report unavailable"));
-  node.append(stats);
-  const metrics = el("div", "metrics");
-  const estimate = report && report.netEstimatedBuildTimeSaved.total > 0 ? report.netEstimatedBuildTimeSaved : undefined;
-  metrics.append(metric("Stored artifacts", status.artifacts.toLocaleString(), `${status.evictionPolicy || "Unknown"} eviction policy`), metric("Net estimated time saved", estimate ? duration(estimate.milliseconds) : "Unknown", estimate ? `${estimate.known}/${estimate.total} known · ${estimate.confidence} confidence` : "Timing evidence unavailable")); node.append(metrics);
-  const integrations = el("div", "integrations");
-  for (const item of report?.integrations ?? []) integrations.append(el("span", "integration", `${item.integration} · ${item.hits}/${item.eligible} hits`));
-  if (report?.degraded) integrations.append(el("span", "integration", "Partial or degraded evidence"));
-  if (report) integrations.append(el("span", "integration", `${report.runs} observed runs`));
-  node.append(integrations); return node;
 }
 let busy = false;
 let activeRequest: AbortController | undefined;
@@ -71,8 +41,20 @@ async function load(): Promise<void> {
       const card = el("article", "project"); const heading = el("div", "project-head"); const title = el("div");
       title.append(el("h2", "", project.id.split("/").at(-1) ?? project.id), el("p", "", project.id));
       heading.append(el("span", "project-icon", "▱"), title, el("span", "pill", "Connected via CLI"));
-      const grid = el("div", "cache-grid"); grid.append(cacheView("Local Cache", project.local), cacheView("Team Cache", project.team));
-      card.append(heading, grid); projects.append(card);
+      const prune = (cache: 'local' | 'team') => async (targetBytes: number) => {
+        try {
+          const response = await fetch('/api/prune', {method: 'POST', headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'}, body: JSON.stringify({projectId: project.id, cache, targetBytes, confirm: true}), signal: AbortSignal.timeout(35000)});
+          if (!response.ok) throw new Error(response.status === 401 ? 'Session expired. Open the current CLI dashboard link.' : response.status === 403 ? 'Pruning is not authorized for this cache.' : 'Pruning could not be confirmed.');
+        } finally {
+          while (busy) await new Promise(resolve => setTimeout(resolve, 25));
+          await load();
+        }
+      };
+      const grid = el("div", "cache-grid");
+      if (project.local.state === 'not-selected') grid.classList.add('single-cache');
+      else grid.append(renderCache("Local Cache", project.local, {onPrune: prune('local')}));
+      grid.append(renderCache(scopeName(project.team.status?.visibility ?? 'unknown'), project.team, {onPrune: prune('team')}));
+      card.append(heading, grid, renderCost(project.cost)); projects.append(card);
     }
     document.querySelector("#count")!.textContent = String(data.projects.length);
     document.querySelector("#updated")!.textContent = `Updated ${new Date(data.updatedAt).toLocaleTimeString()}`;

@@ -2,6 +2,15 @@
 
 The hosted beta lets an approved GitHub user create a team, invite teammates, add repository projects, inspect cache storage and activity, and connect an existing CLI. Other signed-in users can accept invitations and use their teams. Projects reuse the existing Team Cache protocols and isolate artifacts with distinct project identities and signing keys.
 
+The [customer dashboard](dashboard.md) shares cache rendering with the local CLI.
+It shows authoritative Personal/Team scope, reported source usage, transfer
+phases, project storage and administrator-confirmed pruning. Team summaries
+separate allocated capacity from current usage and project observations.
+An optional `dashboardCostsFile` in the protected cloud configuration supplies
+bounded operator cost records for teams and projects. Missing costs remain
+unknown; provider invoice reconciliation and full native metering are future
+work. This implementation does not activate public signup or billing.
+
 ## Standalone and managed service
 
 The open-source CLI and daemon work without a Layer Cache account, with local

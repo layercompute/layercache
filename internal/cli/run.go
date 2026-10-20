@@ -37,7 +37,7 @@ Usage:
   layercache stop [options]
   layercache status [options]
   layercache doctor [options]
-  layercache dashboard [--config FILE ...] [--listen 127.0.0.1:PORT]
+  layercache dashboard [--config FILE ...] [--serve | --backend URL] [--allow-prune] [--cost-file FILE] [--listen 127.0.0.1:PORT]
   layercache repair [options]
   layercache gc [options]
   layercache cache quota|pins|pin|unpin [options]

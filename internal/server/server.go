@@ -407,6 +407,22 @@ func (server *Server) status(writer http.ResponseWriter, request *http.Request) 
 		"evictionPolicy": server.config.EvictionPolicy,
 		"runtimePid":     server.runtimePID, "runtimeInstanceId": server.runtimeInstanceID,
 	}
+	// Visibility comes from the membership authority, never from storage location
+	// or the number of configured members. Standalone private ownership is unknown.
+	visibility := "unknown"
+	if server.config.Role == "public" {
+		visibility = "public"
+	} else if authority, ok := server.projectAuthority.(interface {
+		ProjectVisibility(context.Context, string) (string, error)
+	}); ok {
+		if scope, err := authority.ProjectVisibility(request.Context(), server.config.ProjectID); err == nil && (scope == "personal" || scope == "team") {
+			visibility = scope
+		}
+	}
+	result["visibility"] = visibility
+	result["metadataBytes"] = stats.MetadataBytes
+	claims, authenticated := access.ClaimsFromContext(request.Context())
+	result["canPrune"] = server.config.Role != "public" && authenticated && claims.Allows(access.CapabilityAdmin) && server.currentMembershipAllows(request.Context(), claims, access.CapabilityAdmin)
 	if server.storagePool.Path != "" {
 		result["storagePool"] = server.storagePool.status()
 	}
