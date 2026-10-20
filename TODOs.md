@@ -267,7 +267,7 @@ workspaces and filesystem migration are outside the current product scope.
   Unknown publication must reconcile without duplicate work. GitHub artifacts
   remain required until application retained-handoff acceptance passes.
 
-- [ ] **Release the merged CLI capabilities as beta.6.**
+- [ ] **Release the merged CLI capabilities as beta.7.**
   Owner: LayerCache release. The immutable beta.5 binary predates native Bazel,
   storage inspection and hosted storage plans. Qualify the current candidate
   and downloaded binary with the existing real Bazel client on Linux amd64;
@@ -281,6 +281,14 @@ workspaces and filesystem migration are outside the current product scope.
   Publish through the immutable attested pipeline, then qualify fresh installers
   before changing default installation or Local daemon pins. Server deployment, Swift
   replay, self-serve signup and required retained handoffs have separate gates.
+  The beta.6 tag remains at `86d2383d` without a published release after its
+  macOS worker-test environment assertion failed. Node's
+  [Darwin test](https://github.com/nodejs/node/blob/3e5c8afba6dcff91d46b8204276d62e3843b23b6/test/embedding/test-embedding-permission-env.js#L28-L30)
+  accounts for `__CF_USER_TEXT_ENCODING` despite a minimal supplied environment,
+  so the empty-environment assertion needs a reviewed test correction.
+  Keep the existing tag unchanged. Beta.7 follows
+  the test correction and qualification documentation merging with all required
+  CI green. The macOS correction remains unqualified until its CI job passes.
 
 - [x] **Expose an honest local storage inventory.**
   Owner: LayerCache. User outcome: identify the owners of disk growth before
@@ -850,22 +858,38 @@ workspaces and filesystem migration are outside the current product scope.
   changed-input misses, complete graph integrity, readiness, cancellation,
   closure before snapshots and trusted publication. Do not reuse GitHub OIDC
   as an Apple workload identity or introduce a broad publication secret.
-  Xcode 27 and external Swift replay remain independent gates; the Xcode 26.6
-  Clang protocol proof establishes neither. LayerCache owns its implementation,
+  Xcode 27 source replay, managed producer/consumer acceptance and external
+  Swift replay have separate gates; the Xcode 26.6 Clang proof does not establish
+  later toolchain or language coverage. LayerCache owns its implementation,
   deployment and pins; the application owner owns hook/settings changes and
   bounded Cloud producer/consumer acceptance. Record source, installed binary,
   deployed authorization, restored snapshots and language-specific replay
   separately before marking this complete.
 
-  [PR #76](https://github.com/ziahamza/layercache/pull/76) implements standalone
+  [PR #76](https://github.com/ziahamza/layercache/pull/76) merged standalone
   readiness/closure, revocable scoped grants and the existing native immutable
   archive client. The actual server/CLI fixture passes 24 synthetic-CAS controls
   locally and in the [hosted macOS job](https://github.com/ziahamza/layercache/actions/runs/39456825681/job/118745782258).
-  This is lifecycle, authorization and transfer evidence. The strict Xcode 27
-  main-source/PCH replay gate remains open while archive restore and native
-  graph validation are diagnosed. Deployment, installed pins and
-  managed Xcode Cloud producer/consumer acceptance remain separate unfinished
-  steps; external Swift replay is still unqualified.
+  The strict Xcode 27 gate passed at `fc8b449` in the
+  [candidate job](https://github.com/ziahamza/layercache/actions/runs/39467518317/job/118783279071)
+  and repeated after merge at `86d2383d` in the
+  [post-merge job](https://github.com/ziahamza/layercache/actions/runs/39468895209/job/118788090537).
+  Both recorded 10/10 action and 20/20 CAS hits, main-source/PCH replay and a
+  changed-source compilation miss producing 43 instead of 42 with correct
+  disassembly. This is Clang/Objective-C and PCH proof on the same VM and source
+  path with fresh processes, native CAS and DerivedData, not fresh-worker or
+  managed Cloud acceptance. Its phase timings establish no application savings.
+  The merged `86d2383d` server image is live and healthy; scoped snapshot
+  authorization has not been activated. The beta.6 tag stays at `86d2383d`
+  without a published release after a macOS worker-test environment assertion
+  failed. Beta.7 awaits the reviewed test correction and documentation merging
+  with all required CI green; the macOS correction is not yet qualified.
+  Installed pins, restoration on fresh workers, managed Xcode Cloud
+  producer/consumer acceptance and external Swift replay remain unfinished.
+  The [native qualification contract](docs/xcode-cache.md#compiler-behavior-and-native-qualification)
+  records the bounded inline-leaf grammar and native API proof. Its QA manifest
+  fails closed above 64 KiB per child, 256 children per target or 1,024 overall;
+  optional root-only counts are deferred and cannot qualify replay.
 
 ## P1: complete supported private protocols
 
