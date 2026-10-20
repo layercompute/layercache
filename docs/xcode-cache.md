@@ -201,6 +201,16 @@ fixture and toolchain. Phase timings are observations from this small fixture
 and establish no application savings. Fresh-worker restoration, managed Xcode
 Cloud acceptance, signed builds and external Swift replay remain unqualified.
 
+Scoped reader and trusted-publisher grants are now active on the healthy
+backend running the merged source. Thirteen live gateway controls passed.
+An independent read-only audit checked SQL and R2 metadata and verified SHA256
+across a complete 4,443-byte archive. Six live revocation controls also passed;
+the original grant-file identity and bytes were restored without a service
+restart or bootstrap rotation. These results qualify deployed authorization,
+revocation and archive integrity within the configured scope. A managed Xcode
+Cloud seed is not yet available; fresh-worker producer/consumer acceptance,
+external Swift replay and application savings remain unqualified.
+
 The dedicated workflow cross-compiles on Linux and repeats this replay with real Xcode. Its Linux runner defaults to GitHub Ubuntu until the repository has Ubicloud installed and `LAYERCACHE_UBICLOUD_ENABLED=true`; reruns use Ubuntu for recovery. Go protocol tests additionally exercise immutable action collisions, project/toolchain misses, file/inline identity, a fresh store consumer and compiler failure/uncached retry behavior.
 
 The graph-retention regression uses real gRPC clients and concurrent CAS writes
