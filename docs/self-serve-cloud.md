@@ -42,9 +42,12 @@ public signup, email delivery and password-reset emails are not provided.
 Bounded login limits use the immediate peer address and ignore forwarded IP
 headers. Size a broader public rollout separately from this private mode.
 
-Password sessions manage the adopted dashboard, not GitHub repositories or
-team enrollment. Native CLI and CI access still use real GitHub credentials
-and the cache's current authority. In password-only mode, connect using an
+Password sessions can list, read and prune only the exact configured imported
+projects owned by that account, intersected with current membership. Membership
+in ordinary, Personal or another owner's projects does not extend password
+access. These sessions cannot manage GitHub repositories or team enrollment.
+Native CLI and CI access still use real GitHub credentials and the cache's
+current authority. In password-only mode, connect using an
 existing GitHub CLI sign-in:
 
 ```sh

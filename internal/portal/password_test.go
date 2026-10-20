@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,14 +127,13 @@ func TestPasswordRotationInvalidatesPriorSessionsAndSurvivesReload(t *testing.T)
 	q, filename, owners := newPasswordPortal(t, true)
 	first := passwordBrowser(t, q, initialTestPassword)
 	second := passwordBrowser(t, q, initialTestPassword)
-	team, err := q.p.store.CreateTeam(context.Background(), "1", "Private workspace name")
-	if err != nil {
+	adopted := operatorTestProject(t)
+	if err := q.p.store.adoptOperatorProjects(context.Background(), []OperatorProject{adopted}); err != nil {
 		t.Fatal(err)
 	}
-	project, err := q.p.store.CreateProject(context.Background(), "1", team.ID, "Private project name", "acme/private-repository", "123", "refs/heads/main")
-	if err != nil {
-		t.Fatal(err)
-	}
+	q.p.cfg.OperatorProjects = []OperatorProject{adopted}
+	team := Team{ID: adopted.TeamID}
+	project := Project{ID: adopted.Config.ProjectID}
 	info := q.request("GET", "/api/session", "", first, nil)
 	if strings.Contains(info.Body.String(), team.ID) || strings.Contains(info.Body.String(), project.ID) || strings.Contains(info.Body.String(), "Private") || strings.Contains(info.Body.String(), "acme/private-repository") || !strings.Contains(info.Body.String(), `"projects":[]`) || !strings.Contains(info.Body.String(), `"teams":[]`) || !strings.Contains(info.Body.String(), `"invitations":[]`) {
 		t.Fatal("initial password disclosed workspace metadata")
@@ -321,4 +321,122 @@ func TestPasswordRateLimitsBoundMemoryAndBcryptConcurrency(t *testing.T) {
 	if store.allow(request, "new@example.test") || len(store.limits) != 2047 {
 		t.Fatal("rate-limit key memory is unbounded")
 	}
+}
+
+func TestPasswordSessionScopesImportedProjectsWithoutBroadeningGitHubIdentity(t *testing.T) {
+	q, _, _ := newPasswordPortal(t, false)
+	// The same verified identity can also sign in with GitHub and administer
+	// ordinary or personal projects. A password grants only its adopted scope.
+	q.p.cfg.GitHubClientID, q.p.cfg.GitHubClientSecret = q.cfg.GitHubClientID, q.cfg.GitHubClientSecret
+	oauth := q.login("alice")
+	q.login("bob")
+	ordinaryTeam := q.team(oauth, "Ordinary team")
+	ordinary := q.project(oauth, ordinaryTeam, "acme/ordinary-private")
+	personalTeam, err := q.p.store.CreatePersonalCache(context.Background(), "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	personal := q.project(oauth, personalTeam, "acme/personal-private")
+	own := operatorTestProject(t)
+	foreign := operatorTestProject(t)
+	foreign.Config.ProjectID, foreign.Config.ActionsRepository = "github.com/acme/foreign-import", "acme/foreign-import"
+	foreign.Owner, foreign.TeamID, foreign.TeamName = User{ID: "2", Login: "bob"}, "operator-foreign", "Foreign imported team"
+	configured := []OperatorProject{own, foreign}
+	if err = q.p.store.adoptOperatorProjects(context.Background(), configured); err != nil {
+		t.Fatal(err)
+	}
+	q.p.cfg.OperatorProjects = configured
+	// Native/portal membership alone must not widen the password's operator
+	// allowlist, even when that global identity is an administrator.
+	if _, err = q.p.store.db.Exec(`INSERT INTO lc_portal_members(team_id,user_id,role) VALUES($1,'1','admin')`, foreign.TeamID); err != nil {
+		t.Fatal(err)
+	}
+	bobTeam, err := q.p.store.CreateTeam(context.Background(), "2", "Invitation-only private team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invitation, err := q.p.store.Invite(context.Background(), "2", bobTeam.ID, "1", "reader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Defend even against a later unrelated project sharing an allowed team.
+	const unconfiguredID = "unconfigured-operator-project"
+	if _, err = q.p.store.db.Exec(`INSERT INTO lc_portal_projects(id,team_id,name,repository,repository_id,default_ref,secret) SELECT $1,$2,'Unconfigured private project','acme/unconfigured','456',default_ref,secret FROM lc_portal_projects WHERE id=$3`, unconfiguredID, own.TeamID, ordinary.ID); err != nil {
+		t.Fatal(err)
+	}
+	password := passwordBrowser(t, q, initialTestPassword)
+	response := q.request("GET", "/api/session", "", password, nil)
+	requireStatus(t, response, 200)
+	view := decodeQA[struct {
+		Teams       []Team       `json:"teams"`
+		Projects    []Project    `json:"projects"`
+		Invitations []Invitation `json:"invitations"`
+	}](t, response)
+	if len(view.Teams) != 1 || view.Teams[0].ID != own.TeamID || len(view.Projects) != 1 || view.Projects[0].ID != own.Config.ProjectID || len(view.Invitations) != 0 {
+		t.Fatalf("password scope escaped adopted owner: %+v", view)
+	}
+	for _, hidden := range []string{ordinary.ID, personal.ID, foreign.Config.ProjectID, foreign.TeamID, unconfiguredID, invitation.ID, bobTeam.ID} {
+		if strings.Contains(response.Body.String(), hidden) {
+			t.Fatalf("session exposed unrelated resource %q", hidden)
+		}
+	}
+	for _, id := range []string{ordinary.ID, personal.ID, foreign.Config.ProjectID, unconfiguredID} {
+		path := "/api/projects/" + url.PathEscape(id)
+		requireStatus(t, q.request("GET", path+"/snapshot", "", password, nil), 403)
+		requireStatus(t, q.request("POST", path+"/prune", `{"targetBytes":0,"confirm":true}`, password, map[string]string{"Content-Type": "application/json"}), 403)
+	}
+	for _, id := range []string{ordinaryTeam.ID, personalTeam.ID, foreign.TeamID, bobTeam.ID} {
+		requireStatus(t, q.request("GET", "/api/teams/"+id+"/usage", "", password, nil), 403)
+		requireStatus(t, q.request("GET", "/api/teams/"+id+"/members", "", password, nil), 403)
+	}
+	usage := q.request("GET", "/api/teams/"+own.TeamID+"/usage", "", password, nil)
+	requireStatus(t, usage, 200)
+	if count := decodeQA[struct {
+		ProjectCount int `json:"projectCount"`
+	}](t, usage).ProjectCount; count != 1 {
+		t.Fatalf("allowed team counted unrelated projects: %d", count)
+	}
+	// The shared guard used before snapshots and pruning still permits the
+	// exact configured project. Native SQL authority is tested separately.
+	req := httptest.NewRequest("GET", q.cfg.Origin+"/fixture", nil)
+	req.SetPathValue("project", own.Config.ProjectID)
+	if selected, err := q.p.dashboardProject(req, Session{User: own.Owner, AuthMethod: "password"}); err != nil || selected.ID != own.Config.ProjectID {
+		t.Fatal("owned configured project was denied", err)
+	}
+	// Cookies never substitute for the native GitHub bearer on cache/CLI APIs.
+	requireStatus(t, q.request("GET", "/api/cli/projects", "", password, nil), 403)
+	requireStatus(t, q.request("GET", "/v1/status", "", password, map[string]string{"X-LayerCache-Project": ordinary.ID}), 401)
+	requireStatus(t, q.request("GET", "/v8/artifacts/anything", "", password, map[string]string{"X-LayerCache-Project": ordinary.ID}), 404)
+	// The same user's existing OAuth session keeps its ordinary access.
+	full := q.request("GET", "/api/session", "", oauth, nil)
+	requireStatus(t, full, 200)
+	for _, visible := range []string{ordinary.ID, personal.ID, foreign.Config.ProjectID, invitation.ID} {
+		if !strings.Contains(full.Body.String(), visible) {
+			t.Fatalf("OAuth lost existing resource %q", visible)
+		}
+	}
+	for _, test := range []struct{ path string }{
+		{"/api/projects/" + ordinary.ID + "/snapshot"},
+		{"/api/projects/" + personal.ID + "/snapshot"},
+		{"/api/teams/" + ordinaryTeam.ID + "/usage"},
+		{"/api/teams/" + ordinaryTeam.ID + "/members"},
+	} {
+		requireStatus(t, q.request("GET", test.path, "", oauth, nil), 200)
+	}
+	token := q.capability(ordinary, "alice")
+	nativeHeaders := map[string]string{"Authorization": "Bearer " + token}
+	requireStatus(t, q.request("PUT", "/v8/artifacts/password-scope-control", "still-private", nil, nativeHeaders), 200)
+	requireStatus(t, q.request("POST", "/api/projects/"+ordinary.ID+"/prune", `{"targetBytes":0,"confirm":true}`, password, map[string]string{"Content-Type": "application/json"}), 403)
+	intact := q.request("GET", "/v8/artifacts/password-scope-control", "", nil, nativeHeaders)
+	requireStatus(t, intact, 200)
+	if intact.Body.String() != "still-private" {
+		t.Fatal("denied password prune altered native bytes")
+	}
+	requireStatus(t, q.request("POST", "/api/projects/"+ordinary.ID+"/prune", `{"targetBytes":0,"confirm":true}`, oauth, map[string]string{"Content-Type": "application/json"}), 200)
+	// Membership removal still wins over a static operator allowlist.
+	if _, err = q.p.store.db.Exec(`DELETE FROM lc_portal_members WHERE team_id=$1 AND user_id='1'`, own.TeamID); err != nil {
+		t.Fatal(err)
+	}
+	requireStatus(t, q.request("GET", "/api/teams/"+own.TeamID+"/usage", "", password, nil), 403)
+	requireStatus(t, q.request("GET", "/api/projects/"+url.PathEscape(own.Config.ProjectID)+"/snapshot", "", password, nil), 403)
 }

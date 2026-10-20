@@ -249,6 +249,15 @@ func inspectCacheHealth(cfg config.Config, status operationalStatus) diagnosticC
 }
 
 func inspectDegradedHealth(status operationalStatus) diagnosticCheck {
+	if status.RemoteOnly {
+		if !status.RecentDegraded.Available {
+			return diagnosticCheck{Detail: "recent degraded behavior could not be read from hosted storage"}
+		}
+		if status.RecentDegraded.Observed {
+			return diagnosticCheck{Detail: "a cache operation reported degraded behavior in the last 24 hours"}
+		}
+		return diagnosticCheck{OK: true, Detail: "no degraded cache operation was recorded in hosted storage in the last 24 hours"}
+	}
 	if status.RecentDegraded.Available && status.RecentDegraded.Observed {
 		return diagnosticCheck{Detail: "a cache operation reported degraded behavior in the last 24 hours"}
 	}
@@ -655,6 +664,13 @@ func runUninstall(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	cfg, err = config.Load(*configPath)
 	if err != nil {
 		return fmt.Errorf("reload Layer Cache configuration after locking uninstall: %w", err)
+	}
+	if cfg.RemoteOnly {
+		credentialRemoved, removeErr := uninstallRemoteOnlyClient(ctx, *configPath, cfg, (credentials.Store{}).Delete)
+		if removeErr != nil {
+			return removeErr
+		}
+		return printResult(stdout, *jsonOutput, map[string]any{"uninstalled": true, "remoteOnly": true, "cachePreserved": true, "localDataTouched": false, "credentialRemoved": credentialRemoved}, "Layer Cache cloud client disconnected; local data was left untouched")
 	}
 	if err := validateDeletionTarget(cfg.DataDir); err != nil {
 		return fmt.Errorf("refusing to uninstall from unsafe Local Cache directory: %w", err)

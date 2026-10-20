@@ -470,20 +470,23 @@ func (p *Portal) sessionInfo(w http.ResponseWriter, r *http.Request, session Ses
 		jsonResponse(w, 200, map[string]any{"user": session.User, "csrfToken": session.CSRF, "authMethod": session.AuthMethod, "passwordChangeRequired": true, "canChangePassword": true, "canManageGitHub": false, "canCreateTeam": false, "teams": []Team{}, "projects": []Project{}, "invitations": []Invitation{}})
 		return
 	}
-	teams, err := p.store.Teams(r.Context(), session.User.ID)
+	teams, err := p.dashboardTeams(r.Context(), session)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	projects, err := p.store.Projects(r.Context(), session.User.ID)
+	projects, err := p.dashboardProjects(r.Context(), session)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	invitations, err := p.store.Invitations(r.Context(), session.User.ID)
-	if err != nil {
-		fail(w, err)
-		return
+	invitations := []Invitation{}
+	if session.AuthMethod != "password" {
+		invitations, err = p.store.Invitations(r.Context(), session.User.ID)
+		if err != nil {
+			fail(w, err)
+			return
+		}
 	}
 	_, canCreateTeam := p.creators[session.User.ID]
 	jsonResponse(w, 200, map[string]any{"user": session.User, "csrfToken": session.CSRF, "teams": teams, "projects": projects, "invitations": invitations, "cloudOrigin": p.cfg.Origin, "canCreateTeam": canCreateTeam && session.AuthMethod != "password", "authMethod": session.AuthMethod, "passwordChangeRequired": session.PasswordChangeRequired, "canChangePassword": session.AuthMethod == "password", "canManageGitHub": session.AuthMethod != "password"})
@@ -724,7 +727,7 @@ func (c *capture) Write(data []byte) (int, error) {
 	return c.body.Write(data)
 }
 func (p *Portal) dashboardProject(r *http.Request, session Session) (*Project, error) {
-	projects, err := p.store.Projects(r.Context(), session.User.ID)
+	projects, err := p.dashboardProjects(r.Context(), session)
 	if err != nil {
 		return nil, err
 	}
@@ -737,7 +740,7 @@ func (p *Portal) dashboardProject(r *http.Request, session Session) (*Project, e
 }
 
 func (p *Portal) dashboardTeam(r *http.Request, session Session, id string) (*Team, error) {
-	teams, err := p.store.Teams(r.Context(), session.User.ID)
+	teams, err := p.dashboardTeams(r.Context(), session)
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +821,7 @@ func (p *Portal) teamUsage(w http.ResponseWriter, r *http.Request, session Sessi
 		fail(w, err)
 		return
 	}
-	projects, err := p.store.Projects(r.Context(), session.User.ID)
+	projects, err := p.dashboardProjects(r.Context(), session)
 	if err != nil {
 		fail(w, err)
 		return

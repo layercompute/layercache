@@ -23,14 +23,14 @@ func discoverConfiguredProject(ctx context.Context, cfg config.Config, directory
 	if err != nil && !errors.Is(err, project.ErrNoRemote) {
 		return project.Identity{}, fmt.Errorf("cannot establish current project identity: %w", err)
 	}
-	if discovered.Project != "" && discovered.Project == cfg.ProjectID {
+	if discovered.Project != "" && (discovered.Project == cfg.ProjectID || strings.HasPrefix(cfg.ProjectID, "github.com/") && strings.EqualFold(discovered.Project, cfg.ProjectID)) {
 		return discovered, nil
 	}
 	// Team-issued project IDs may be opaque. In that case the saved repository
 	// binding, rather than an absolute path, identifies matching clones.
 	if err == nil && !strings.HasPrefix(cfg.ProjectID, "github.com/") &&
 		!strings.HasPrefix(cfg.ProjectID, "local-") &&
-		discovered.ActionsRepository != "" && discovered.ActionsRepository == cfg.ActionsRepository {
+		discovered.ActionsRepository != "" && strings.EqualFold(discovered.ActionsRepository, cfg.ActionsRepository) {
 		return discovered, nil
 	}
 	return project.Identity{}, fmt.Errorf("current checkout project %q does not match configured project %q; run setup for this project", discovered.Project, cfg.ProjectID)

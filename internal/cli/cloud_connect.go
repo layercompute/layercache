@@ -74,7 +74,7 @@ func selectCloudProject(list cloudProjects, team, project string) (portal.Projec
 
 func validCloudProjectID(id, repository string) bool {
 	if strings.HasPrefix(id, "github.com/") {
-		return id == "github.com/"+strings.ToLower(repository) && validVMActionsRepository(repository)
+		return strings.EqualFold(strings.TrimPrefix(id, "github.com/"), repository) && validVMActionsRepository(repository)
 	}
 	return id != "" && len(id) <= 128 && !strings.ContainsAny(id, "/\\. \t\r\n\x00")
 }

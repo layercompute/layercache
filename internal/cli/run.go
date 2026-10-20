@@ -666,7 +666,7 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 	}
 	defer unlockConfiguration()
 	var unlockIntegrations func()
-	if existing && !original.RemoteOnly && !base.RemoteOnly {
+	if existing && !original.RemoteOnly {
 		unlockIntegrations, err = lockIntegrationState(ctx, original)
 		if err != nil {
 			return err

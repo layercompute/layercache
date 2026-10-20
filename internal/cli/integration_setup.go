@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -203,6 +204,14 @@ func rejectOwnedIntegrationConfigChange(original, requested config.Config) error
 	state, err := loadIntegrationState(original)
 	if err != nil {
 		return fmt.Errorf("inspect owned integrations before changing setup: %w", err)
+	}
+	if !original.RemoteOnly && requested.RemoteOnly && len(state.Records) > 0 {
+		names := make([]string, 0, len(state.Records))
+		for name := range state.Records {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		return fmt.Errorf("cannot enable --remote-only while Layer Cache owns Local integrations: %s; uninstall with --preserve-cache or complete an explicit integration migration first", strings.Join(names, ", "))
 	}
 	type affectedIntegration struct {
 		name   string

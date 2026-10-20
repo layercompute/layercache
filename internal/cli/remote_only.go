@@ -3,12 +3,15 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -77,4 +80,45 @@ func reconcileRemoteTurboSummaries(ctx context.Context, cfg config.Config, docum
 		return 0, errors.New("invalid hosted Turbo reconciliation")
 	}
 	return result.Tasks, nil
+}
+
+// The caller holds the configuration lock. A cloud-only DataDir is only an
+// unused hint, so neither uninstall mode inspects or removes anything there.
+func uninstallRemoteOnlyClient(ctx context.Context, path string, cfg config.Config, deleteCredential func(context.Context, string) error) (bool, error) {
+	if !cfg.RemoteOnly {
+		return false, errors.New("cloud client mode changed before uninstall")
+	}
+	data, err := readProtectedFile(path)
+	if err != nil {
+		return false, fmt.Errorf("refusing to remove unprotected cloud client configuration: %w", err)
+	}
+	var current config.Config
+	if json.Unmarshal(data, &current) != nil || !reflect.DeepEqual(current, cfg) {
+		// Config.Load applies migrations. Compare against its current projection
+		// while the protected file and process lock still identify this client.
+		current, err = config.Load(path)
+		if err != nil || !reflect.DeepEqual(current, cfg) {
+			return false, errors.New("cloud client configuration changed before uninstall")
+		}
+	}
+	removed := false
+	if cfg.GitHubCredentialAccount != "" {
+		prefix := githubCredentialAccount(cfg)
+		owned := cfg.GitHubCredentialAccount == prefix
+		if suffix, ok := strings.CutPrefix(cfg.GitHubCredentialAccount, prefix+"-"); ok && len(suffix) == 16 {
+			_, decodeErr := hex.DecodeString(suffix)
+			owned = decodeErr == nil
+		}
+		if !owned {
+			return false, errors.New("cloud client credential account does not belong to this project and endpoint")
+		}
+		if err := deleteCredential(ctx, cfg.GitHubCredentialAccount); err != nil {
+			return false, fmt.Errorf("remove cloud client credential before configuration cleanup: %w", err)
+		}
+		removed = true
+	}
+	if err := os.Remove(path); err != nil {
+		return removed, fmt.Errorf("remove cloud client configuration: %w", err)
+	}
+	return removed, nil
 }

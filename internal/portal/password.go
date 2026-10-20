@@ -2,6 +2,7 @@ package portal
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -351,4 +352,61 @@ func passwordProviderAllowed(w http.ResponseWriter, session Session) bool {
 		return false
 	}
 	return true
+}
+
+// Password accounts are provisioned only for adopted projects. Sharing a global
+// GitHub user ID with OAuth must not extend a password cookie to other teams.
+func (p *Portal) passwordProjectAllowed(session Session, project Project) bool {
+	if session.AuthMethod != "password" {
+		return true
+	}
+	if !project.OperatorManaged {
+		return false
+	}
+	for _, configured := range p.cfg.OperatorProjects {
+		if configured.Owner == session.User && configured.Config.ProjectID == project.ID && configured.TeamID == project.TeamID {
+			return true
+		}
+	}
+	return false
+}
+func (p *Portal) passwordTeamAllowed(session Session, team Team) bool {
+	if session.AuthMethod != "password" {
+		return true
+	}
+	if !team.OperatorManaged {
+		return false
+	}
+	for _, configured := range p.cfg.OperatorProjects {
+		if configured.Owner == session.User && configured.TeamID == team.ID {
+			return true
+		}
+	}
+	return false
+}
+func (p *Portal) dashboardProjects(ctx context.Context, session Session) ([]Project, error) {
+	projects, err := p.store.Projects(ctx, session.User.ID)
+	if err != nil || session.AuthMethod != "password" {
+		return projects, err
+	}
+	allowed := []Project{}
+	for _, project := range projects {
+		if p.passwordProjectAllowed(session, project) {
+			allowed = append(allowed, project)
+		}
+	}
+	return allowed, nil
+}
+func (p *Portal) dashboardTeams(ctx context.Context, session Session) ([]Team, error) {
+	teams, err := p.store.Teams(ctx, session.User.ID)
+	if err != nil || session.AuthMethod != "password" {
+		return teams, err
+	}
+	allowed := []Team{}
+	for _, team := range teams {
+		if p.passwordTeamAllowed(session, team) {
+			allowed = append(allowed, team)
+		}
+	}
+	return allowed, nil
 }
