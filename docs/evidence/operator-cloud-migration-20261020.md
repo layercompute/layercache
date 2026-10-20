@@ -16,6 +16,9 @@ Operational identities, credentials, paths and raw receipts remain private.
 Both revisions are included in [PR #68](https://github.com/ziahamza/layercache/pull/68),
 which merged with all seventeen source checks green. The installed CLI includes
 client changes after the deployed backend revision.
+These are the migration-time pins. The later
+[dashboard and integration audit](dashboard-integration-audit-20261020.md)
+records the subsequent reviewed backend/CLI update and live regression.
 
 ## Migration and live acceptance
 

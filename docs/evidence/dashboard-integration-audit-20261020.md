@@ -55,6 +55,38 @@ Local, embedded Team and PostgreSQL/S3 Team backends. The existing browser
 fixture passed 41 scenarios in each of Chromium, Firefox and WebKit, including
 the nonzero miss-publication upload control.
 
+## Deployed regression
+
+[PR #70](https://github.com/ziahamza/layercache/pull/70) merged as
+[`7b221c181b89100fa26b731e8eb32eeead289d21`](https://github.com/ziahamza/layercache/commit/7b221c181b89100fa26b731e8eb32eeead289d21)
+after all eighteen PR checks passed. Its tree matches the reviewed and deployed
+[`4ddb1387e16897767645fd2458133323d4bc7494`](https://github.com/ziahamza/layercache/commit/4ddb1387e16897767645fd2458133323d4bc7494)
+source. All post-merge source checks passed too.
+
+Fresh live Chromium, Firefox and WebKit runs each passed 44 scenarios. The
+served JavaScript matched the reviewed bundle bytes. Forty-five live UI/API
+metric projections passed, along with project navigation, both reporting
+periods, desktop/mobile layouts, connection instructions, corrected upload
+display, canceled maintenance and logout/revoked-session/fresh-login controls.
+All test sessions ended signed out. The current password remained valid, the
+old password remained invalid and the initial-change flag stayed cleared.
+
+Forty-five reads of existing native artifacts and three signed Actions archive
+reads passed across the canonical and two compatibility origins. Changed-key,
+changed-profile and foreign-project controls passed without publication or
+deletion. The same reviewed CLI was installed; all five clients passed doctor
+and scoped authenticated-read controls, kept saved configuration unchanged and
+created no Local artifact directories. The rollout preserved protected auth,
+session and project files and replaced only the API container. API and SQL
+hosting remain on the operator host; artifact bytes remain in R2.
+
+An ordinary application CI export job resolved the new merged action and
+submitted its final report through real OIDC. Turbo reported eleven successful
+tasks, including three cached tasks; LayerCache correctly reported eight
+eligible misses and zero attributed hits. The three workspace/snapshot hits
+were excluded from Team credit. No reporter warning occurred. This qualifies
+that reporting path without an extra dispatch or a savings claim.
+
 ## Adoption boundaries
 
 The audit traced five configured projects from local scripts and hooks through
@@ -65,9 +97,14 @@ and server evidence. A developer shell also used a different Node patch version
 than its configured CI profile, requiring explicit pinned-toolchain launch.
 
 The operator now has an explicit local launcher that validates project, tools
-and compatibility before delegating to the existing CLI. Planning and health
-checks passed for all five projects. No build or publication was run to qualify
-that launcher, and application runtime-helper rollout remains separate.
+and compatibility before delegating to the existing CLI. Four projects derive
+their profile from measured OS/libc/architecture, Node runtime, pnpm and Turbo
+facts through the same algorithm as their CI integration. One retains its
+existing qualified application profile. Protected temporary overlays avoid
+flipping shared configuration across concurrent workspaces. Planning and health
+checks passed for all five projects; cancellation and cleanup controls use only
+owned test process trees. No build or publication was run to qualify that
+launcher, and application runtime-helper rollout remains separate.
 
 Native Gradle, Expo, Xcode and provider caches need their own selected-toolchain
 profiles and credentials. The Expo provider's local archive/extraction settings
