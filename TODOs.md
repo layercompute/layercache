@@ -33,9 +33,9 @@ workspaces and filesystem migration are outside the current product scope.
   checks; permission, quota concurrency and restart controls; independent
   reviews, required CI, and authenticated deployed Phone App QA.
   [Source qualification](docs/evidence/project-dashboard-ux-20261020.md) now
-  records 192 hosted browser checks, shared/local compatibility and real
+  records 201 hosted browser checks, shared/local compatibility and real
   PostgreSQL concurrency/restart controls. Reviewed implementation is
-  [`e951ad0`](https://github.com/ziahamza/layercache/commit/e951ad0).
+  [`52944c0`](https://github.com/ziahamza/layercache/commit/52944c0).
   Hosted deployment and current-account Phone acceptance remain pending.
 
 - [ ] **Match native reuse to original execution resources and cost.**

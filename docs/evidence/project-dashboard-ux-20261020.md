@@ -1,7 +1,7 @@
 # Hosted project dashboard qualification
 
 Date: 2026-10-20 UTC. Implementation source:
-[`e951ad0`](https://github.com/ziahamza/layercache/commit/e951ad0).
+[`52944c0`](https://github.com/ziahamza/layercache/commit/52944c0).
 This receipt qualifies source behavior. Hosted deployment and authenticated
 application acceptance are separate checks.
 
@@ -29,8 +29,8 @@ or replace plan allocations. Uncertain responses require reconciliation.
 
 Validation:
 
-- All 192 hosted browser checks passed across Chromium, Firefox and WebKit,
-  including direct links/history, encoded IDs, selective requests, stale
+- All 201 hosted browser checks passed across Chromium, Firefox and WebKit,
+  including account switching, shrinking reports, direct links/history, encoded IDs, selective requests, stale
   responses, scroll/focus, recurrence, hidden controls and capacity reconciliation.
 - The unchanged local/shared views also passed 273 checks across those browsers.
 - Type checking, generated bundle builds, the full Go suite, vet and repository
@@ -43,3 +43,10 @@ Validation:
 No application CI workflows, native builds, provider dispatches, live pruning or
 customer capacity changes were used for source qualification. Synthetic browser
 values are presentation fixtures, not application savings measurements.
+
+Follow-up review also qualified zero-duration backtest bucket totals while
+preserving ordinary half-open report selection. Top-artifact selection retains
+only twenty heap candidates; exact frequency aggregation still scales with
+unique artifacts and artifact/run pairs. A persistent SQLite covering index
+replaces repeated automatic digest-index construction. Query-plan controls and
+synthetic metadata-only benchmarks qualify that lookup, not application speedup.
