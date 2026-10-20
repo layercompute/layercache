@@ -104,6 +104,8 @@ then grants maintenance access as well as read access; share it accordingly.
 The cache still checks the configured credential's current administrative
 authority. The hosted portal requires current project administrator membership,
 an authenticated browser session and its normal same-origin CSRF checks.
+Older cache backends without the maintenance capability field remain read-only
+in this dashboard until they are upgraded.
 
 Choose a target logical artifact size and confirm the operation. Pruning reuses
 the existing cache GC policy and preserves pins, retained claims and active

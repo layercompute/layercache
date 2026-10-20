@@ -573,6 +573,27 @@ workspaces and filesystem migration are outside the current product scope.
   response storage is evictable; qualify retained corpus storage/manifest policy
   before promising durable frozen replay.
 
+- [ ] **Productize Expo remote build caching through its native provider hook.**
+  Owner: LayerCache native integration. The October 20 user request points to
+  Expo's [build-cache provider guide](https://docs.expo.dev/guides/cache-builds-remotely/).
+  Build on the existing `native/expo.ts` adapter and Expo's
+  `resolveBuildCache`/`uploadBuildCache` interface rather than another build
+  service. Qualify the supported, pinned Expo SDK/CLI and default fingerprint
+  implementation with cold publication and independent fresh-workspace restore
+  through Local, Personal and authorized Team caches. Keep Public population
+  restricted to trusted publishers. Preserve complete build configuration,
+  toolchain, platform and architecture identity, bounded storage, byte integrity,
+  read-only consumers and ordinary compilation on misses or unavailable caches.
+  Verify current Metro JavaScript after reuse and changed-native-input rebuilds;
+  expose attributed outcomes, bytes and complete command timings in the shared
+  dashboard before claiming savings. The documented hook serves local
+  `npx expo run:android` and iOS Simulator `npx expo run:ios`, not `eas build`
+  or physical iOS device builds. Keep embedded build-number behavior explicit.
+  Acceptance: released provider setup, install/launch on actual supported targets,
+  cross-machine reuse, invalidation, bypass, corruption, cancellation, expiry and
+  tenant isolation. General product qualification remains separate from the
+  application-owned adoption below; no new build dispatch is requested here.
+
 - [ ] **Qualify shared Debug development clients for Phone.**
   Owner: Phone native owner with LayerCache client support. The existing Expo
   provider is configured, but trusted CI production and fresh local consumption
