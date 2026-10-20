@@ -154,9 +154,13 @@ bin/layercache dashboard --config /path/to/project.json
 # Repeat --config to view multiple projects.
 ```
 
-The [CLI-connected dashboard](docs/dashboard.md) shows Local Cache and Team Cache
-health, artifact storage, and reuse reports. Open the complete URL printed by the
-CLI and keep the process running. [Self-serve cloud teams and projects](docs/self-serve-cloud.md)
+The [customer dashboard](docs/dashboard.md) shows cache health, artifact storage,
+effective reuse by source, transfer phases and configured cost records. Use
+`--serve` to run a Local backend with it, or `--backend URL` to select the remote
+already configured for that project. Maintenance links require `--allow-prune`
+and actual administrator authority. Costs remain unknown without a ledger.
+Open the complete URL printed by the CLI and keep the process running.
+[Self-serve cloud teams and projects](docs/self-serve-cloud.md)
 are implemented but await public deployment and real GitHub OAuth qualification.
 Machine enrollment and cloud runners are subsequent slices.
 

@@ -16,17 +16,17 @@ let browser: ChildProcess | undefined;
 const stop = () => { browser?.kill('SIGTERM'); fixture.kill('SIGTERM'); };
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 try {
-  const linkFile = await new Promise<string>((resolveReady,reject) => {
+  const links = await new Promise<{linkFile:string;maintenanceLinkFile:string}>((resolveReady,reject) => {
     const lines = createInterface({input:fixture.stdout!});
     const timeout = setTimeout(()=>{lines.close();reject(new Error('Fixture readiness timed out'));},30000);
     fixture.once('error',reject);
     fixture.once('exit',()=>{clearTimeout(timeout);reject(new Error('Fixture exited before readiness'));});
     lines.on('line',line=>{
       if(!line.startsWith('{'))return;
-      try { const info: {ready?:boolean;root?:string;linkFile?:string}=JSON.parse(line); if(info.ready&&info.linkFile){clearTimeout(timeout);lines.close();console.log(`Dashboard fixture: ${info.root}`);resolveReady(info.linkFile);} } catch(error){clearTimeout(timeout);reject(error);}
+      try { const info: {ready?:boolean;root?:string;linkFile?:string;maintenanceLinkFile?:string}=JSON.parse(line); if(info.ready&&info.linkFile&&info.maintenanceLinkFile){clearTimeout(timeout);lines.close();console.log(`Dashboard fixture: ${info.root}`);resolveReady({linkFile:info.linkFile,maintenanceLinkFile:info.maintenanceLinkFile});} } catch(error){clearTimeout(timeout);reject(error);}
     });
   });
-  browser=spawn(process.execPath,[resolve('qa/dashboard/browser.ts')],{env:{...process.env,DASHBOARD_LINK_FILE:linkFile},stdio:'inherit'});
+  browser=spawn(process.execPath,[resolve('qa/dashboard/browser.ts')],{env:{...process.env,DASHBOARD_LINK_FILE:links.linkFile,DASHBOARD_MAINTENANCE_LINK_FILE:links.maintenanceLinkFile},stdio:'inherit'});
   const code=await new Promise<number>((resolveExit,reject)=>{browser!.once('error',reject);browser!.once('exit',code=>resolveExit(code??1));});
   process.exitCode=code;
 } finally {

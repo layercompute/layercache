@@ -207,7 +207,8 @@ func (gateway *ProjectGateway) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	// Reject new growth while preserving restores, cancellation and deletion.
 	// Atomic kernel allocation inside the bounded filesystem is the hard cap
 	// under concurrent requests; Content-Length is only an early admission hint.
-	if (r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodPatch) && !strings.HasPrefix(r.URL.Path, "/v1/auth/") {
+	pruning := r.Method == http.MethodPost && r.URL.Path == "/v1/gc"
+	if (r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodPatch) && !strings.HasPrefix(r.URL.Path, "/v1/auth/") && !pruning {
 		requested := max(r.ContentLength, 1<<20)
 		if requested > (1<<62) || !gateway.pool.admits(requested*2) {
 			if r.Method == http.MethodPut && nxArtifactPath(r.URL.Path) {

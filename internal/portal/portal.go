@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -38,6 +39,7 @@ import (
 var assets embed.FS
 
 type Config struct {
+	DashboardCostsFile      string
 	Origin                  string
 	DataDir                 string
 	PostgresURL             string
@@ -241,6 +243,8 @@ func (p *Portal) routes() {
 	p.mux.Handle("POST /api/teams/{team}/invitations", p.auth(p.invite))
 	p.mux.Handle("POST /api/invitations/{invite}/accept", p.auth(p.accept))
 	p.mux.Handle("GET /api/projects/{project}/snapshot", p.auth(p.projectSnapshot))
+	p.mux.Handle("GET /api/teams/{team}/usage", p.auth(p.teamUsage))
+	p.mux.Handle("POST /api/projects/{project}/prune", p.auth(p.pruneProject))
 }
 func jsonResponse(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -645,21 +649,41 @@ func (c *capture) Write(data []byte) (int, error) {
 	}
 	return c.body.Write(data)
 }
-func (p *Portal) projectSnapshot(w http.ResponseWriter, r *http.Request, session Session) {
+func (p *Portal) dashboardProject(r *http.Request, session Session) (*Project, error) {
 	projects, err := p.store.Projects(r.Context(), session.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range projects {
+		if projects[i].ID == r.PathValue("project") {
+			return &projects[i], nil
+		}
+	}
+	return nil, ErrDenied
+}
+
+func (p *Portal) dashboardTeam(r *http.Request, session Session, id string) (*Team, error) {
+	teams, err := p.store.Teams(r.Context(), session.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range teams {
+		if teams[i].ID == id {
+			return &teams[i], nil
+		}
+	}
+	return nil, ErrDenied
+}
+
+func (p *Portal) projectSnapshot(w http.ResponseWriter, r *http.Request, session Session) {
+	selected, err := p.dashboardProject(r, session)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	var selected *Project
-	for i := range projects {
-		if projects[i].ID == r.PathValue("project") {
-			selected = &projects[i]
-			break
-		}
-	}
-	if selected == nil {
-		fail(w, ErrDenied)
+	team, err := p.dashboardTeam(r, session, selected.TeamID)
+	if err != nil {
+		fail(w, err)
 		return
 	}
 	if err = p.ensureProject(r.Context(), *selected); err != nil {
@@ -683,6 +707,7 @@ func (p *Portal) projectSnapshot(w http.ResponseWriter, r *http.Request, session
 	var status dashboard.Status
 	if read("/v1/status", &status) {
 		cache.State = "connected"
+		status.CanPrune = selected.Role == "admin"
 		cache.Status = &status
 	}
 	period := 24 * time.Hour
@@ -698,5 +723,101 @@ func (p *Portal) projectSnapshot(w http.ResponseWriter, r *http.Request, session
 		cache.Report = &report
 		cache.ReportState = "connected"
 	}
-	jsonResponse(w, 200, map[string]any{"project": selected, "cache": cache, "updatedAt": now})
+	jsonResponse(w, 200, map[string]any{"project": selected, "scope": team.Kind, "cache": cache, "cost": dashboard.ReadCost(p.cfg.DashboardCostsFile, "project", selected.ID), "updatedAt": now})
+}
+
+// teamUsage projects only the current member's team allocation. Artifact and
+// measurement observations can overlap, so they are not summed into team usage.
+func (p *Portal) teamUsage(w http.ResponseWriter, r *http.Request, session Session) {
+	team, err := p.dashboardTeam(r, session, r.PathValue("team"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	projects, err := p.store.Projects(r.Context(), session.User.ID)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	count, allocated := 0, int64(0)
+	complete := true
+	const maximumSafeAllocation = int64(1<<53 - 1)
+	for _, project := range projects {
+		if project.TeamID != team.ID {
+			continue
+		}
+		count++
+		// Legacy runtime capacities are not reserved storage allocations. A
+		// partial or JavaScript-unsafe sum must not appear as the team's total.
+		if !validStorageID(project.StoragePoolID) || project.AllocatedCacheBytes <= 0 || project.AllocatedCacheBytes > maximumSafeAllocation-allocated {
+			complete = false
+			continue
+		}
+		allocated += project.AllocatedCacheBytes
+	}
+	var total *int64
+	if complete {
+		total = &allocated
+	}
+	jsonResponse(w, 200, map[string]any{
+		"teamId": team.ID, "scope": team.Kind, "projectCount": count,
+		"allocatedCacheBytes": total, "allocationComplete": complete, "cost": dashboard.ReadCost(p.cfg.DashboardCostsFile, "team", team.ID),
+	})
+}
+
+func (p *Portal) pruneProject(w http.ResponseWriter, r *http.Request, session Session) {
+	selected, err := p.dashboardProject(r, session)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	if selected.Role != "admin" {
+		fail(w, ErrDenied)
+		return
+	}
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || contentType != "application/json" {
+		fail(w, ErrInvalid)
+		return
+	}
+	defer r.Body.Close()
+	var input struct {
+		TargetBytes *int64 `json:"targetBytes"`
+		Confirm     bool   `json:"confirm"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF || input.TargetBytes == nil || *input.TargetBytes < 0 || !input.Confirm {
+		fail(w, ErrInvalid)
+		return
+	}
+	if err := p.ensureProject(r.Context(), *selected); err != nil {
+		jsonResponse(w, 503, map[string]string{"error": "project cache is unavailable"})
+		return
+	}
+	now := time.Now().UTC()
+	token, err := access.MintCapabilityToken(selected.Secret, access.Claims{
+		Subject: "github-id:" + session.User.ID, Project: selected.ID,
+		Capabilities: []access.Capability{access.CapabilityAdmin}, ExpiresAt: now.Add(time.Minute),
+	}, now)
+	if err != nil {
+		jsonResponse(w, 503, map[string]string{"error": "cache pruning could not be confirmed; refresh cache status"})
+		return
+	}
+	body, _ := json.Marshal(map[string]int64{"targetBytes": *input.TargetBytes})
+	request, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, p.cfg.Origin+"/v1/gc", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	out := &capture{header: http.Header{}}
+	p.gateway.ServeHTTP(out, request)
+	var result dashboard.PruneResult
+	if out.status == http.StatusBadRequest {
+		fail(w, ErrInvalid)
+		return
+	}
+	if out.status != http.StatusOK || json.Unmarshal(out.body.Bytes(), &result) != nil {
+		jsonResponse(w, 503, map[string]string{"error": "cache pruning could not be confirmed; refresh cache status"})
+		return
+	}
+	jsonResponse(w, http.StatusOK, result)
 }

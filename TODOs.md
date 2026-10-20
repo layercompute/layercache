@@ -1,6 +1,6 @@
 # LayerCache TODOs
 
-Last strategic review: 2026-10-19. This file owns outstanding work. Checkboxes
+Last strategic review: 2026-10-20. This file owns outstanding work. Checkboxes
 mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
@@ -14,6 +14,31 @@ before adding another integration. Transparent sharing of arbitrary mutable
 workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
+
+- [x] **Deliver the first customer dashboard locally and on the web.**
+  Owner: LayerCache dashboard. User outcome: inspect effective cache reuse,
+  source attribution, transfers, storage, maintenance and account costs through
+  the CLI without a cloud account, or through the authenticated hosted portal.
+  Reuse the existing dashboard, measurement repositories and administrative GC.
+  Separate Local placement from Personal/Team/Public access, and preserve
+  trusted Public publication. Share rendering between the two authentication
+  modes. Support an optional CLI-owned backend and an explicitly configured
+  remote backend. Require confirmed administrative pruning, current membership,
+  retained/read-lease protection and refreshed state after uncertain mutations.
+  Costs must distinguish recorded operator input, estimates, incomplete coverage
+  and unavailable invoices. Do not infer total spend from current stored bytes.
+  Acceptance and outstanding native metering/billing limits are recorded in the
+  [dashboard specification](docs/customer-dashboard-spec.md).
+  [Reviewed implementation](https://github.com/ziahamza/layercache/commit/3e13358f72845d4b9d9cce3038ed71371b3c8a59)
+  passes affected Go suites and race checks, type checking, builds, vet, lint
+  and 222 isolated browser checks across Chromium, Firefox and WebKit.
+  [Qualification](docs/evidence/customer-dashboard-20261020.md) records actual
+  pruning, read-only denial, lifecycle and exact-currency controls. This is
+  source qualification; a CLI release and hosted portal deployment remain
+  separate gates. Full native usage and provider billing remain open below.
+  [PR #67](https://github.com/ziahamza/layercache/pull/67) tracks hosted source
+  checks. Initial remote authentication now precedes owned-backend construction,
+  with restored and published native bytes tested from an empty capability.
 
 - [ ] **Launch hosted private caches with R2-backed storage pools.**
   Owner: LayerCache cloud/storage. The October 19 user priority is a usable
@@ -65,6 +90,8 @@ workspaces and filesystem migration are outside the current product scope.
   and macOS arm64, including preserved source bytes, allocation accounting and
   a visibly incomplete scan with nonzero exit. Require the exact release
   source's hosted-pool PostgreSQL check, reusing its existing dedicated fixture.
+  Qualify installed dashboard backend ownership, remote selection, read-only
+  defaults and confirmed administrative maintenance with isolated fixtures.
   Publish through the immutable attested pipeline, then qualify fresh installers
   before changing default installation or Local daemon pins. Server deployment, Swift
   replay, self-serve signup and required retained handoffs have separate gates.
@@ -446,6 +473,20 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P1: LLM and native outputs across machines
 
+- [ ] **Complete native usage and tenant cost metering for the dashboard.**
+  Owner: LayerCache measurements and cloud accounting. Extend existing native
+  reporting interfaces for Gradle, Nx, Bazel, Xcode and Expo instead of inferring
+  task hits from transport requests. Keep native task/compiler/archive results
+  distinct and report source, complete bytes and timing coverage. Reuse native
+  engine metrics for separate stores, with scoped capacity and maintenance.
+  Add persistent byte-hours, request/transfer meters, provider cost imports and
+  an explicit shared-overhead policy before reconciling tenant invoices.
+  Reuse established telemetry and provider exports rather than a second event
+  pipeline. Cover restart, gaps, deduplication, period boundaries and currency
+  precision; distinguish estimates, recorded charges and provider reconciliation.
+  Historical charts need actual time-series evidence. Current operator cost
+  ledgers and project allocations do not complete this work.
+
 - [ ] **Make Android compiler reuse portable across Workspaces.**
   Owner: LayerCache native integration, coordinated with the application CI owner.
   The [real Android pair](docs/evidence/gradle-android-private-20261016.json)
@@ -557,6 +598,27 @@ workspaces and filesystem migration are outside the current product scope.
   distinct from historical token usage and estimated avoided calls. Current
   response storage is evictable; qualify retained corpus storage/manifest policy
   before promising durable frozen replay.
+
+- [ ] **Productize Expo remote build caching through its native provider hook.**
+  Owner: LayerCache native integration. The October 20 user request points to
+  Expo's [build-cache provider guide](https://docs.expo.dev/guides/cache-builds-remotely/).
+  Build on the existing `native/expo.ts` adapter and Expo's
+  `resolveBuildCache`/`uploadBuildCache` interface rather than another build
+  service. Qualify the supported, pinned Expo SDK/CLI and default fingerprint
+  implementation with cold publication and independent fresh-workspace restore
+  through Local, Personal and authorized Team caches. Keep Public population
+  restricted to trusted publishers. Preserve complete build configuration,
+  toolchain, platform and architecture identity, bounded storage, byte integrity,
+  read-only consumers and ordinary compilation on misses or unavailable caches.
+  Verify current Metro JavaScript after reuse and changed-native-input rebuilds;
+  expose attributed outcomes, bytes and complete command timings in the shared
+  dashboard before claiming savings. The documented hook serves local
+  `npx expo run:android` and iOS Simulator `npx expo run:ios`, not `eas build`
+  or physical iOS device builds. Keep embedded build-number behavior explicit.
+  Acceptance: released provider setup, install/launch on actual supported targets,
+  cross-machine reuse, invalidation, bypass, corruption, cancellation, expiry and
+  tenant isolation. General product qualification remains separate from the
+  application-owned adoption below; no new build dispatch is requested here.
 
 - [ ] **Qualify shared Debug development clients for Phone.**
   Owner: Phone native owner with LayerCache client support. The existing Expo

@@ -370,6 +370,18 @@ func (s *Store) RepositoryID(ctx context.Context, project string) (string, error
 	}
 	return id, nil
 }
+
+// ProjectVisibility supplies the authoritative access scope to cache status.
+// A project's bucket, host or runtime role does not establish ownership.
+func (s *Store) ProjectVisibility(ctx context.Context, project string) (string, error) {
+	var kind string
+	err := s.db.QueryRowContext(ctx, `SELECT t.kind FROM lc_portal_teams t JOIN lc_portal_projects p ON p.team_id=t.id WHERE p.id=$1`, project).Scan(&kind)
+	if err != nil || (kind != "personal" && kind != "team") {
+		return "", ErrDenied
+	}
+	return kind, nil
+}
+
 func (s *Store) MemberRole(ctx context.Context, project, subject string) (string, error) {
 	if !strings.HasPrefix(subject, "github-id:") {
 		return "", ErrDenied

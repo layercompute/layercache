@@ -32,6 +32,21 @@ function launch(args: string[], name: string, pipeOutput = false): ChildProcess 
   processes.push(child);
   return child;
 }
+async function dashboardLink(args: string[], name: string): Promise<string> {
+  const dashboard = launch(['dashboard', ...args], name, true);
+  if (!dashboard.stdout) throw new Error('Dashboard stdout missing');
+  const lines = createInterface({input: dashboard.stdout});
+  const timeout = setTimeout(() => lines.close(), 15000);
+  try {
+    for await (const line of lines) {
+      if (/^http:\/\/127\.0\.0\.1:\d+\/#/.test(line.trim())) return line.trim();
+    }
+    throw new Error(`${name} did not print its link; inspect fixture log`);
+  } finally {
+    clearTimeout(timeout);
+    lines.close();
+  }
+}
 async function setup(name: string, project: string, role = 'local', team?: Config): Promise<{path: string; config: Config}> {
   const path = join(root, `${name}.json`);
   const endpoint = `127.0.0.1:${await port()}`;
@@ -64,16 +79,17 @@ try {
     if (!response.ok) throw new Error(`Artifact seed failed with HTTP ${response.status}`);
     await response.arrayBuffer();
   }
-  const dashboard = launch(['dashboard', '--config', first.path, '--config', second.path], 'dashboard', true);
-  if (!dashboard.stdout) throw new Error('Dashboard stdout missing');
-  let link = '';
-  const lines = createInterface({input: dashboard.stdout});
-  const timeout = setTimeout(() => lines.close(), 15000);
-  for await (const line of lines) { if (/^http:\/\/127\.0\.0\.1:\d+\/#/.test(line.trim())) {link=line.trim();break;} }
-  clearTimeout(timeout);
-  if (!link) throw new Error('Dashboard did not print its link; inspect fixture log');
+  const costs = join(root, 'costs.json');
+  writeFileSync(costs, JSON.stringify({version:1,entries:[
+    {scope:'project',id:first.config.projectId,currency:'USD',periodStart:'2026-10-01T00:00:00Z',periodEnd:'2026-11-01T00:00:00Z',basis:'recorded',complete:true,items:[{name:'Cache storage',amountMinor:150},{name:'Requests',amountMinor:25}]},
+    {scope:'project',id:second.config.projectId,currency:'EUR',periodStart:'2026-10-01T00:00:00Z',periodEnd:'2026-11-01T00:00:00Z',basis:'estimate',complete:false,items:[{name:'Known storage estimate',amountMinor:80}]},
+  ]}), {mode:0o600});
+  const dashboardArgs = ['--config', first.path, '--config', second.path, '--cost-file', costs];
+  const link = await dashboardLink(dashboardArgs, 'dashboard');
+  const maintenanceLink = await dashboardLink([...dashboardArgs, '--allow-prune'], 'dashboard-maintenance');
   writeFileSync(join(root, 'link'), link, {mode: 0o600});
-  console.log(JSON.stringify({ready:true,root,linkFile:join(root,'link')}));
+  writeFileSync(join(root, 'maintenance-link'), maintenanceLink, {mode: 0o600});
+  console.log(JSON.stringify({ready:true,root,linkFile:join(root,'link'),maintenanceLinkFile:join(root,'maintenance-link')}));
   console.log(`Dashboard link is in ${join(root, 'link')}; create ${join(root, 'stop')} to stop fixture processes.`);
   while (!stopping && !existsSync(join(root, 'stop'))) await delay(200);
 } finally {
