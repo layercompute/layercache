@@ -15,36 +15,41 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
-- [ ] **Qualify the live customer dashboard and close confirmed integration gaps.**
-  Owner: LayerCache dashboard/integrations. The October 20 user outcome is a
-  dashboard tested with the actual operator account and cache use traced from
-  developer commands on the shared host through each project's CI and builds.
-  Complete the authorized first-login password change through the normal UI,
-  keep credentials in protected operator files, and verify project navigation,
-  snapshots, reports, storage, cost coverage, responsive layout and sign-out.
-  Compare displayed values with their backing data. Open and cancel maintenance
-  controls without pruning customer artifacts. Record which native clients
-  actually restore or publish, which commands bypass integration, and which
-  protocols lack usage metering. Coordinate application workflow changes with
-  their owners. Fix reproducible product gaps through existing native clients
-  and record exact source and bounded live evidence before completion. A
-  configured endpoint alone establishes neither cache reuse nor cost savings.
-  The live account's initial password change and protected handoff are complete.
-  Chromium and WebKit passed 43 checks each; Firefox passed 42 initially and
-  completed its remaining authentication control after natural rate-limit
-  expiry. Forty-five live UI/API projections across five projects match the
-  underlying SQL accounting. No live pruning or membership change was needed.
-  The audit reproduced missing Turbo reports from large raw summaries and
-  omitted transit tasks, plus incorrect hosted Actions source attribution and
-  misleading per-source upload zeros. Qualification and exact source for their
-  fixes must precede deployment acceptance.
-  Remaining adoption work includes explicit local launchers with actual pinned
-  toolchains, immutable CI action pins and eligible read-only PR consumers.
+- [x] **Qualify the live customer dashboard and fix verified reporting gaps.**
+  Owner: LayerCache dashboard/integrations. The actual operator account completed
+  its normal initial password change, with the current credential kept outside
+  Git. [PR #70](https://github.com/ziahamza/layercache/pull/70) merged as
+  `7b221c181b89100fa26b731e8eb32eeead289d21` after all eighteen PR checks passed.
+  Its reviewed source `4ddb1387e16897767645fd2458133323d4bc7494` is deployed and
+  installed as the CLI; the merged tree is identical. All main checks pass.
+  The fixes separate raw/projected Turbo summary bounds, accept omitted transit
+  tasks without invented critical-path savings, preserve actual reporting
+  periods, correct future Team Actions source attribution and remove unsupported
+  per-source upload zeros. Post-deployment Chromium, Firefox and WebKit each
+  passed 44 live scenarios, including 45 UI/API metric projections in total.
+  Forty-five existing native artifact reads and three signed Actions archive
+  reads passed across current and compatibility origins. All five installed
+  clients passed doctor and scoped authenticated-read controls without creating
+  Local artifact stores. Password/session/project files and other containers
+  were preserved; no live pruning or membership change occurred. The
+  [bounded audit receipt](docs/evidence/dashboard-integration-audit-20261020.md)
+  keeps source, live qualification and application adoption distinct.
+
+- [ ] **Finish local and CI client adoption across the operator cohort.**
+  Owner: LayerCache integrations with application CI owners. An explicit host
+  launcher now validates installed pinned tools, derives runtime profiles through
+  the same algorithm as the prepared CI clients and uses temporary protected
+  configuration overlays without changing saved configurations. Five plans and
+  doctors pass; that does not establish task reuse. Four application PRs add
+  immutable action pins, canonical endpoints and eligible read-only PR consumers.
+  Qualify normal trusted publishers and independent consumers before declaring
+  adoption complete. An existing consumer following main already submitted a
+  correct normal OIDC export report after the source update, without dispatch.
   The Expo provider needs a native credential/cloud-only storage bridge; Go
   `remoteOnly` does not control that client's local archives or extractions.
-  Coordinate application changes with their owners and qualify normal producer
-  and independent consumer runs. Existing compiler/provider snapshots remain
-  separate, and native metering and invoice reconciliation remain open below.
+  Existing compiler/provider snapshots remain separate. Native metering and
+  invoice reconciliation remain open below. A configured endpoint alone
+  establishes neither cache reuse nor cost savings.
 
 - [x] **Move the existing operator cohort to hosted R2 and the cloud dashboard.**
   Owner: LayerCache cloud/operator. The October 20 user outcome is one hosted
