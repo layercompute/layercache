@@ -4,6 +4,8 @@ Checked October 20, 2026 UTC. These client changes close observed reporting
 gaps without changing cache keys, native tasks, permissions or build outcomes.
 Source qualification and application adoption remain separate. Previously
 accepted reports retain their original immutable contents.
+The qualified client is pinned at
+[`48e4208`](https://github.com/ziahamza/layercache/commit/48e420868b4250c9176ae5aa48127f1456e97208).
 
 ## Gradle lifecycle tasks
 

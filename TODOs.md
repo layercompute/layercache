@@ -79,7 +79,9 @@ workspaces and filesystem migration are outside the current product scope.
   A later accepted application report now records 862 native outcomes and 331
   restores. Another 63 live browser checks across three engines verified its
   actual projection. Its 30 unknown executed eligibilities are no-actions
-  lifecycle tasks; a version-qualified client correction is now source-qualified
+  lifecycle tasks; the version-qualified client correction at
+  [`48e4208`](https://github.com/ziahamza/layercache/commit/48e420868b4250c9176ae5aa48127f1456e97208)
+  is now source-qualified
   for future reports, without rewriting the accepted report. The 147 ambiguous
   source joins have multiple matching deliveries, rather than missing transport
   or proven local reuse. [Native log coverage](docs/evidence/native-log-coverage-20261020.md)
