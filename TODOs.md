@@ -15,7 +15,7 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
-- [ ] **Deliver customer observability and cache management locally and on the web.**
+- [x] **Deliver the first customer dashboard locally and on the web.**
   Owner: LayerCache dashboard. User outcome: inspect effective cache reuse,
   source attribution, transfers, storage, maintenance and account costs through
   the CLI without a cloud account, or through the authenticated hosted portal.
@@ -29,6 +29,13 @@ workspaces and filesystem migration are outside the current product scope.
   and unavailable invoices. Do not infer total spend from current stored bytes.
   Acceptance and outstanding native metering/billing limits are recorded in the
   [dashboard specification](docs/customer-dashboard-spec.md).
+  [Reviewed implementation](https://github.com/ziahamza/layercache/commit/90a5a8b6cf52311c49af4dfcfe1c96c5601ffeda)
+  passes affected Go suites and race checks, type checking, builds, vet, lint
+  and 222 isolated browser checks across Chromium, Firefox and WebKit.
+  [Qualification](docs/evidence/customer-dashboard-20261020.md) records actual
+  pruning, read-only denial, lifecycle and exact-currency controls. This is
+  source qualification; a CLI release and hosted portal deployment remain
+  separate gates. Full native usage and provider billing remain open below.
 
 - [ ] **Launch hosted private caches with R2-backed storage pools.**
   Owner: LayerCache cloud/storage. The October 19 user priority is a usable
@@ -80,6 +87,8 @@ workspaces and filesystem migration are outside the current product scope.
   and macOS arm64, including preserved source bytes, allocation accounting and
   a visibly incomplete scan with nonzero exit. Require the exact release
   source's hosted-pool PostgreSQL check, reusing its existing dedicated fixture.
+  Qualify installed dashboard backend ownership, remote selection, read-only
+  defaults and confirmed administrative maintenance with isolated fixtures.
   Publish through the immutable attested pipeline, then qualify fresh installers
   before changing default installation or Local daemon pins. Server deployment, Swift
   replay, self-serve signup and required retained handoffs have separate gates.
@@ -460,6 +469,20 @@ workspaces and filesystem migration are outside the current product scope.
 
 
 ## P1: LLM and native outputs across machines
+
+- [ ] **Complete native usage and tenant cost metering for the dashboard.**
+  Owner: LayerCache measurements and cloud accounting. Extend existing native
+  reporting interfaces for Gradle, Nx, Bazel, Xcode and Expo instead of inferring
+  task hits from transport requests. Keep native task/compiler/archive results
+  distinct and report source, complete bytes and timing coverage. Reuse native
+  engine metrics for separate stores, with scoped capacity and maintenance.
+  Add persistent byte-hours, request/transfer meters, provider cost imports and
+  an explicit shared-overhead policy before reconciling tenant invoices.
+  Reuse established telemetry and provider exports rather than a second event
+  pipeline. Cover restart, gaps, deduplication, period boundaries and currency
+  precision; distinguish estimates, recorded charges and provider reconciliation.
+  Historical charts need actual time-series evidence. Current operator cost
+  ledgers and project allocations do not complete this work.
 
 - [ ] **Make Android compiler reuse portable across Workspaces.**
   Owner: LayerCache native integration, coordinated with the application CI owner.
