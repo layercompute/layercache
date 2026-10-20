@@ -295,14 +295,15 @@ func TestRemoteOnlyConnectPreservesMixedCaseImportedRepositoryIdentity(t *testin
 	}
 	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
-	const projectID = "github.com/Acme/Widgets"
+	const projectID = "github.com/exampleorg/widgets"
+	const repository = "ExampleOrg/Widgets"
 	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/cli/projects":
-			_ = json.NewEncoder(w).Encode(cloudProjects{Teams: []portal.Team{{ID: "team"}}, Projects: []portal.Project{{ID: projectID, TeamID: "team", Name: "Widgets", Repository: "acme/widgets", DefaultRef: "refs/heads/main"}}})
+			_ = json.NewEncoder(w).Encode(cloudProjects{Teams: []portal.Team{{ID: "team"}}, Projects: []portal.Project{{ID: projectID, TeamID: "team", Name: "Widgets", Repository: repository, DefaultRef: "refs/heads/main"}}})
 		case "/v1/auth/github/exchange":
 			var body map[string]string
-			if json.NewDecoder(r.Body).Decode(&body) != nil || body["project"] != projectID || body["repository"] != "acme/widgets" {
+			if json.NewDecoder(r.Body).Decode(&body) != nil || body["project"] != projectID || body["repository"] != repository {
 				t.Error("imported identity changed during exchange")
 			}
 			_ = json.NewEncoder(w).Encode(capabilityExchange{Token: "fixture-capability", ExpiresAt: time.Now().Add(time.Hour)})
@@ -323,13 +324,14 @@ func TestRemoteOnlyConnectPreservesMixedCaseImportedRepositoryIdentity(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ProjectID != projectID || len(filepath.Base(connected.Config)) != 37 || strings.Contains(filepath.Base(connected.Config), "Acme") {
+	if cfg.ProjectID != projectID || cfg.ActionsRepository != repository || len(filepath.Base(connected.Config)) != 37 || strings.Contains(filepath.Base(connected.Config), "ExampleOrg") {
 		t.Fatal("mixed-case legacy ID was not preserved safely")
 	}
 	clone := filepath.Join(root, "clone")
 	initCLIRepository(t, clone, "main", "mixed-case import")
+	runCLIGit(t, clone, "remote", "set-url", "origin", "https://github.com/ExampleOrg/Widgets.git")
 	t.Chdir(clone)
-	if identity, scopeErr := discoverConfiguredProject(context.Background(), cfg, "", false); scopeErr != nil || identity.Project != "github.com/acme/widgets" || cfg.ProjectID != projectID {
+	if identity, scopeErr := discoverConfiguredProject(context.Background(), cfg, "", false); scopeErr != nil || identity.Project != projectID || cfg.ProjectID != projectID {
 		t.Fatalf("mixed-case repository binding failed: %v", scopeErr)
 	}
 	runCLIGit(t, clone, "remote", "set-url", "origin", "https://github.com/other/repository.git")
@@ -683,5 +685,36 @@ func TestRemoteOnlyCompletedDisconnectReportsPendingRecoveryCleanupAsSuccess(t *
 	var ignored bytes.Buffer
 	if err = reportRemoteOnlyUninstall(&ignored, &ignored, true, false, errors.Join(errors.New("credential removal failed"), removeErr)); err == nil {
 		t.Fatal("credential failure was hidden by cleanup warning")
+	}
+}
+
+func TestCloudProjectSelectionPreservesASCIIRepositorySpellingAndRejectsFoldAliases(t *testing.T) {
+	for _, test := range []struct {
+		name, id, repository string
+		valid                bool
+	}{
+		{name: "mixed repository", id: "github.com/exampleorg/widgets", repository: "ExampleOrg/Widgets", valid: true},
+		{name: "mixed preserved project ID", id: "github.com/ExampleOrg/Widgets", repository: "exampleorg/widgets", valid: true},
+		{name: "opaque ID mixed repository", id: "project-one", repository: "ExampleOrg/Widgets", valid: true},
+		{name: "foreign ASCII repository", id: "github.com/other/widgets", repository: "ExampleOrg/Widgets"},
+		{name: "Unicode repository Kelvin fold", id: "github.com/exampleorg/kwidgets", repository: "ExampleOrg/KWidgets"},
+		{name: "Unicode ID Kelvin fold", id: "github.com/exampleorg/Kwidgets", repository: "ExampleOrg/KWidgets"},
+		{name: "Unicode repository long s fold", id: "github.com/ask/widgets", repository: "aſk/widgets"},
+		{name: "Unicode opaque repository", id: "project-one", repository: "ExampleOrg/KWidgets"},
+		{name: "extra path component", id: "project-one", repository: "ExampleOrg/Widgets/extra"},
+		{name: "parent path", id: "project-one", repository: "ExampleOrg/.."},
+		{name: "encoded path", id: "project-one", repository: "ExampleOrg/%57idgets"},
+		{name: "whitespace", id: "project-one", repository: "ExampleOrg/Wid gets"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			list := cloudProjects{Teams: []portal.Team{{ID: "team"}}, Projects: []portal.Project{{ID: test.id, TeamID: "team", Repository: test.repository, DefaultRef: "refs/heads/main"}}}
+			selected, err := selectCloudProject(list, "team", test.id)
+			if (err == nil) != test.valid {
+				t.Fatalf("selection validity=%v, want %v", err == nil, test.valid)
+			}
+			if err == nil && (selected.ID != test.id || selected.Repository != test.repository) {
+				t.Fatal("selection changed preserved identity or repository spelling")
+			}
+		})
 	}
 }

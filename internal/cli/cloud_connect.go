@@ -66,7 +66,7 @@ func selectCloudProject(list cloudProjects, team, project string) (portal.Projec
 		return portal.Project{}, errors.New("multiple projects match; use --team and --project with IDs from --list")
 	}
 	p := matches[0]
-	if !validCloudProjectID(p.ID, p.Repository) || !validVMActionsRepository(p.Repository) || !strings.HasPrefix(p.DefaultRef, "refs/heads/") {
+	if !validCloudProjectID(p.ID, p.Repository) || !validCloudRepository(p.Repository) || !strings.HasPrefix(p.DefaultRef, "refs/heads/") {
 		return portal.Project{}, errors.New("cloud returned invalid project metadata")
 	}
 	return p, nil
@@ -74,9 +74,21 @@ func selectCloudProject(list cloudProjects, team, project string) (portal.Projec
 
 func validCloudProjectID(id, repository string) bool {
 	if strings.HasPrefix(id, "github.com/") {
-		return strings.EqualFold(strings.TrimPrefix(id, "github.com/"), repository) && validVMActionsRepository(repository)
+		selected := strings.TrimPrefix(id, "github.com/")
+		return validCloudRepository(selected) && validCloudRepository(repository) && strings.EqualFold(selected, repository)
 	}
 	return id != "" && len(id) <= 128 && !strings.ContainsAny(id, "/\\. \t\r\n\x00")
+}
+
+// GitHub treats ASCII repository spelling case-insensitively. Validate only
+// its syntax projection; keep the imported ID and display spelling unchanged.
+func validCloudRepository(repository string) bool {
+	for index := 0; index < len(repository); index++ {
+		if repository[index] >= 128 {
+			return false
+		}
+	}
+	return validVMActionsRepository(strings.ToLower(repository))
 }
 
 func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) error {
