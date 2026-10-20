@@ -100,6 +100,21 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		}
 		seen[cfg.ProjectID], ids[i], sources[i] = true, cfg.ProjectID, cfg
 	}
+	credentials := make([]dashboardCredentials, len(paths))
+	backendConfigurations := append([]config.Config(nil), sources...)
+	for i, source := range sources {
+		credentials[i] = dashboardCredentials{source: source, token: source.TeamToken, expiresAt: source.TeamTokenExpiresAt}
+		if *serve && source.TeamURL != "" && source.TeamToken == "" {
+			// Remote adapters are constructed only when their initial capability exists.
+			// Bootstrap all selected projects before opening any listener or runtime so
+			// failed first login cannot leave a partially connected owned backend.
+			refreshed, refreshErr := dashboardTeamCredentials(ctx, source, &credentials[i])
+			if refreshErr != nil || refreshed.TeamToken == "" {
+				return errors.New("dashboard --serve requires an initial Team Cache capability; run layercache login for the selected configuration, then retry when authentication is available")
+			}
+			backendConfigurations[i] = refreshed
+		}
+	}
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
@@ -117,7 +132,7 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	var owned []*dashboardBackend
 	var refreshWork sync.WaitGroup
 	if *serve {
-		owned, err = startDashboardBackends(ownedContext, sources)
+		owned, err = startDashboardBackends(ownedContext, backendConfigurations)
 		if err != nil {
 			return err
 		}
@@ -130,10 +145,6 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	// Serialize refreshes: credential managers and config refresh must not race
 	// when several browser tabs refresh together.
 	gate := make(chan struct{}, 1)
-	credentials := make([]dashboardCredentials, len(paths))
-	for i, source := range sources {
-		credentials[i] = dashboardCredentials{source: source, token: source.TeamToken, expiresAt: source.TeamTokenExpiresAt}
-	}
 	for i, backend := range owned {
 		refreshWork.Add(1)
 		go func(i int, backend *dashboardBackend) {

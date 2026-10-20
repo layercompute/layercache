@@ -13,6 +13,10 @@ scope; TODOs.md owns future work.
   selects the remote connection already present in the configuration, without
   sending credentials to a different origin. The browser never supplies an
   upstream endpoint or configuration path.
+  A configured remote with no initial capability must authenticate before owned
+  backend construction, or fail before opening a backend. This prevents a later
+  dashboard login from silently leaving the owned cache Local-only. Pure Local
+  configurations continue to work offline without a cloud account.
 - Local and hosted views share cache rendering, definitions and empty states.
   Hosted navigation and session authentication remain in the existing portal.
 - Show effective hit rate as hits divided by eligible reported outcomes, observed

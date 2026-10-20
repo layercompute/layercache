@@ -23,6 +23,11 @@ to replace a runtime that is already running. Use the ordinary dashboard command
 to inspect an existing daemon. `--serve` does not create a cloud account or expose
 an unauthenticated service.
 
+If a remote is configured but has no initial Team capability, `--serve` obtains
+that capability in memory before constructing its backends. If first login is
+unavailable, startup returns a login/retry instruction before opening any
+backend. Configurations without a remote still work offline without an account.
+
 To inspect only the remote backend configured by that project:
 
 ```bash

@@ -378,6 +378,15 @@ func TestDashboardRemoteURLNormalizationAndFlagConflicts(t *testing.T) {
 }
 
 func TestDashboardOwnedBackendRefreshesInMemoryWithoutChangingConfig(t *testing.T) {
+	dashboardOwnedBackendCredentialFixture(t, "expired-owned-capability")
+}
+
+func TestDashboardOwnedBackendBootstrapsEmptyCapabilityBeforeStarting(t *testing.T) {
+	dashboardOwnedBackendCredentialFixture(t, "")
+}
+
+func dashboardOwnedBackendCredentialFixture(t *testing.T, initialCapability string) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell credential fixture")
 	}
@@ -387,7 +396,7 @@ func TestDashboardOwnedBackendRefreshesInMemoryWithoutChangingConfig(t *testing.
 		t.Fatal(err)
 	}
 	const payload = "fresh owned backend output"
-	var exchanges, artifactReads atomic.Int64
+	var exchanges, artifactReads, artifactPublications atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/auth/github/exchange":
@@ -404,14 +413,39 @@ func TestDashboardOwnedBackendRefreshesInMemoryWithoutChangingConfig(t *testing.
 			if r.Method != http.MethodHead {
 				io.WriteString(w, payload)
 			}
+		case "/v8/artifacts/published-fixture":
+			if r.Header.Get("Authorization") != "Bearer refreshed-owned-capability" {
+				w.WriteHeader(401)
+				return
+			}
+			if r.Method == http.MethodHead {
+				w.WriteHeader(404)
+				return
+			}
+			if r.Method != http.MethodPut {
+				t.Error("unexpected publication method")
+				w.WriteHeader(405)
+				return
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil || string(body) != "owned publication" {
+				t.Error("publication bytes changed")
+				w.WriteHeader(400)
+				return
+			}
+			artifactPublications.Add(1)
+			w.WriteHeader(200)
 		default:
 			w.WriteHeader(404)
 		}
 	}))
 	defer upstream.Close()
 	cfg.TeamURL = upstream.URL
-	cfg.TeamToken = "expired-owned-capability"
-	cfg.TeamTokenExpiresAt = time.Now().Add(-time.Hour)
+	cfg.TeamToken = initialCapability
+	cfg.TeamTokenExpiresAt = time.Time{}
+	if initialCapability != "" {
+		cfg.TeamTokenExpiresAt = time.Now().Add(-time.Hour)
+	}
 	cfg.GitHubCLIPath = credentialProgram
 	if err := config.Save(path, cfg); err != nil {
 		t.Fatal(err)
@@ -451,9 +485,122 @@ func TestDashboardOwnedBackendRefreshesInMemoryWithoutChangingConfig(t *testing.
 	if err != nil || code != http.StatusOK || string(body) != payload || artifactReads.Load() == 0 {
 		t.Fatalf("owned backend did not use refreshed authority: HTTP %d body=%q err=%v", code, body, err)
 	}
+	request, _ := http.NewRequest(http.MethodPut, localRuntimeURL(cfg.Listen)+"/v8/artifacts/published-fixture", strings.NewReader("owned publication"))
+	request.Header.Set("Authorization", "Bearer "+cfg.LocalToken)
+	response, requestErr := client.Do(request)
+	if requestErr != nil {
+		t.Fatal(requestErr)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("local publication failed: HTTP %d", response.StatusCode)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for artifactPublications.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if artifactPublications.Load() != 1 {
+		t.Fatalf("owned backend did not publish with refreshed authority: publications=%d", artifactPublications.Load())
+	}
 	stop()
 	after, err := os.ReadFile(path)
 	if err != nil || string(after) != string(original) {
 		t.Fatal("owned refresh changed source configuration")
+	}
+}
+
+func TestDashboardOwnedBackendInitialAuthenticationFailureOpensNothing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell credential fixture")
+	}
+	for _, test := range []struct {
+		name            string
+		status          int
+		body            string
+		loginConfigured bool
+	}{
+		{"unavailable", 503, "protected-upstream-details", true},
+		{"malformed", 200, `{"teamToken":"protected-upstream-details",`, true},
+		{"missing capability", 200, `{"expiresAt":"2099-01-01T00:00:00Z"}`, true},
+		{"no login", 200, `{}`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			first, firstPath := dashboardFixtureConfig(t)
+			second, secondPath := dashboardFixtureConfig(t)
+			second.ProjectID = "github.com/acme/second"
+			credentialProgram := filepath.Join(t.TempDir(), "gh")
+			if err := os.WriteFile(credentialProgram, []byte("#!/bin/sh\nprintf 'fixture-github-token\\n'\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var exchanges atomic.Int64
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				exchanges.Add(1)
+				if r.URL.Path != "/v1/auth/github/exchange" {
+					t.Error("unexpected request before runtime startup")
+				}
+				w.WriteHeader(test.status)
+				io.WriteString(w, test.body)
+			}))
+			defer upstream.Close()
+			second.TeamURL = upstream.URL
+			second.TeamToken = ""
+			if test.loginConfigured {
+				second.GitHubCLIPath = credentialProgram
+			}
+			if err := config.Save(secondPath, second); err != nil {
+				t.Fatal(err)
+			}
+			// Both occupied listeners belong to this fixture. Failed first login must
+			// happen before attempting to replace either one or open the first store.
+			backendListener, err := net.Listen("tcp", first.Listen)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer backendListener.Close()
+			dashboardListener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dashboardListener.Close()
+			firstBefore, err := os.ReadFile(firstPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secondBefore, err := os.ReadFile(secondPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = runDashboard(context.Background(), []string{"--config", firstPath, "--config", secondPath, "--serve", "--listen", dashboardListener.Addr().String()}, io.Discard, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), "initial Team Cache capability") || !strings.Contains(err.Error(), "layercache login") || strings.Contains(err.Error(), "protected-upstream-details") {
+				t.Fatalf("initial authentication result: %v", err)
+			}
+			expectedExchanges := int64(1)
+			if !test.loginConfigured {
+				expectedExchanges = 0
+			}
+			if exchanges.Load() != expectedExchanges {
+				t.Fatalf("exchanges=%d want %d", exchanges.Load(), expectedExchanges)
+			}
+			for _, cfg := range []config.Config{first, second} {
+				if _, err := os.Stat(cfg.DataDir); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("failed authentication initialized backend data: %v", err)
+				}
+			}
+			firstAfter, err := os.ReadFile(firstPath)
+			if err != nil || string(firstAfter) != string(firstBefore) {
+				t.Fatal("first configuration changed")
+			}
+			secondAfter, err := os.ReadFile(secondPath)
+			if err != nil || string(secondAfter) != string(secondBefore) {
+				t.Fatal("second configuration changed")
+			}
+			for _, listener := range []net.Listener{backendListener, dashboardListener} {
+				connection, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+				if err != nil {
+					t.Fatalf("failed startup disturbed an existing listener: %v", err)
+				}
+				connection.Close()
+			}
+		})
 	}
 }
