@@ -32,6 +32,11 @@ workspaces and filesystem migration are outside the current product scope.
   Acceptance: route/history/reload, stale-response and scroll/focus browser
   checks; permission, quota concurrency and restart controls; independent
   reviews, required CI, and authenticated deployed Phone App QA.
+  [Source qualification](docs/evidence/project-dashboard-ux-20261020.md) now
+  records 192 hosted browser checks, shared/local compatibility and real
+  PostgreSQL concurrency/restart controls. Reviewed implementation is
+  [`e951ad0`](https://github.com/ziahamza/layercache/commit/e951ad0).
+  Hosted deployment and current-account Phone acceptance remain pending.
 
 - [ ] **Match native reuse to original execution resources and cost.**
   Owner: LayerCache measurement/native integrations. Extend native Gradle,
