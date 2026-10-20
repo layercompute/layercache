@@ -77,3 +77,35 @@ or customer capacity changes were used for this qualification. The fixtures do
 not establish application hit rates, signed builds, critical-path savings,
 measured CPU savings, monthly cost or invoice savings. Required application
 handoffs continue to use their existing retained-transfer path.
+
+## Publication and deployment
+
+Reviewed [PR #81](https://github.com/ziahamza/layercache/pull/81) merged at
+[`9c071a6`](https://github.com/ziahamza/layercache/commit/9c071a6e94aa7a173a810165020c6f3eaedda01e).
+The exact-source [main CI](https://github.com/ziahamza/layercache/actions/runs/39505444874),
+[Xcode qualification](https://github.com/ziahamza/layercache/actions/runs/39505444797),
+[PostgreSQL](https://github.com/ziahamza/layercache/actions/runs/39505444830)
+and [local-results](https://github.com/ziahamza/layercache/actions/runs/39505444827)
+workflows passed. The [release workflow](https://github.com/ziahamza/layercache/actions/runs/39505501404)
+qualified native Linux x64, Linux arm64 and macOS arm64 candidates before
+publishing immutable [beta.8](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.8).
+The published installer also passed fresh Linux x64 checksum and attestation
+verification. The separate installer matrix pins this release and its exact
+source; native candidate and published-installer evidence remain distinct.
+
+A guarded cloud-only rollout of this source preserved project configuration,
+account/session files, snapshot grants and other containers. Authenticated live
+acceptance passed 63 checks across Chromium, Firefox and WebKit. Each browser
+verified the served bundle against the deployment pin, compared API values with
+the UI and signed out its own session. The selected application had no native
+Gradle or Xcode reports in either period; the UI showed that absence. No synthetic
+application metrics were submitted. Reporting adoption remains with the
+application owners, who received immutable pins and normal-run receipt requests.
+
+A private operator ledger exposes a provider-reported GitHub cost subtotal with
+an explicit UTC retrieval watermark and incomplete coverage. The ledger excludes
+other compute and storage providers. Live checks compared its period, currency,
+subtotal, line items and caveats with the configured projection, and verified
+that other projects and team totals did not inherit it. Provider charges and
+cache-attributable savings remain separate. Raw billing rows, amounts,
+credentials and operational receipts were retained privately.

@@ -19,7 +19,9 @@ with the Phone CI owner retaining application workflows.
 ## Local use
 
 Use the credential-free [init script](../native/gradle/init.gradle) with a
-published beta.5 CLI and its compatible Local daemon:
+compatible published CLI and Local daemon. Native task reporting requires the
+[beta.8 metering client](native-metering.md#gradle); the historical beta.5
+qualification above covers HTTP caching:
 
 ```sh
 LAYER_CACHE_GRADLE_PUSH=1 layercache run \

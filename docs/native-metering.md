@@ -8,8 +8,12 @@ zero usage.
 
 The reporting implementation adds Gradle task reports and an offline Xcode
 evidence exporter. Source qualification, published client versions, deployed
-servers and application adoption are separate gates. Existing beta.7 clients
-do not contain these exporters. See [TODOs](../TODOs.md) for rollout status.
+servers and application adoption are separate gates. The Go import command is
+in immutable [beta.8](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.8).
+Use the offline Node exporter from its exact source
+[`9c071a6`](https://github.com/ziahamza/layercache/tree/9c071a6e94aa7a173a810165020c6f3eaedda01e/native);
+that bundle is a separate source artifact. Earlier beta.7 clients do not contain
+these commands. See [TODOs](../TODOs.md) for application rollout status.
 
 ## Gradle
 
