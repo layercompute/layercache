@@ -332,7 +332,7 @@ func (gateway *ProjectGateway) routeProject(w http.ResponseWriter, r *http.Reque
 			return deny()
 		}
 	}
-	if r.URL.Path == "/v1/auth/github/exchange" || r.URL.Path == "/v1/auth/github-oidc/exchange" {
+	if r.URL.Path == "/v1/auth/github/exchange" || r.URL.Path == "/v1/auth/github-oidc/exchange" || r.URL.Path == snapshotExchangePath {
 		if r.Method != http.MethodPost {
 			return deny()
 		}

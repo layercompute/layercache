@@ -22,6 +22,7 @@ const (
 )
 
 type Claims struct {
+	SnapshotScope  *SnapshotScope     `json:"snapshotScope,omitempty"`
 	Execution      *execution.Context `json:"execution,omitempty"`
 	Subject        string             `json:"sub"`
 	RunID          string             `json:"runId,omitempty"`
@@ -121,6 +122,9 @@ func normalizeClaims(claims Claims, now time.Time) (Claims, error) {
 	claims.RunID = strings.TrimSpace(claims.RunID)
 	claims.WorkspaceID = strings.TrimSpace(claims.WorkspaceID)
 	if claims.Subject == "" || claims.Project == "" || claims.ExpiresAt.IsZero() || !claims.ExpiresAt.After(now) {
+		return Claims{}, ErrInvalidToken
+	}
+	if claims.SnapshotScope != nil && !validSnapshotClaims(claims, now) {
 		return Claims{}, ErrInvalidToken
 	}
 	if claims.Execution != nil && (claims.Execution.Validate() != nil || claims.RunID == "" || claims.WorkspaceID == "") {

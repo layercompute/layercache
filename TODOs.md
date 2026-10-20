@@ -833,19 +833,39 @@ workspaces and filesystem migration are outside the current product scope.
   consider a bounded Bazel pilot only if residual native action work justifies it.
 
 - [ ] **Qualify compiler-cache lifecycle with Apple-managed Xcode builds.**
-  Owner: LayerCache compiler client with the application build owner. The current
-  adapter wraps its own `xcodebuild` child. It has no qualified standalone
-  service lifecycle or scoped snapshot transport for a build action orchestrated
-  by Xcode Cloud. Measure Apple's built-in cache first and preserve its own
-  managed build/test lifecycle. Add a bounded rootless service mode and transport
-  only if measured remaining compiler work justifies them. Qualify actual
+  Owner: LayerCache compiler client with the application build owner. On October
+  20 the user authorized standalone lifecycle, scoped authentication and joint
+  Xcode Cloud acceptance after cache-enabled managed builds still missed their
+  compiler actions. Preserve Apple's managed build/test lifecycle. Reuse the
+  existing native archive save/restore transport for closed stores, with a
+  bounded rootless service mode, explicit readiness and instance-safe shutdown
+  acknowledgment only after RPC handlers and SQLite close. Provision separate
+  revocable reader and trusted-publisher bootstrap grants bound to one project,
+  exact toolchain profile and snapshot namespace. Exchange them for short-lived
+  exact-artifact capabilities; an operator-provisioned shared credential does
+  not attest to Apple identity or a caller-reported branch. Keep writer secrets
+  out of untrusted source execution. Reject local/queued acceptance as hosted
+  snapshot publication, and keep required retained handoffs separate. Qualify actual
   worker/toolchain/SDK/target identities, fresh-worker restores and relevant
   changed-input misses, complete graph integrity, readiness, cancellation,
   closure before snapshots and trusted publication. Do not reuse GitHub OIDC
   as an Apple workload identity or introduce a broad publication secret.
   Xcode 27 and external Swift replay remain independent gates; the Xcode 26.6
-  Clang protocol proof establishes neither. No application workflow change or
-  build dispatch is requested by this service backlog entry.
+  Clang protocol proof establishes neither. LayerCache owns its implementation,
+  deployment and pins; the application owner owns hook/settings changes and
+  bounded Cloud producer/consumer acceptance. Record source, installed binary,
+  deployed authorization, restored snapshots and language-specific replay
+  separately before marking this complete.
+
+  [PR #76](https://github.com/ziahamza/layercache/pull/76) implements standalone
+  readiness/closure, revocable scoped grants and the existing native immutable
+  archive client. The actual server/CLI fixture passes 24 synthetic-CAS controls
+  locally and in the [hosted macOS job](https://github.com/ziahamza/layercache/actions/runs/39456825681/job/118745782258).
+  This is lifecycle, authorization and transfer evidence. The strict Xcode 27
+  main-source/PCH replay gate remains open while archive restore and native
+  graph validation are diagnosed. Deployment, installed pins and
+  managed Xcode Cloud producer/consumer acceptance remain separate unfinished
+  steps; external Swift replay is still unqualified.
 
 ## P1: complete supported private protocols
 

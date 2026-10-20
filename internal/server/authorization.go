@@ -63,6 +63,9 @@ func (server *Server) authenticateRequest(request *http.Request, integration str
 	}
 	claims, err := access.ParseCapabilityToken(server.config.LocalToken, token, now)
 	if err == nil && claims.Project == server.config.ProjectID {
+		if claims.SnapshotScope != nil && !server.snapshotRequestAllowed(request, claims) {
+			return access.Claims{}, false
+		}
 		return claims, true
 	}
 	// Preserve already-issued v1 Workspace tokens only on the loopback/local

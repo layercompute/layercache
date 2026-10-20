@@ -3430,7 +3430,7 @@ async function sourceKey(directory) {
 }
 
 // native/cli.ts
-import { resolve as resolve2 } from "node:path";
+import { resolve as resolve3 } from "node:path";
 
 // native/expo-identity.ts
 import { createHash as createHash4 } from "node:crypto";
@@ -3513,6 +3513,177 @@ async function planExpoSimulator(options) {
   return identity;
 }
 
+// native/snapshot-auth.ts
+import { createHash as createHash5 } from "node:crypto";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
+import { homedir as homedir2 } from "node:os";
+import { join as join5, resolve as resolve2 } from "node:path";
+var maximumCredentialBytes = 16 * 1024;
+var maximumResponseBytes = 16 * 1024;
+var exchangeTimeoutMs = 1e4;
+var SnapshotAuthenticationError = class extends Error {
+};
+function endpointOrigin(value) {
+  try {
+    const endpoint = new URL(value);
+    if (endpoint.username || endpoint.password || endpoint.pathname !== "/" || endpoint.search || endpoint.hash || endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(endpoint.hostname))) throw new Error();
+    return endpoint.origin;
+  } catch {
+    throw new SnapshotAuthenticationError("Snapshot endpoint must be an HTTPS origin or HTTP loopback");
+  }
+}
+async function readCredential(path) {
+  let file;
+  try {
+    const owner2 = process.geteuid?.();
+    if (owner2 === void 0) throw new Error();
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const valid = (info) => info.isFile() && info.uid === owner2 && (info.mode & 4095) === 384 && info.nlink === 1 && info.size > 0 && info.size <= maximumCredentialBytes;
+    if (!valid(await file.stat())) throw new Error();
+    const bytes = Buffer.alloc(maximumCredentialBytes + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const read = await file.read(bytes, length, bytes.length - length, null);
+      if (!read.bytesRead) break;
+      length += read.bytesRead;
+    }
+    if (length > maximumCredentialBytes || !valid(await file.stat())) throw new Error();
+    const token = bytes.toString("utf8", 0, length).trim();
+    if (!/^lcs1\.[a-z0-9][a-z0-9-]{0,62}\.[a-f0-9]{64}$/.test(token)) throw new Error();
+    return token;
+  } catch {
+    throw new SnapshotAuthenticationError("Snapshot credential file must be an owned single-link regular 0600 file containing one valid credential");
+  } finally {
+    await file?.close().catch(() => {
+    });
+  }
+}
+async function responseJSON(response) {
+  if (!response.body) throw new Error();
+  const reader = response.body.getReader();
+  const chunks = [];
+  let length = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      length += next.value.length;
+      if (length > maximumResponseBytes) throw new Error();
+      chunks.push(next.value);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } finally {
+    await reader.cancel().catch(() => {
+    });
+  }
+}
+async function authenticateSnapshot(input) {
+  const endpoint = endpointOrigin(input.endpoint);
+  let nativeKey;
+  try {
+    nativeKey = artifactKey(input.identity);
+    if (!/^[\x21-\x7e]{1,8192}$/.test(input.identity.key)) throw new Error();
+  } catch {
+    throw new SnapshotAuthenticationError("Snapshot requires an explicit valid project, compatibility and printable generation key");
+  }
+  const bootstrap = await readCredential(input.credentialFile);
+  let response;
+  try {
+    response = await fetch(new URL("/v1/auth/snapshot/exchange", endpoint), {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(exchangeTimeoutMs),
+      headers: { Authorization: `Bearer ${bootstrap}`, "Content-Type": "application/json", "X-LayerCache-Project": input.identity.project },
+      body: JSON.stringify({ project: input.identity.project, compatibility: input.identity.compatibility, key: input.identity.key, mode: input.mode })
+    });
+  } catch {
+    throw new SnapshotAuthenticationError("Snapshot credential exchange unavailable");
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {
+    });
+    throw new SnapshotAuthenticationError(`Snapshot credential exchange returned HTTP ${response.status}`);
+  }
+  try {
+    const result = await responseJSON(response);
+    const expires = typeof result.expiresAt === "string" ? Date.parse(result.expiresAt) : NaN;
+    const now = Date.now();
+    if (result.version !== 1 || result.credentialKind !== "shared-snapshot-bootstrap" || result.project !== input.identity.project || result.compatibility !== input.identity.compatibility || result.nativeKey !== nativeKey || result.mode !== input.mode || !Array.isArray(result.capabilities) || result.capabilities.length !== 1 || result.capabilities[0] !== input.mode || typeof result.token !== "string" || !/^lc2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(result.token) || result.token.length > maximumResponseBytes || !Number.isFinite(expires) || expires <= now || expires > now + 15 * 60 * 1e3 + 5e3) throw new Error();
+    const root = resolve2(input.cacheDir ?? process.env.LAYER_CACHE_NATIVE_DIR ?? join5(homedir2(), ".cache", "layercache", "native-v1"));
+    return { endpoint, token: result.token, cacheDir: join5(root, "snapshot-v1", createHash5("sha256").update(endpoint).digest("hex")) };
+  } catch {
+    throw new SnapshotAuthenticationError("Snapshot exchange returned invalid or mismatched scoped credentials");
+  }
+}
+
+// native/snapshot-error.ts
+var clientFailures = /* @__PURE__ */ new Map([
+  ["Invalid artifact digest or size", "metadata-invalid"],
+  ["Artifact exceeds declared size", "integrity-failed"],
+  ["Artifact integrity check failed", "integrity-failed"],
+  ["Duplicate or case-colliding archive path", "archive-path-collision"],
+  ["Unsafe archive path", "archive-path-unsafe"],
+  ["Unsupported archive entry", "archive-entry-unsupported"],
+  ["Special permission bits are not cacheable", "archive-permissions-unsupported"],
+  ["Empty archive link", "archive-link-unsafe"],
+  ["Unsafe archive link", "archive-link-unsafe"],
+  ["Archive writes through a symlink", "archive-link-unsafe"],
+  ["Unsafe archive link chain", "archive-link-unsafe"],
+  ["Cyclic archive link", "archive-link-cycle"],
+  ["Empty artifact archive", "archive-empty"],
+  ["Invalid archive", "archive-invalid"],
+  ["Too many archive entries", "archive-entry-limit"],
+  ["Artifact exceeds local cache budget", "cache-budget-exceeded"],
+  ["Expanded artifact exceeds local cache budget", "cache-budget-exceeded"],
+  ["Insufficient local cache budget", "cache-budget-exceeded"],
+  ["Insufficient local cache budget: live Expo consumers are pinned", "cache-budget-exceeded"],
+  ["Native cache is busy; inspect its .lock directory", "cache-busy"],
+  ["Cannot replace native artifact backing live Expo consumers; use a complete build key", "cache-busy"],
+  ["Build must be a directory or regular file", "input-unsupported"],
+  ["Unsupported build file", "input-unsupported"],
+  ["Too many build files", "input-unsupported"],
+  ["maxBytes must be positive integer bytes", "configuration-invalid"],
+  ["maxAgeMs must be positive integer milliseconds", "configuration-invalid"]
+]);
+var libraryFailures = /* @__PURE__ */ new Map([
+  ["EEXIST", "filesystem-exists"],
+  ["ENOENT", "filesystem-missing"],
+  ["EACCES", "filesystem-permission"],
+  ["EPERM", "filesystem-permission"],
+  ["ENOSPC", "filesystem-full"],
+  ["EDQUOT", "filesystem-full"],
+  ["EROFS", "filesystem-read-only"],
+  ["ENOTDIR", "filesystem-path-invalid"],
+  ["EISDIR", "filesystem-path-invalid"],
+  ["ELOOP", "filesystem-path-invalid"],
+  ["EBUSY", "filesystem-busy"],
+  ["Z_DATA_ERROR", "compression-invalid"],
+  ["Z_BUF_ERROR", "compression-invalid"],
+  ["TAR_BAD_ARCHIVE", "archive-invalid"],
+  ["TAR_ABORT", "archive-invalid"],
+  ["TAR_ENTRY_ERROR", "archive-extraction-failed"],
+  ["TAR_ENTRY_UNSUPPORTED", "archive-entry-unsupported"],
+  ["ETIMEDOUT", "timeout"],
+  ["ABORT_ERR", "canceled"]
+]);
+function snapshotArchiveErrorMessage(error) {
+  let classification;
+  try {
+    if (error instanceof Error) {
+      classification = clientFailures.get(error.message);
+      if (!classification && "code" in error && typeof error.code === "string") classification = libraryFailures.get(error.code);
+      if (!classification && error instanceof DOMException) {
+        if (error.name === "TimeoutError") classification = "timeout";
+        else if (error.name === "AbortError") classification = "canceled";
+      }
+    }
+  } catch {
+    classification = void 0;
+  }
+  return classification ? `Snapshot archive operation failed: ${classification}` : "Snapshot archive operation failed";
+}
+
 // native/cli.ts
 async function main() {
   const [operation, ...args] = process.argv.slice(2);
@@ -3528,22 +3699,48 @@ async function main() {
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    const flags = operation === "expo-key" ? ["--project", "--app", "--root", "--scheme", "--target"] : ["--project", "--compatibility", "--key", "--path", "--cache-dir", "--max-bytes"];
+    const flags = operation === "expo-key" ? ["--project", "--app", "--root", "--scheme", "--target"] : ["--project", "--compatibility", "--key", "--path", "--cache-dir", "--max-bytes", "--timeout-seconds", "--credential-file", "--endpoint"];
     if (!flag || !flags.includes(flag) || !value || flag in values) throw new Error("Invalid arguments");
     values[flag] = value;
   }
   if (operation === "expo-key") {
-    const projectRoot = resolve2(values["--root"] ?? ".");
+    const projectRoot = resolve3(values["--root"] ?? ".");
     const target = values["--target"] ? parseSimulatorTarget(values["--target"]) : await detectSimulatorTarget(projectRoot);
     console.log(JSON.stringify(await planExpoSimulator({ projectRoot, project: values["--project"] ?? "", app: values["--app"] ?? "", scheme: values["--scheme"], target })));
     return;
   }
+  const timeout = values["--timeout-seconds"];
+  if (timeout !== void 0 && (!/^[1-9][0-9]{0,2}$/.test(timeout) || Number(timeout) > 900)) throw new Error("--timeout-seconds must be an integer from 1 to 900");
+  const timeoutOptions = timeout === void 0 ? {} : { timeoutMs: Number(timeout) * 1e3 };
   const identity = { project: values["--project"] ?? "", compatibility: values["--compatibility"] ?? "", key: values["--key"] ?? "" };
+  if (values["--credential-file"] || values["--endpoint"]) {
+    if (!values["--credential-file"] || !values["--endpoint"] || !values["--path"] || !["save", "restore"].includes(operation ?? "")) {
+      throw new SnapshotAuthenticationError("Scoped snapshot save/restore requires --credential-file, --endpoint and --path");
+    }
+    try {
+      const options2 = await authenticateSnapshot({
+        endpoint: values["--endpoint"],
+        credentialFile: values["--credential-file"],
+        identity,
+        mode: operation === "save" ? "write" : "read",
+        ...values["--cache-dir"] ? { cacheDir: values["--cache-dir"] } : {}
+      });
+      const cache2 = new NativeCache({ ...options2, ...timeoutOptions, ...values["--max-bytes"] ? { maxBytes: Number(values["--max-bytes"]) } : {} });
+      console.log(JSON.stringify(operation === "save" ? await cache2.saveImmutable(identity, values["--path"]) : await cache2.restore(identity, values["--path"])));
+    } catch (error) {
+      if (error instanceof SnapshotAuthenticationError) throw error;
+      if (error instanceof NativeCacheConflictError) throw new Error("Snapshot generation already has different immutable content");
+      if (error instanceof NativeCachePublicationError) throw new Error("Snapshot Team publication was not confirmed");
+      throw new Error(snapshotArchiveErrorMessage(error));
+    }
+    return;
+  }
   const options = {
     endpoint: process.env.LAYER_CACHE_URL,
     token: process.env.LAYER_CACHE_TOKEN,
     cacheDir: values["--cache-dir"],
-    maxBytes: values["--max-bytes"] ? Number(values["--max-bytes"]) : void 0
+    maxBytes: values["--max-bytes"] ? Number(values["--max-bytes"]) : void 0,
+    ...timeoutOptions
   };
   const cache = new NativeCache(environmentOptions(options));
   if (operation === "restore") console.log(JSON.stringify(await cache.restore(identity, values["--path"])));

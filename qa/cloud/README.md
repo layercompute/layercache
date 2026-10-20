@@ -41,6 +41,25 @@ pool-aware provisioning and cache writes without requiring privileged mounts; it
 does **not** prove a physically bounded production volume or disk exhaustion.
 WebKit exercises Safari's engine, not the native Safari application on macOS/iOS.
 
+## Lifecycle observations
+
+The cloud runner also exercises the shipped portal bundle against synthetic
+same-origin APIs in `lifecycle.ts`. This checks queued-fetch cancellation,
+partial inventory, stale responses and simulated persisted-page restoration.
+Simulated page-transition events do not establish browser BFCache eligibility.
+
+The observer can deliberately deliver its console records late:
+
+```sh
+DASHBOARD_BROWSER=webkit QA_LIFECYCLE_OBSERVATION_DELAY_MS=1000 node qa/cloud/lifecycle.ts
+```
+
+The optional delay accepts integer milliseconds from 0 to 1000. It changes only
+the fixture's observation delivery. HTTP arrival and rendered DOM do not order
+Playwright console callbacks, so the fixture awaits the exact expected records
+before reading document IDs or checking counts. Cancellation counts and the
+zero-browser-error assertions remain strict.
+
 ## Two-user Turbo restore
 
 The browser suite checks real CLI connection and a direct artifact upload. The

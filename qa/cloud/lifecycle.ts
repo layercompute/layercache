@@ -9,6 +9,8 @@ declare global {interface Window {lifecyclePendingReady?:boolean;lifecycleReleas
 
 const engine=process.env.DASHBOARD_BROWSER||'chromium';
 if(engine!=='chromium'&&engine!=='firefox'&&engine!=='webkit')throw new Error('Invalid DASHBOARD_BROWSER');
+const observationDelay=Number(process.env.QA_LIFECYCLE_OBSERVATION_DELAY_MS||'0');
+if(!Number.isInteger(observationDelay)||observationDelay<0||observationDelay>1000)throw new Error('Invalid QA_LIFECYCLE_OBSERVATION_DELAY_MS');
 const output=process.env.QA_OUTPUT?path.join(process.env.QA_OUTPUT,'lifecycle'):mkdtempSync('/tmp/layercache-cloud-lifecycle-');mkdirSync(output,{recursive:true});
 const projects=Array.from({length:5},(_,index)=>({id:`project-${index+1}`,teamId:'team-fixture',name:`Lifecycle project ${index+1}`,repository:`example/project-${index+1}`,role:'reader',operatorManaged:true}));
 let origin='',signedIn=true,holdSnapshots=false,holdSession=false,httpFailure=false;
@@ -40,7 +42,7 @@ const browser=await {chromium,firefox,webkit}[engine].launch({headless:true,...(
 const context=await browser.newContext();const page=await context.newPage();
 const errors:string[]=[],fetches:{document:string;path:string}[]=[],results:{name:string;passed:boolean;error?:string}[]=[];
 page.on('pageerror',error=>errors.push(error.message));
-page.on('console',message=>{if(message.type()==='debug'&&message.text().startsWith('lifecycle-fetch:'))fetches.push(JSON.parse(message.text().slice('lifecycle-fetch:'.length)));});
+page.on('console',message=>{if(message.type()==='debug'&&message.text().startsWith('lifecycle-fetch:')){const record=JSON.parse(message.text().slice('lifecycle-fetch:'.length));if(observationDelay)setTimeout(()=>fetches.push(record),observationDelay);else fetches.push(record);}});
 await page.addInitScript(()=>{
  const identity=crypto.randomUUID(),original=window.fetch.bind(window);
  window.fetch=(...args)=>{console.debug('lifecycle-fetch:'+JSON.stringify({document:identity,path:new URL(String(args[0]),location.href).pathname}));return original(...args);};
@@ -51,12 +53,17 @@ const snapshotsFor=(records:typeof fetches)=>records.filter(item=>item.path.ends
 async function check(name:string,run:()=>Promise<void>){try{await run();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error instanceof Error?error.message:String(error)});throw error;}}
 try{
  await page.goto(origin);await settled();
+ // HTTP arrival and rendered DOM do not order Playwright console delivery.
+ // Drain the exact initial document observations before taking any offsets.
+ await expect.poll(()=>snapshotsFor(fetches).length).toBe(projects.length);
  await check('in-flight reload stops queued inventory fetches without page errors',async()=>{
   const start=fetches.length;holdSnapshots=true;
   await page.getByRole('button',{name:'Refresh',exact:true}).click();
   await expect.poll(()=>heldSnapshots.length).toBe(3);
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(3);
   const document=snapshotsFor(fetches.slice(start))[0]!.document;
   await page.reload({waitUntil:'networkidle'});await settled();
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).filter(item=>item.document!==document).length).toBe(projects.length);
   assert.equal(snapshotsFor(fetches.slice(start)).filter(item=>item.document===document).length,3,'The unloading document started queued project requests');
   assert.deepEqual(errors,[]);
  });
@@ -64,12 +71,14 @@ try{
   httpFailure=true;const start=fetches.length;
   await page.getByRole('button',{name:'Refresh',exact:true}).click();
   await inventory().locator('.execution-partial').filter({hasText:'1 project inventory is unavailable.'}).waitFor();
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(projects.length);
   assert.equal(snapshotsFor(fetches.slice(start)).length,5);httpFailure=false;
  });
  await check('transport loss stops the optional queue and leaves unknown inventory',async()=>{
   const start=fetches.length,pattern='**/api/projects/*/snapshot?*';await page.route(pattern,route=>route.abort());
   await page.getByRole('button',{name:'Refresh',exact:true}).click();
   await inventory().getByText('Execution inventory unavailable.',{exact:false}).waitFor();
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(3);
   assert.equal(snapshotsFor(fetches.slice(start)).length,3);assert.deepEqual(errors,[]);await page.unroute(pattern);
   await page.getByRole('button',{name:'Refresh',exact:true}).click();await settled();
  });

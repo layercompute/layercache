@@ -5,22 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/layercache/layercache/internal/artifact"
-	cas "github.com/layercache/layercache/internal/xcodecache/proto/casv1"
-	kv "github.com/layercache/layercache/internal/xcodecache/proto/kvv1"
-	"google.golang.org/grpc"
 	"io"
-	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"syscall"
 	"time"
 )
 
 type Options struct {
-	DataDir, Socket, Project, Compatibility, StatsFile string
-	MaxBytes                                           int64
+	DataDir, Socket, Project, Compatibility, StatsFile, ReadyFile string
+	MaxBytes                                                      int64
 }
 
 type runStats struct {
@@ -63,71 +56,23 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 	if len(command) == 0 {
 		return errors.New("xcodebuild command required")
 	}
-	if !filepath.IsAbs(options.Socket) || len(options.Socket) > 100 {
-		return errors.New("an absolute Unix socket path of at most 100 bytes is required")
-	}
-	if options.DataDir == "" || options.MaxBytes <= 0 {
-		return errors.New("a data directory and positive compilation-cache quota are required")
-	}
-	// Validate identity before recovery so invalid configuration cannot bypass it.
-	if err := validateIdentity(options.Project, options.Compatibility); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(options.Socket), 0700); err != nil {
-		return uncached(ctx, options, command, stdout, stderr, err)
-	}
-	parent, err := os.Lstat(filepath.Dir(options.Socket))
-	if err != nil || !parent.IsDir() || parent.Mode().Perm()&0077 != 0 {
-		return errors.New("socket parent must be a private directory")
-	}
-	if info, ok := parent.Sys().(*syscall.Stat_t); !ok || info.Uid != uint32(os.Geteuid()) {
-		return errors.New("socket parent must belong to the current user")
-	}
-	lock, err := lockDirectory(options.DataDir)
+	runtime, err := startRuntime(ctx, options)
 	if err != nil {
-		if errors.Is(err, errDirectoryInUse) {
-			return err
+		var fallback startupFailure
+		if errors.As(err, &fallback) {
+			return uncached(ctx, options, command, stdout, stderr, err)
 		}
-		return uncached(ctx, options, command, stdout, stderr, err)
-	}
-	defer lock.Close()
-	listener, err := net.Listen("unix", options.Socket)
-	if err != nil {
-		return fmt.Errorf("listen for Xcode cache: %w", err)
-	}
-	defer listener.Close()
-	if err = os.Chmod(options.Socket, 0600); err != nil {
 		return err
 	}
-	store, err := artifact.Open(ctx, options.DataDir, options.MaxBytes, 0)
-	if err != nil {
-		return uncached(ctx, options, command, stdout, stderr, err)
-	}
-	defer store.Close()
-	// Only this runtime, holding the exclusive directory lock, can release
-	// interrupted compiler restores from the previous adapter process.
-	if err = store.ResetReadLeases(ctx, readLeaseNamespace); err != nil {
-		return uncached(ctx, options, command, stdout, stderr, err)
-	}
-	service, err := New(store, options.Project, options.Compatibility)
-	if err != nil {
-		return err
-	}
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.MaxConcurrentStreams(16), grpc.WaitForHandlers(true))
-	cas.RegisterCASDBServiceServer(server, service)
-	kv.RegisterKeyValueDBServer(server, service)
-	done := make(chan error, 1)
-	go func() { done <- server.Serve(listener) }()
-	defer server.Stop()
+	defer runtime.Close()
 	arguments := append(append([]string{}, command[1:]...),
 		"COMPILATION_CACHE_ENABLE_CACHING=YES", "COMPILATION_CACHE_ENABLE_PLUGIN=YES",
 		"COMPILATION_CACHE_REMOTE_SERVICE_PATH="+options.Socket,
 		"COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES", "COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES")
 	err = runChild(ctx, command, arguments, stdout, stderr)
-	server.Stop()
-	<-done
-	stats := runStats{Stats: service.Stats()}
-	if closeErr := store.Close(); closeErr != nil {
+	closeErr := runtime.Close()
+	stats := runStats{Stats: runtime.service.Stats()}
+	if closeErr != nil {
 		stats.CacheErrors++
 		fmt.Fprintf(stderr, "Layer Cache closure failed: %v\n", closeErr)
 	}

@@ -86,6 +86,7 @@ type Config struct {
 	GitHubAPIURL               string             `json:"githubApiUrl,omitempty"`
 	GitHubOIDCIssuer           string             `json:"githubOidcIssuer,omitempty"`
 	TeamMembers                map[string]string  `json:"teamMembers,omitempty"`
+	SnapshotCredentialsFile    string             `json:"snapshotCredentialsFile,omitempty"`
 	CloudPostgresURL           string             `json:"cloudPostgresUrl,omitempty"`
 	RetainedArtifactsEnabled   bool               `json:"retainedArtifactsEnabled,omitempty"`
 	BazelRemote                *BazelRemoteConfig `json:"bazelRemote,omitempty"`
@@ -348,6 +349,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.RemoteOnly && (cfg.Role != "local" || cfg.TeamURL == "" || cfg.BazelRemote != nil || cfg.CloudPostgresURL != "" || cfg.CloudS3Endpoint != "") {
 		return errors.New("remoteOnly requires a local client configuration with teamUrl and no storage backend")
+	}
+	if err := cfg.ValidateSnapshotCredentials(); err != nil {
+		return err
 	}
 	if cfg.RetainedArtifactsEnabled && (cfg.Role != "team" || cfg.CloudPostgresURL == "") {
 		return errors.New("retained artifacts require a private Team runtime with PostgreSQL/S3 persistence")

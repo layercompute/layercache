@@ -120,6 +120,9 @@ func NewWithExistingMembership(ctx context.Context, cfg config.Config) (*Server,
 }
 
 func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority ProjectAuthority, existing bool) (*Server, error) {
+	if err := cfg.ValidateSnapshotCredentials(); err != nil {
+		return nil, err
+	}
 	if cfg.RemoteOnly {
 		return nil, errors.New("remoteOnly is a client-only configuration")
 	}
@@ -400,6 +403,7 @@ func (server *Server) routes() {
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(writer, `{"status":"ok"}`+"\n")
 	})
+	server.mux.HandleFunc("POST "+snapshotExchangePath, server.snapshotCapabilityExchange)
 	server.mux.HandleFunc("POST /v1/auth/github/exchange", server.githubCapabilityExchange)
 	server.mux.HandleFunc("POST /v1/auth/github-oidc/exchange", server.githubOIDCCapabilityExchange)
 	server.mux.Handle("GET /v1/status", server.requireToken(http.HandlerFunc(server.status)))

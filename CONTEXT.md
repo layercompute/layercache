@@ -88,6 +88,14 @@ _Avoid_: Unique physical runner, client installation
 A client's bounded report of the CPU, memory and filesystems visible to one execution at a stated time. Verified execution authority does not attest to the reported hardware or establish cache activity.
 _Avoid_: Provider invoice, machine health check
 
+**Snapshot grant**:
+An operator-issued authorization to read private cache snapshots, or to publish them from a trusted build, within one project, toolchain profile and snapshot namespace. A shared grant does not attest to the identity or source of the build using it.
+_Avoid_: Apple workload identity, project administrator token, retained publication guarantee
+
+**Snapshot generation**:
+One immutable version of a closed cache directory. A consumer names its generation explicitly; restoring it does not establish that the cache contains every output needed by a later build.
+_Avoid_: Latest cache, complete build result, retained handoff
+
 **Transparent Cache**:
 An integration that redirects an existing tool's cache protocol to Layer Cache without changing the workload definition.
 _Avoid_: Automatic cache, invisible cache
