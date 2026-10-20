@@ -90,6 +90,25 @@ test('explicit native disabled output distinguishes ineligible execution from mi
   assert.equal(result.body.tasks[1].nativeKey, undefined);
 });
 
+test('no-actions eligibility preserves completed outcomes, task timing and opaque identities', () => {
+  for (const gradleVersion of ['9.3.1', '9.4.1']) {
+    const {document, options} = fixture(['executed', 'executed', 'executed', 'fromCache']);document.gradleVersion = gradleVersion;
+    options.infoText = `Skipping task '${document.tasks[0].taskPath}' as it has no actions.\n` +
+      `Build cache key for task '${document.tasks[1].taskPath}' is ${nativeKey}\n` +
+      `Skipping task '${document.tasks[1].taskPath}' as it has no actions.\nBUILD SUCCESSFUL in 1s\n`;
+    const original = structuredClone(document);
+    const {body, keyEvidence} = projectGradleInvocation(document, options);
+    assert.equal(keyEvidence, 'native-info-key-correlation');
+    assert.deepEqual(body.tasks.map(task => task.outcome), ['executed', 'executed', 'executed', 'fromCache']);
+    assert.deepEqual(body.tasks.map(task => task.cacheEligibility), ['ineligible', undefined, undefined, 'eligible']);
+    assert.deepEqual(body.tasks.map(task => task.executionMs), [500, 500, 500, undefined]);
+    assert.deepEqual(body.tasks.map(task => task.workRef), document.tasks.map(task => task.workRef));
+    assert.ok(body.tasks.every(task => task.nativeKey === undefined));
+    assert.deepEqual(document, original, 'Classification must not rewrite private completed-task evidence');
+    assert.doesNotMatch(JSON.stringify(body), /private-|taskPath|no actions|Skipping/);
+  }
+});
+
 test('unrecognized and truncated native key messages cannot establish eligibility', () => {
   for (const suffix of ['Build cache key for task', "Build cache key for task ':other' is not-a-native-key\n"]) {
     const {document, options} = fixture();options.infoText += suffix;

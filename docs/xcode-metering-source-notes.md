@@ -45,6 +45,19 @@ would manufacture a denominator.
 [Dynamic job rules](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBTaskExecution/DynamicTaskSpecs/SwiftDriverJobDynamicTaskSpec.swift#L182-L199),
 [virtual batch subtasks](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBCore/SpecImplementations/Tools/SwiftCompiler.swift#L3747-L3763).
 
+`PrecompileModule` dispatches to an action using the same Clang replay helper.
+[Rule and action selection](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBTaskExecution/DynamicTaskSpecs/PrecompileClangModuleDynamicTaskSpec.swift#L133-L169),
+[replay invocation](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBTaskExecution/TaskActions/PrecompileClangModuleTaskAction.swift#L195-L205).
+The Swift driver also creates `SwiftGeneratePch`,
+`SwiftExplicitDependencyGeneratePcm` and
+`SwiftExplicitDependencyCompileModuleFromInterface` rules that use the existing
+Swift driver replay action. The `swift` reporting scope denotes that driver,
+including Clang module jobs, rather than exclusively Swift-language source.
+[Job categorization and PCH classification](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBCore/LibSwiftDriver/PlannedBuild.swift#L639-L679),
+[rule construction](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBTaskExecution/DynamicTaskSpecs/SwiftDriverJobDynamicTaskSpec.swift#L182-L205),
+[shared action dispatch](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBTaskExecution/DynamicTaskSpecs/SwiftDriverJobDynamicTaskSpec.swift#L249-L261),
+[Clang module labels](https://github.com/swiftlang/swift-build/blob/5987c0274baf641def06752bd4c1e9c2cce04cbd/Sources/SWBCore/LibSwiftDriver/LibSwiftDriver.swift#L319-L330).
+
 ## Separate compiler formats and skipped diagnostics
 
 The LLVM fork at `33957bbc59f4eed39bfee4627ef05e47ef31d801` defines a different

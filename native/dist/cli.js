@@ -3722,13 +3722,13 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
     operation = void 0;
   };
   const consume = (line) => {
-    if (/^\*\* (?:BUILD|TEST|ARCHIVE) (?:SUCCEEDED|FAILED) \*\*$/.test(line)) {
+    if (/^\*\* (?:BUILD|TEST(?: BUILD)?|ARCHIVE) (?:SUCCEEDED|FAILED) \*\*$/.test(line)) {
       finishOperation();
       finished = true;
       return;
     }
     if (/^Cache (?:hit|miss)$/.test(line) || /^(?:note|remark): (?:[Ll]ocal cache miss for key:|cache key query (?:hit|miss)\b|cache (?:hit|miss)$)/.test(line)) return;
-    const kind = /^(?:CompileC|ProcessPCH|ProcessPCH\+\+)\s/.test(line) ? "clang-pch" : /^(?:SwiftCompile|SwiftEmitModule|SwiftDriver\sCompilation(?:\s|$)|SwiftDriver\sCompilation\sRequirements(?:\s|$))/.test(line) ? "swift" : void 0;
+    const kind = /^(?:CompileC|ProcessPCH|ProcessPCH\+\+|PrecompileModule)\s/.test(line) ? "clang-pch" : /^(?:(?:SwiftCompile|SwiftEmitModule|SwiftGeneratePch|SwiftExplicitDependencyGeneratePcm|SwiftExplicitDependencyCompileModuleFromInterface)(?:\s|$)|SwiftDriver\sCompilation(?:\s|$)|SwiftDriver\sCompilation\sRequirements(?:\s|$))/.test(line) ? "swift" : void 0;
     if (kind) {
       finishOperation();
       if (finished) ambiguous = true;
@@ -3742,8 +3742,9 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
       finishOperation();
       return;
     }
-    const clangFinal = /^(?:note|remark): (replayed cache hit|cache miss): (\S{1,8192})$/.exec(line);
-    const swiftFinal = /^(?:note|remark): [Rr]eplay cache (hit|miss)$/.exec(line);
+    const diagnostic = line.replace(/ \(in target '[^'\r\n]{1,1024}' from project '[^'\r\n]{1,1024}'\)$/, "");
+    const clangFinal = /^(?:note|remark): (replayed cache hit|cache miss): (\S{1,8192})$/.exec(diagnostic);
+    const swiftFinal = /^(?:note|remark): [Rr]eplay cache (hit|miss)$/.exec(diagnostic);
     if (clangFinal || swiftFinal) {
       const expected = clangFinal ? "clang-pch" : "swift";
       if (!operation || operation.kind !== expected) {
@@ -3754,7 +3755,7 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
       if (operation.diagnostic !== void 0) {
         operation.ambiguous = true;
       } else {
-        operation.diagnostic = line;
+        operation.diagnostic = diagnostic;
         operation.outcome = outcome;
       }
       return;
@@ -3786,11 +3787,12 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
       pending += decoder.decode(boundedChunk, { stream: true });
       let newline;
       while ((newline = pending.indexOf("\n")) >= 0) {
-        const line = pending.slice(0, newline).replace(/\r$/, "");
-        if (++lines > linesLimit || Buffer.byteLength(line, "utf8") > lineLimit) {
+        const rawLine = pending.slice(0, newline).replace(/\r$/, "");
+        if (++lines > linesLimit || Buffer.byteLength(rawLine, "utf8") > lineLimit) {
           truncated = true;
           break outer;
         }
+        const line = rawLine.replace(/\x1b\[(?:0|1|33|36)m/g, "");
         if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(line)) {
           unsupported = true;
           break outer;
@@ -3808,8 +3810,11 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
       pending += decoder.decode();
       if (pending !== "") {
         if (++lines > linesLimit || Buffer.byteLength(pending, "utf8") > lineLimit) truncated = true;
-        else if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(pending)) unsupported = true;
-        else consume(pending.replace(/\r$/, ""));
+        else {
+          const line = pending.replace(/\r$/, "").replace(/\x1b\[(?:0|1|33|36)m/g, "");
+          if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(line)) unsupported = true;
+          else consume(line);
+        }
       }
     }
   } catch {
@@ -3983,6 +3988,7 @@ var maximumPathCharacters = 1024;
 var qualifiedVersions = /* @__PURE__ */ new Set(["9.3.1", "9.4.1"]);
 var taskKeyLine = /^Build cache key for task '(:[^'\r\n]*)' is ([a-f0-9]{32})$/;
 var disabledLine = /^Caching disabled for task '(:[^'\r\n]*)' because:$/;
+var noActionsLine = /^Skipping task '(:[^'\r\n]*)' as it has no actions\.$/;
 var pathControls = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 function unavailable(reason) {
   return { keys: /* @__PURE__ */ new Map(), ineligiblePaths: /* @__PURE__ */ new Set(), ambiguousPaths: /* @__PURE__ */ new Set(), duplicateKeys: /* @__PURE__ */ new Set(), reason };
@@ -4006,9 +4012,10 @@ function parseGradleInfo(text, { gradleVersion = "9.3.1" } = {}) {
     offset = end + 1;
     const keyCandidate = line.includes("Build cache key for task");
     const disabledCandidate = line.includes("Caching disabled for task");
-    if (!keyCandidate && !disabledCandidate) continue;
-    const keyMatch = taskKeyLine.exec(line), disabledMatch = disabledLine.exec(line);
-    const match = keyMatch ?? disabledMatch;
+    const noActionsCandidate = line.includes("as it has no actions");
+    if (!keyCandidate && !disabledCandidate && !noActionsCandidate) continue;
+    const keyMatch = taskKeyLine.exec(line), disabledMatch = disabledLine.exec(line), noActionsMatch = noActionsLine.exec(line);
+    const match = keyMatch ?? disabledMatch ?? noActionsMatch;
     if (!match) return unavailable("unrecognized-key-line");
     const [, path, key] = match;
     if (path.length > maximumPathCharacters || pathControls.test(path)) {
@@ -4020,7 +4027,7 @@ function parseGradleInfo(text, { gradleVersion = "9.3.1" } = {}) {
       if (pathKeys.size === maximumPaths) return unavailable("too-many-task-paths");
       pathKeys.set(path, /* @__PURE__ */ new Set());
     }
-    if (disabledMatch) {
+    if (disabledMatch || noActionsMatch) {
       ineligiblePaths.add(path);
       continue;
     }

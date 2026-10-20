@@ -33,6 +33,13 @@ are shown separately. A zero eligible denominator has no hit percentage.
 If executed-task eligibility is incomplete, the whole reported-task hit rate
 remains unknown; known counts remain visible.
 
+The qualified native "Skipping task ... as it has no actions" diagnostic also
+marks an executed lifecycle task ineligible. Gradle can report that task as
+executed because a dependency ran; it has no own cacheable work. The reporter
+preserves the native outcome and excludes only its eligibility. A conflicting
+key or malformed marker keeps the mapping unknown. This correction applies to
+future reports; accepted immutable reports are not rewritten.
+
 Supply one Gradle 9.3.1 or 9.4.1 `--info` log per action instance through
 `native-info-log` to correlate task paths with native keys. The parser keeps
 multiple task paths sharing one key, but rejects conflicting keys for one path.
@@ -161,6 +168,17 @@ notes are not counted twice. Swift batch headers are not a compiler denominator.
 Malformed, truncated, ambiguous or unsupported input retains explicit coverage
 limits. A scoped compiler-verdict percentage is available only with complete
 eligible verdicts in that scope; it is not a whole-build Xcode hit rate.
+
+The rendered-log qualification also accepts exact `TEST BUILD` completion,
+bounded target/project diagnostic suffixes, and the observed SGR formatting
+codes `0`, `1`, `33` and `36`. Other terminal controls remain unsupported, and
+input bounds apply before formatting removal. Native module and bridging-header
+tasks use their existing replay actions. The `swift` scope means Swift-driver
+replay observations, which can include Clang module jobs; it does not establish
+Swift-language external replay. Apple artifact logs may add a leading UTC
+timestamp and tab to each record. Preserve the original and remove only that
+verified record prefix before offline export; do not rewrite diagnostics or
+synthesize completion. See the [native log qualification](evidence/native-log-coverage-20261020.md).
 
 Action-index reads/hits, CAS reads/hits and writes are protocol counters.
 Compiler verdicts are a separate unit. An action lookup hit does not prove a

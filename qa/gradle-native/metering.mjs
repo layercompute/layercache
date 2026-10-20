@@ -115,6 +115,9 @@ try {
     assert.equal(task(cold, path).raw.outcome, 'executed');
   }
   assert.ok(cold.document.tasks.some(row => row.taskPath.startsWith(':buildSrc:')), 'Root listener must include buildSrc without duplicates');
+  assert.equal(task(cold, ':buildSrc:classes').raw.outcome, 'executed');
+  assert.equal(task(cold, ':buildSrc:classes').wire.cacheEligibility, 'ineligible', 'A lifecycle task with no own actions is not a cache miss');
+  assert.equal(task(cold, ':buildSrc:classes').wire.nativeKey, undefined);
   assert.equal(task(cold, ':always').wire.cacheEligibility, 'ineligible');
   assert.equal(task(cold, ':skip').raw.outcome, 'skipped');
   assert.equal(task(cold, ':empty').raw.outcome, 'noSource');

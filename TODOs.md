@@ -74,12 +74,21 @@ workspaces and filesystem migration are outside the current product scope.
   `9c071a6e94aa7a173a810165020c6f3eaedda01e`; all main workflows passed and
   [beta.8](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.8)
   is immutable. The guarded cloud rollout passed 63 authenticated browser checks
-  across three engines. Existing application native reports were absent in both
-  selected periods; adoption pins and normal-run receipt requests were delivered
-  to the application owners. A private operator ledger now shows partial
+  across three engines. Application native reports were absent during that initial
+  pass; adoption pins and normal-run receipt requests were delivered to the owners.
+  A later accepted application report now records 862 native outcomes and 331
+  restores. Another 63 live browser checks across three engines verified its
+  actual projection. Its 30 unknown executed eligibilities are no-actions
+  lifecycle tasks; a version-qualified client correction is now source-qualified
+  for future reports, without rewriting the accepted report. The 147 ambiguous
+  source joins have multiple matching deliveries, rather than missing transport
+  or proven local reuse. [Native log coverage](docs/evidence/native-log-coverage-20261020.md)
+  records this diagnosis and retained Xcode compiler-log qualification. The Xcode
+  controller import and corrected application client adoption remain open.
+  A private operator ledger now shows partial
   provider-reported GitHub charges with an explicit UTC watermark, excluding
-  other providers. Automatic job-allocation/billing ingestion, native application
-  receipts, attributable savings and shared snapshot-purpose work keep this
+  other providers. Automatic job-allocation/billing ingestion, complete native
+  application coverage, attributable savings and shared snapshot-purpose work keep this
   parent task open. Do not infer zero cost from a provider's absent timing data.
   October 20 UTC [Gradle 9.4.1 source qualification](docs/evidence/gradle-941-metering-20261020.md)
   now covers exact info-log key correlation and completed-task timing while

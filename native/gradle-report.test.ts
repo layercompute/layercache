@@ -101,6 +101,25 @@ test('offline Gradle 9.4.1 export retains qualified keys and original task-opera
   assert.doesNotMatch(JSON.stringify(report), /private|taskPath|command|token/i);
 });
 
+test('offline no-actions classification keeps lifecycle execution separate from cache misses', async t => {
+  for (const gradleVersion of ['9.3.1', '9.4.1']) {
+    const f = await files(t);f.document.gradleVersion = gradleVersion;
+    await writeFile(f.report, JSON.stringify(f.document));
+    const task = f.document.tasks[3]!;
+    const infoText = f.infoText.replace('BUILD SUCCESSFUL', `Skipping task '${task.taskPath}' as it has no actions.\nBUILD SUCCESSFUL`);
+    await writeFile(f.info, infoText);
+    const result = await cli(f.args);assert.equal(result.code, 0, result.stderr);
+    const report = JSON.parse(await readFile(f.output, 'utf8'));
+    assert.deepEqual(report.tasks.map((row: {outcome: string}) => row.outcome), f.document.tasks.map(row => row.outcome));
+    assert.equal(report.tasks[3].cacheEligibility, 'ineligible');assert.equal(report.tasks[3].outcome, 'executed');
+    assert.equal(report.tasks[3].executionMs, 500);assert.equal(report.tasks[3].nativeKey, undefined);
+    assert.equal(report.tasks[3].workRef, task.workRef);
+    assert.equal(report.tasks[0].nativeKey, nativeKeys[0]);assert.equal(report.tasks[1].nativeKey, nativeKeys[1]);
+    assert.doesNotMatch(JSON.stringify(report), /private|taskPath|no actions|Skipping/i);
+    assert.equal(await readFile(f.report, 'utf8'), JSON.stringify(f.document));assert.equal(await readFile(f.info, 'utf8'), infoText);
+  }
+});
+
 test('missing unsupported or unsafe optional info cannot invent keys or discard native FROM-CACHE outcomes', async t => {
   const f = await files(t);
   const symlinkInfo = join(f.root, 'symlink-info'); await symlink(f.info, symlinkInfo);
