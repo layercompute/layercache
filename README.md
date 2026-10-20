@@ -160,6 +160,10 @@ effective reuse by source, transfer phases and configured cost records. Use
 already configured for that project. Maintenance links require `--allow-prune`
 and actual administrator authority. Costs remain unknown without a ledger.
 Open the complete URL printed by the CLI and keep the process running.
+The [execution inventory](docs/execution-observability.md) distinguishes
+persistent client installations from authenticated CI jobs and shows their
+reported CPU, memory and filesystem resources when supporting clients report
+them. Unknown resource limits and stale observations stay explicit.
 [Self-serve cloud teams and projects](docs/self-serve-cloud.md)
 are implemented but await public deployment and real GitHub OAuth qualification.
 Machine enrollment and cloud runners are subsequent slices.

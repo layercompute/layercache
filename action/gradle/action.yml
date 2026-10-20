@@ -16,6 +16,9 @@ inputs:
   ttl-minutes:
     description: Credential lifetime from 1 to 60 minutes. Rerun this action before expiry.
     default: '60'
+  execution-provider:
+    description: Optional declared runner provider for resource observations, github, ubicloud, selfHosted, or unknown.
+    default: unknown
 outputs:
   configured:
     description: Whether the private native HTTP connection is configured.

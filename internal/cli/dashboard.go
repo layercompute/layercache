@@ -181,6 +181,7 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 				if selectedBackend == "" && !cfg.RemoteOnly {
 					project.Local = readDashboardCache(ctx, newLocalCLIHTTPClient(5*time.Second), localRuntimeURL(cfg.Listen), cfg.LocalToken, cfg.ProjectID, result.From, result.To)
 					project.Local.PruneAllowed = *allowPrune && project.Local.Status != nil && project.Local.Status.CanPrune && project.Local.Status.Role != "public"
+					project.Executions = readDashboardExecutions(ctx, newLocalCLIHTTPClient(5*time.Second), localRuntimeURL(cfg.Listen), cfg.LocalToken, cfg.ProjectID, result.From, result.To)
 				} else {
 					project.Local.State = "not-selected"
 				}
@@ -195,6 +196,7 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 				}
 				project.Team = readDashboardCache(ctx, newCLIHTTPClient(5*time.Second), cfg.TeamURL, cfg.TeamToken, cfg.ProjectID, result.From, result.To)
 				project.Team.PruneAllowed = *allowPrune && project.Team.Status != nil && project.Team.Status.CanPrune && project.Team.Status.Role != "public"
+				project.Executions = mergeDashboardExecutions(project.Executions, readDashboardExecutions(ctx, newCLIHTTPClient(5*time.Second), cfg.TeamURL, cfg.TeamToken, cfg.ProjectID, result.From, result.To))
 			}(i, path)
 		}
 		work.Wait()

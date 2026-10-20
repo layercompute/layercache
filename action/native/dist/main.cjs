@@ -3422,6 +3422,134 @@ async function archiveBound(path) {
 // action/setup/auth.ts
 var import_node_fs8 = require("node:fs");
 var import_node_crypto4 = require("node:crypto");
+
+// action/setup/execution.ts
+var import_node_child_process = require("node:child_process");
+var import_node_path12 = require("node:path");
+var import_node_url = require("node:url");
+var import_meta = {};
+var observationPath = "/v1/executions/observations";
+var maximumObservationBytes = 16 * 1024;
+function executionWorkerPath() {
+  const directory = typeof __dirname === "string" ? __dirname : (0, import_node_path12.dirname)((0, import_node_url.fileURLToPath)(import_meta.url));
+  return (0, import_node_path12.join)(directory, "execution-worker.cjs");
+}
+function sampleFromWorker(source) {
+  const value = JSON.parse(source);
+  const metric = (value2, zero = false) => {
+    if (value2 === null) return null;
+    if (typeof value2 !== "number" || !Number.isSafeInteger(value2) || value2 < (zero ? 0 : 1)) throw new Error("Invalid metric");
+    return value2;
+  };
+  const knowledge = (value2) => {
+    if (value2 !== "complete" && value2 !== "partial" && value2 !== "unknown") throw new Error("Invalid knowledge");
+    return value2;
+  };
+  if (!["linux", "darwin", "windows", "other"].includes(value.os) || !["amd64", "arm64", "other"].includes(value.arch) || !Array.isArray(value.filesystems) || value.filesystems.length > 4) throw new Error("Invalid sample");
+  return {
+    os: value.os,
+    arch: value.arch,
+    cpu: {
+      visibleLogical: metric(value.cpu.visibleLogical),
+      affinityLogical: metric(value.cpu.affinityLogical),
+      quotaMilliCPU: metric(value.cpu.quotaMilliCPU),
+      effectiveMilliCPU: metric(value.cpu.effectiveMilliCPU),
+      limitKnowledge: knowledge(value.cpu.limitKnowledge)
+    },
+    memory: {
+      visibleTotalBytes: metric(value.memory.visibleTotalBytes),
+      cgroupLimitBytes: metric(value.memory.cgroupLimitBytes),
+      effectiveLimitBytes: metric(value.memory.effectiveLimitBytes),
+      limitKnowledge: knowledge(value.memory.limitKnowledge)
+    },
+    filesystems: value.filesystems.map((volume) => {
+      if (!/^[0-9a-f]{64}$/.test(volume.id) || !Array.isArray(volume.roles) || volume.roles.length < 1 || volume.roles.length > 2 || volume.roles.some((role) => role !== "workspace" && role !== "staging")) throw new Error("Invalid filesystem");
+      return {
+        id: volume.id,
+        roles: [...new Set(volume.roles)],
+        capacityBytes: metric(volume.capacityBytes),
+        freeBytes: metric(volume.freeBytes, true),
+        availableBytes: metric(volume.availableBytes, true)
+      };
+    })
+  };
+}
+function collectExecutionSampleIsolated(env, worker = executionWorkerPath(), executable = process.execPath) {
+  const input = JSON.stringify(Object.fromEntries(["GITHUB_WORKSPACE", "RUNNER_TEMP"].flatMap((key) => typeof env[key] === "string" && env[key].length <= 4096 ? [[key, env[key]]] : [])));
+  return new Promise((resolve3, reject) => {
+    const child = (0, import_node_child_process.spawn)(executable, [worker], { env: {}, stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+    let output = "";
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const cleanup of [() => child.kill("SIGKILL"), () => child.unref(), () => child.stdin?.destroy(), () => child.stdout?.destroy()]) {
+        try {
+          cleanup();
+        } catch {
+        }
+      }
+      if (error) reject(error);
+      else {
+        try {
+          resolve3(sampleFromWorker(output));
+        } catch {
+          reject(new Error("Invalid observation worker output"));
+        }
+      }
+    };
+    const timer = setTimeout(() => finish(new Error("Observation deadline")), 2e3);
+    child.on("error", () => finish(new Error("Observation worker unavailable")));
+    child.stdin?.on("error", () => finish(new Error("Observation worker input unavailable")));
+    child.stdout?.on("data", (chunk) => {
+      if (Buffer.byteLength(output) + chunk.length > maximumObservationBytes) finish(new Error("Observation worker output exceeds limit"));
+      else output += chunk.toString("utf8");
+    });
+    child.on("close", (code) => finish(code === 0 ? void 0 : new Error("Observation worker unavailable")));
+    child.stdin?.end(input);
+  });
+}
+async function reportExecutionObservation({ endpoint, project, exchange, env = process.env, phase = "start", fetcher = fetch, provider, collect = collectExecutionSampleIsolated }) {
+  try {
+    if (!/^[\x21-\x7e]{1,1024}$/.test(project) || !exchange || typeof exchange !== "object" || Array.isArray(exchange)) return;
+    const result = exchange;
+    const discovery = result.executionObservations;
+    if (!discovery || typeof discovery !== "object" || Array.isArray(discovery)) return;
+    const enabled = discovery;
+    if (enabled.version !== 1 || enabled.path !== observationPath || typeof result.teamToken !== "string" || !result.teamToken || result.teamToken.length > 32 * 1024 || /[\r\n]/.test(result.teamToken)) return;
+    const base = new URL(endpoint);
+    if (base.username || base.password || base.search || base.hash || base.protocol !== "https:" && !(base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))) return;
+    const target = new URL(observationPath, base);
+    const declaredProvider = provider ?? env["INPUT_EXECUTION-PROVIDER"];
+    const selectedProvider = ["github", "ubicloud", "selfHosted", "unknown"].includes(declaredProvider ?? "") ? declaredProvider : "unknown";
+    let timer;
+    let sample;
+    try {
+      sample = await Promise.race([
+        collect(env),
+        new Promise((_2, reject) => {
+          timer = setTimeout(() => reject(new Error("Observation deadline")), 2e3);
+        })
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+    const body = JSON.stringify({ version: 1, phase, provider: selectedProvider, sample });
+    if (Buffer.byteLength(body) > maximumObservationBytes) return;
+    const response = await fetcher(target, {
+      method: "POST",
+      redirect: "error",
+      headers: { Authorization: `Bearer ${result.teamToken}`, "Content-Type": "application/json", "X-LayerCache-Project": project },
+      body,
+      signal: AbortSignal.timeout(2e3)
+    });
+    await response.body?.cancel();
+  } catch {
+  }
+}
+
+// action/setup/auth.ts
 var escape = (value) => value.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
 var defaultLog = (value) => {
   process.stdout.write(value);
@@ -3457,7 +3585,7 @@ function endpointURL(value) {
   if (url.username || url.password || url.search || url.hash || url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname))) throw new Error("Team Cache requires HTTPS, or HTTP on loopback");
   return url;
 }
-async function exchangeCapability({ endpoint, project, compatibility, minutes, env, integration = "turbo", fetcher = fetch, log = defaultLog }) {
+async function exchangeCapability({ endpoint, project, compatibility, minutes, env, integration = "turbo", fetcher = fetch, log = defaultLog, observationPhase = "start" }) {
   if (!env.ACTIONS_ID_TOKEN_REQUEST_URL || !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) throw new Error("Team Cache OIDC needs job permissions id-token: write");
   const oidc = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
   if (oidc.protocol !== "https:") throw new Error("GitHub OIDC request URL must use HTTPS");
@@ -3482,22 +3610,23 @@ async function exchangeCapability({ endpoint, project, compatibility, minutes, e
   if (typeof result.teamToken !== "string" || !result.teamToken || !Number.isFinite(Date.parse(result.expiresAt)) || Date.parse(result.expiresAt) < Date.now() + 3e4 || Date.parse(result.expiresAt) > Date.now() + 366e4) throw new Error(`${integration} OIDC exchange returned invalid credentials`);
   log(`::add-mask::${escape(result.teamToken)}
 `);
+  await reportExecutionObservation({ endpoint, project, exchange: result, env, fetcher, phase: observationPhase });
   return result;
 }
 var exchangeTurbo = exchangeCapability;
 
 // native/source.ts
-var import_node_child_process = require("node:child_process");
+var import_node_child_process2 = require("node:child_process");
 var import_node_crypto5 = require("node:crypto");
 var import_promises6 = require("node:fs/promises");
-var import_node_path12 = require("node:path");
+var import_node_path13 = require("node:path");
 async function sourceKey(directory) {
-  const git = (args) => (0, import_node_child_process.execFileSync)("git", ["-C", directory, ...args], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
+  const git = (args) => (0, import_node_child_process2.execFileSync)("git", ["-C", directory, ...args], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
   const root = git(["rev-parse", "--show-toplevel"]).trim();
-  const files = (0, import_node_child_process.execFileSync)("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
+  const files = (0, import_node_child_process2.execFileSync)("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
   const hash = (0, import_node_crypto5.createHash)("sha256").update("layercache-source-v1\0");
   for (const name of [...new Set(files.split("\0").filter(Boolean))].sort()) {
-    const path = (0, import_node_path12.join)(root, name);
+    const path = (0, import_node_path13.join)(root, name);
     let value;
     try {
       const info = await (0, import_promises6.lstat)(path);
@@ -3514,14 +3643,14 @@ async function sourceKey(directory) {
 }
 
 // action/native/main.ts
-var import_node_path14 = require("node:path");
+var import_node_path15 = require("node:path");
 
 // native/expo-identity.ts
 var import_node_crypto6 = require("node:crypto");
-var import_node_child_process2 = require("node:child_process");
+var import_node_child_process3 = require("node:child_process");
 var import_node_util = require("node:util");
 var import_node_module = require("node:module");
-var import_node_path13 = require("node:path");
+var import_node_path14 = require("node:path");
 var import_promises7 = require("node:fs/promises");
 function identityForBuild(props, options) {
   if (!options.app) throw new Error("An app identity is required");
@@ -3536,7 +3665,7 @@ function identityForBuild(props, options) {
   };
 }
 async function fingerprintForProject(projectRoot) {
-  const project = (0, import_node_module.createRequire)((0, import_node_path13.join)(projectRoot, "package.json"));
+  const project = (0, import_node_module.createRequire)((0, import_node_path14.join)(projectRoot, "package.json"));
   let fingerprint;
   try {
     fingerprint = project("@expo/fingerprint");
@@ -3553,7 +3682,7 @@ function prepareExpoEnvironment(projectRoot) {
   process.env.NODE_ENV ||= "development";
   process.env.BABEL_ENV ||= process.env.NODE_ENV;
   Object.assign(globalThis, { __DEV__: process.env.NODE_ENV !== "production" });
-  const project = (0, import_node_module.createRequire)((0, import_node_path13.join)(projectRoot, "package.json"));
+  const project = (0, import_node_module.createRequire)((0, import_node_path14.join)(projectRoot, "package.json"));
   const expo = (0, import_node_module.createRequire)(project.resolve("expo/package.json"));
   const cli = (0, import_node_module.createRequire)(expo.resolve("@expo/cli/package.json"));
   const env = cli("@expo/env");
@@ -3573,7 +3702,7 @@ function simulatorCompatibility(target) {
 }
 async function detectSimulatorTarget(projectRoot) {
   if (process.platform !== "darwin") throw new Error("Simulator toolchain requires macOS");
-  const execute = async (command, args) => (0, import_node_util.promisify)(import_node_child_process2.execFile)(command, args, { cwd: projectRoot, timeout: 15e3, maxBuffer: 1024 ** 2 });
+  const execute = async (command, args) => (0, import_node_util.promisify)(import_node_child_process3.execFile)(command, args, { cwd: projectRoot, timeout: 15e3, maxBuffer: 1024 ** 2 });
   const xcode = await execute("xcodebuild", ["-version"]);
   const sdk = await execute("xcrun", ["--sdk", "iphonesimulator", "--show-sdk-build-version"]);
   return parseSimulatorTarget(JSON.stringify({ os: process.platform, arch: process.arch, xcode: xcode.stdout.trim(), sdk: sdk.stdout.trim() }));
@@ -3605,11 +3734,11 @@ function assertSimulatorArtifact(metadata, target) {
 }
 async function validateSimulatorApp(path, target) {
   if (process.platform !== "darwin" || !path.endsWith(".app")) throw new Error("Simulator app validation requires macOS and an app directory");
-  const execute = async (command, args) => (0, import_node_util.promisify)(import_node_child_process2.execFile)(command, args, { timeout: 15e3, maxBuffer: 1024 ** 2 });
-  const { stdout } = await execute("/usr/bin/plutil", ["-convert", "json", "-o", "-", (0, import_node_path13.join)(path, "Info.plist")]);
+  const execute = async (command, args) => (0, import_node_util.promisify)(import_node_child_process3.execFile)(command, args, { timeout: 15e3, maxBuffer: 1024 ** 2 });
+  const { stdout } = await execute("/usr/bin/plutil", ["-convert", "json", "-o", "-", (0, import_node_path14.join)(path, "Info.plist")]);
   const metadata = JSON.parse(stdout);
   if (typeof metadata.CFBundleExecutable !== "string" || !/^[^/\\.][^/\\]*$/.test(metadata.CFBundleExecutable)) throw new Error("Invalid simulator executable");
-  const architectures = await execute("/usr/bin/lipo", ["-archs", (0, import_node_path13.join)(path, metadata.CFBundleExecutable)]);
+  const architectures = await execute("/usr/bin/lipo", ["-archs", (0, import_node_path14.join)(path, metadata.CFBundleExecutable)]);
   const files = await (0, import_promises7.readdir)(path, { recursive: true });
   assertSimulatorArtifact({
     platforms: metadata.CFBundleSupportedPlatforms,
@@ -3634,7 +3763,7 @@ async function main() {
   if (mode === "expo") {
     if (operation === "save" && process.platform !== "darwin") throw new Error("Simulator save requires macOS");
     const planned = await planExpoSimulator({
-      projectRoot: (0, import_node_path14.resolve)(process.env.GITHUB_WORKSPACE ?? process.cwd(), input("expo-root") || "."),
+      projectRoot: (0, import_node_path15.resolve)(process.env.GITHUB_WORKSPACE ?? process.cwd(), input("expo-root") || "."),
       project,
       app: input("expo-app"),
       scheme: input("expo-scheme") || void 0,

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/layercache/layercache/internal/execution"
 )
 
 type Capability string
@@ -20,30 +22,31 @@ const (
 )
 
 type Claims struct {
-	Subject        string       `json:"sub"`
-	RunID          string       `json:"runId,omitempty"`
-	WorkspaceID    string       `json:"workspaceId,omitempty"`
-	Project        string       `json:"project"`
-	Integration    string       `json:"integration,omitempty"`
-	Compatibility  string       `json:"compatibility,omitempty"`
-	Repository     string       `json:"repository,omitempty"`
-	Ref            string       `json:"ref,omitempty"`
-	DefaultRef     string       `json:"defaultRef,omitempty"`
-	SourceCommit   string       `json:"sourceCommit,omitempty"`
-	ActionsActorID string       `json:"actionsActorId,omitempty"`
-	ActionsActor   string       `json:"actionsActor,omitempty"`
-	RepositoryID   string       `json:"repositoryId,omitempty"`
-	WorkflowRef    string       `json:"workflowRef,omitempty"`
-	ActionsRunID   string       `json:"actionsRunId,omitempty"`
-	RunAttempt     string       `json:"runAttempt,omitempty"`
-	CheckRunID     string       `json:"checkRunId,omitempty"`
-	RecipeDigest   string       `json:"recipeDigest,omitempty"`
-	Target         string       `json:"target,omitempty"`
-	Platform       string       `json:"platform,omitempty"`
-	Toolchain      string       `json:"toolchain,omitempty"`
-	Builder        string       `json:"builder,omitempty"`
-	Capabilities   []Capability `json:"capabilities"`
-	ExpiresAt      time.Time    `json:"expiresAt"`
+	Execution      *execution.Context `json:"execution,omitempty"`
+	Subject        string             `json:"sub"`
+	RunID          string             `json:"runId,omitempty"`
+	WorkspaceID    string             `json:"workspaceId,omitempty"`
+	Project        string             `json:"project"`
+	Integration    string             `json:"integration,omitempty"`
+	Compatibility  string             `json:"compatibility,omitempty"`
+	Repository     string             `json:"repository,omitempty"`
+	Ref            string             `json:"ref,omitempty"`
+	DefaultRef     string             `json:"defaultRef,omitempty"`
+	SourceCommit   string             `json:"sourceCommit,omitempty"`
+	ActionsActorID string             `json:"actionsActorId,omitempty"`
+	ActionsActor   string             `json:"actionsActor,omitempty"`
+	RepositoryID   string             `json:"repositoryId,omitempty"`
+	WorkflowRef    string             `json:"workflowRef,omitempty"`
+	ActionsRunID   string             `json:"actionsRunId,omitempty"`
+	RunAttempt     string             `json:"runAttempt,omitempty"`
+	CheckRunID     string             `json:"checkRunId,omitempty"`
+	RecipeDigest   string             `json:"recipeDigest,omitempty"`
+	Target         string             `json:"target,omitempty"`
+	Platform       string             `json:"platform,omitempty"`
+	Toolchain      string             `json:"toolchain,omitempty"`
+	Builder        string             `json:"builder,omitempty"`
+	Capabilities   []Capability       `json:"capabilities"`
+	ExpiresAt      time.Time          `json:"expiresAt"`
 }
 
 func (claims Claims) Allows(required Capability) bool {
@@ -118,6 +121,9 @@ func normalizeClaims(claims Claims, now time.Time) (Claims, error) {
 	claims.RunID = strings.TrimSpace(claims.RunID)
 	claims.WorkspaceID = strings.TrimSpace(claims.WorkspaceID)
 	if claims.Subject == "" || claims.Project == "" || claims.ExpiresAt.IsZero() || !claims.ExpiresAt.After(now) {
+		return Claims{}, ErrInvalidToken
+	}
+	if claims.Execution != nil && (claims.Execution.Validate() != nil || claims.RunID == "" || claims.WorkspaceID == "") {
 		return Claims{}, ErrInvalidToken
 	}
 	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" && claims.Integration != "bazel" && claims.Integration != "retained" {

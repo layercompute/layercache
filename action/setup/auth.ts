@@ -1,5 +1,6 @@
 import { appendFileSync, closeSync, fstatSync, ftruncateSync, openSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { reportExecutionObservation } from './execution.ts';
 
 const escape = (value: string) => value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 const defaultLog = (value: string) => { process.stdout.write(value); };
@@ -29,8 +30,8 @@ export function endpointURL(value: string): URL {
       (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)))) throw new Error('Team Cache requires HTTPS, or HTTP on loopback');
   return url;
 }
-export async function exchangeCapability({ endpoint, project, compatibility, minutes, env, integration = 'turbo', fetcher = fetch, log = defaultLog }: {
-  endpoint: string; project: string; compatibility: string; minutes: number; env: NodeJS.ProcessEnv; integration?: 'turbo' | 'buildkit' | 'gradle'; fetcher?: typeof fetch; log?: (value: string) => void;
+export async function exchangeCapability({ endpoint, project, compatibility, minutes, env, integration = 'turbo', fetcher = fetch, log = defaultLog, observationPhase = 'start' }: {
+  endpoint: string; project: string; compatibility: string; minutes: number; env: NodeJS.ProcessEnv; integration?: 'turbo' | 'buildkit' | 'gradle'; fetcher?: typeof fetch; log?: (value: string) => void; observationPhase?: 'start' | 'finish';
 }): Promise<{ teamToken: string; expiresAt: string }> {
   if (!env.ACTIONS_ID_TOKEN_REQUEST_URL || !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) throw new Error('Team Cache OIDC needs job permissions id-token: write');
   const oidc = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
@@ -50,6 +51,7 @@ export async function exchangeCapability({ endpoint, project, compatibility, min
   if (typeof result.teamToken !== 'string' || !result.teamToken || !Number.isFinite(Date.parse(result.expiresAt)) ||
       Date.parse(result.expiresAt) < Date.now() + 30_000 || Date.parse(result.expiresAt) > Date.now() + 3_660_000) throw new Error(`${integration} OIDC exchange returned invalid credentials`);
   log(`::add-mask::${escape(result.teamToken)}\n`);
+  await reportExecutionObservation({ endpoint, project, exchange: result, env, fetcher, phase: observationPhase });
   return result;
 }
 export const exchangeTurbo = exchangeCapability;

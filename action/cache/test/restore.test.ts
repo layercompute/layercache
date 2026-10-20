@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import * as execution from "../../setup/execution.js";
 import {
   compatibilityForPlatform,
+  platformForRuntime,
   runRestore,
   runSave,
   type ActionCore,
@@ -42,8 +44,241 @@ describe("restore action", () => {
       });
       expect(env.ACTIONS_RUNTIME_TOKEN).toBe("short-lived-team-token");
       expect(core.secrets).toContain("short-lived-team-token");
+      expect(exchange).toHaveBeenCalledTimes(1);
       expect(core.failures).toEqual([]);
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("observes only fresh masked OIDC tokens and uses start and finish phases", async () => {
+    const core = new FakeCore({
+      endpoint: "https://cache.layercache.example/layercache",
+      project: "github.com/acme/widget",
+      path: "node_modules",
+      key: "observed-key",
+      compatibility: "linux-amd64-schema1-node@24",
+      "execution-provider": "ubicloud",
+    }, "github-oidc-token");
+    const env = { GITHUB_JOB: "quality", RUNNER_NAME: "private-runner-name" };
+    const cache: CacheClient = {
+      restoreCache: vi.fn().mockResolvedValue(undefined),
+      saveCache: vi.fn().mockResolvedValue(42),
+    };
+    const observations = vi.spyOn(execution, "reportExecutionObservation").mockImplementation(async (options) => {
+      expect(core.secrets).toContain((options.exchange as { teamToken: string }).teamToken);
+      if (options.phase === "start") {
+        expect(cache.restoreCache).not.toHaveBeenCalled();
+      } else {
+        expect(cache.saveCache).not.toHaveBeenCalled();
+      }
+    });
+    let tokenNumber = 0;
+    const exchange = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      teamToken: `short-lived-team-token-${++tokenNumber}`,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      executionObservations: { version: 1, path: "/v1/executions/observations" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", exchange);
+    try {
+      await runRestore({ core, cache, env });
+      await runSave({ core, cache, env });
+
+      expect(observations).toHaveBeenCalledTimes(2);
+      expect(observations.mock.calls.map(([options]) => ({
+        endpoint: options.endpoint,
+        project: options.project,
+        phase: options.phase,
+        provider: options.provider,
+        env: options.env,
+        token: (options.exchange as { teamToken: string }).teamToken,
+      }))).toEqual([
+        {
+          endpoint: "https://cache.layercache.example/layercache",
+          project: "github.com/acme/widget",
+          phase: "start",
+          provider: "ubicloud",
+          env,
+          token: "short-lived-team-token-1",
+        },
+        {
+          endpoint: "https://cache.layercache.example/layercache",
+          project: "github.com/acme/widget",
+          phase: "finish",
+          provider: "ubicloud",
+          env,
+          token: "short-lived-team-token-2",
+        },
+      ]);
+      expect(exchange).toHaveBeenCalledTimes(2);
+      for (const [, request] of exchange.mock.calls) {
+        expect(JSON.parse(String((request as RequestInit).body))).toEqual({
+          project: "github.com/acme/widget",
+          compatibility: "linux-amd64-schema1-node@24",
+          idToken: "github-oidc-token",
+          recipeDigest: "",
+          target: "",
+          platform: platformForRuntime(process.platform, process.arch),
+          toolchain: "actions/cache@6.2.0",
+          builder: "",
+        });
+      }
+      expect(cache.restoreCache).toHaveBeenCalledTimes(1);
+      expect(cache.saveCache).toHaveBeenCalledWith(["node_modules"], "observed-key");
+      expect(core.failures).toEqual([]);
+      expect(core.warnings).toEqual([]);
+    } finally {
+      observations.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([false, true])("does not observe static-token authentication after OIDC fallback=%s", async (useOIDCFallback) => {
+    const core = new FakeCore({
+      endpoint: "https://cache.layercache.example/",
+      project: useOIDCFallback ? "github.com/acme/widget" : "",
+      token: "static-team-token",
+      path: "node_modules",
+      key: "static-key",
+      "execution-provider": "ubicloud",
+    });
+    const cache: CacheClient = {
+      restoreCache: vi.fn().mockResolvedValue(undefined),
+      saveCache: vi.fn().mockResolvedValue(42),
+    };
+    const observations = vi.spyOn(execution, "reportExecutionObservation");
+    const exchange = vi.fn();
+    vi.stubGlobal("fetch", exchange);
+    try {
+      await runRestore({ core, cache, env: {} });
+      await runSave({ core, cache, env: {} });
+
+      expect(observations).not.toHaveBeenCalled();
+      expect(exchange).not.toHaveBeenCalled();
+      expect(cache.restoreCache).toHaveBeenCalledTimes(1);
+      expect(cache.saveCache).toHaveBeenCalledTimes(1);
+      expect(core.failures).toEqual([]);
+    } finally {
+      observations.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not exchange or observe again when an exact restore skips the post save", async () => {
+    const core = new FakeCore({
+      endpoint: "https://cache.layercache.example/",
+      project: "github.com/acme/widget",
+      path: "node_modules",
+      key: "exact-observed-key",
+    }, "github-oidc-token");
+    const cache: CacheClient = {
+      restoreCache: vi.fn().mockResolvedValue("exact-observed-key"),
+      saveCache: vi.fn(),
+    };
+    const observations = vi.spyOn(execution, "reportExecutionObservation").mockResolvedValue(undefined);
+    const exchange = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      teamToken: "short-lived-team-token",
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      executionObservations: { version: 1, path: "/v1/executions/observations" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", exchange);
+    try {
+      await runRestore({ core, cache, env: {} });
+      await runSave({ core, cache, env: {} });
+
+      expect(observations).toHaveBeenCalledTimes(1);
+      expect(observations).toHaveBeenCalledWith(expect.objectContaining({ phase: "start", provider: "" }));
+      expect(exchange).toHaveBeenCalledTimes(1);
+      expect(cache.saveCache).not.toHaveBeenCalled();
+      expect(core.failures).toEqual([]);
+    } finally {
+      observations.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["http", "network"])("keeps fresh cache credentials when optional observations fail with %s errors", async (failure) => {
+    const core = new FakeCore({
+      endpoint: "https://cache.layercache.example/layercache",
+      project: "github.com/acme/widget",
+      token: "static-fallback-token",
+      path: "node_modules",
+      key: "optional-report-failure",
+      "execution-provider": "private-runner-name",
+    }, "github-oidc-token");
+    const env = {
+      GITHUB_WORKSPACE: "/private/workspace",
+      RUNNER_NAME: "private-runner-name",
+      PRIVATE_TEST_SECRET: "private-test-secret",
+    };
+    const cache: CacheClient = {
+      restoreCache: vi.fn().mockResolvedValue(undefined),
+      saveCache: vi.fn().mockResolvedValue(42),
+    };
+    const sample: execution.ExecutionSample = {
+      os: "linux",
+      arch: "amd64",
+      cpu: {
+        visibleLogical: 8,
+        affinityLogical: 2,
+        quotaMilliCPU: 2000,
+        effectiveMilliCPU: 2000,
+        limitKnowledge: "complete",
+      },
+      memory: {
+        visibleTotalBytes: 8 * 1024 ** 3,
+        cgroupLimitBytes: 4 * 1024 ** 3,
+        effectiveLimitBytes: 4 * 1024 ** 3,
+        limitKnowledge: "complete",
+      },
+      filesystems: [],
+    };
+    const collect = vi.fn().mockResolvedValue(sample);
+    const report = execution.reportExecutionObservation;
+    const observation = vi.spyOn(execution, "reportExecutionObservation")
+      .mockImplementation((options) => report({ ...options, collect }));
+    const bodies: string[] = [];
+    const fetcher = vi.fn().mockImplementation(async (input: URL, request: RequestInit) => {
+      if (input.pathname.endsWith("/auth/github-oidc/exchange")) {
+        return new Response(JSON.stringify({
+          teamToken: "fresh-team-token",
+          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          executionObservations: { version: 1, path: "/v1/executions/observations" },
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      expect(input.href).toBe("https://cache.layercache.example/v1/executions/observations");
+      expect(request.redirect).toBe("error");
+      expect(request.headers).toEqual({
+        Authorization: "Bearer fresh-team-token",
+        "Content-Type": "application/json",
+        "X-LayerCache-Project": "github.com/acme/widget",
+      });
+      bodies.push(String(request.body));
+      if (failure === "network") throw new TypeError("private service detail");
+      return new Response("private service detail", { status: 503 });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      await runRestore({ core, cache, env });
+      await runSave({ core, cache, env });
+
+      expect(collect).toHaveBeenCalledTimes(2);
+      expect(bodies.map((body) => JSON.parse(body))).toEqual([
+        { version: 1, phase: "start", provider: "unknown", sample },
+        { version: 1, phase: "finish", provider: "unknown", sample },
+      ]);
+      for (const body of bodies) {
+        expect(Buffer.byteLength(body)).toBeLessThanOrEqual(16 * 1024);
+        expect(body).not.toMatch(/private|fresh-team-token|static-fallback-token|github-oidc-token/);
+      }
+      expect(fetcher).toHaveBeenCalledTimes(4);
+      expect(env).toMatchObject({ ACTIONS_RUNTIME_TOKEN: "fresh-team-token" });
+      expect(cache.restoreCache).toHaveBeenCalledTimes(1);
+      expect(cache.saveCache).toHaveBeenCalledTimes(1);
+      expect(core.failures).toEqual([]);
+      expect(core.warnings).toEqual([]);
+    } finally {
+      observation.mockRestore();
       vi.unstubAllGlobals();
     }
   });

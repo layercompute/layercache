@@ -30,6 +30,7 @@ import (
 	"github.com/layercache/layercache/internal/access"
 	"github.com/layercache/layercache/internal/config"
 	"github.com/layercache/layercache/internal/dashboard"
+	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/githubauth"
 	"github.com/layercache/layercache/internal/measurement"
 	"github.com/layercache/layercache/internal/server"
@@ -245,7 +246,7 @@ func (p *Portal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Path
-	if strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/v1/cache/") || strings.HasPrefix(path, "/v1/gradle-cache/") || strings.HasPrefix(path, "/v1/bazel-cache/") || strings.HasPrefix(path, "/v1/members/") || strings.HasPrefix(path, "/v1/buildkit/promotion-leases/") || path == "/v1/audit" || path == "/v1/sync/turbo" || path == "/v1/retained-artifacts" || strings.HasPrefix(path, "/v1/retained-artifacts/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || path == "/v1/gc" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" {
+	if strings.HasPrefix(path, "/v2/") || strings.HasPrefix(path, "/v8/") || strings.HasPrefix(path, "/v1/cache/") || strings.HasPrefix(path, "/v1/gradle-cache/") || strings.HasPrefix(path, "/v1/bazel-cache/") || strings.HasPrefix(path, "/v1/members/") || strings.HasPrefix(path, "/v1/buildkit/promotion-leases/") || path == "/v1/audit" || path == "/v1/sync/turbo" || path == execution.Path || path == "/v1/retained-artifacts" || strings.HasPrefix(path, "/v1/retained-artifacts/") || strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/") || path == "/v1/status" || path == "/v1/gc" || strings.HasPrefix(path, "/v1/reports") || path == "/v1/auth/github/exchange" || path == "/v1/auth/github-oidc/exchange" {
 		p.gateway.ServeHTTP(w, r)
 		return
 	}
@@ -810,7 +811,12 @@ func (p *Portal) projectSnapshot(w http.ResponseWriter, r *http.Request, session
 		cache.Report = &report
 		cache.ReportState = "connected"
 	}
-	jsonResponse(w, 200, map[string]any{"project": selected, "scope": team.Kind, "cache": cache, "cost": dashboard.ReadCost(p.cfg.DashboardCostsFile, "project", selected.ID), "updatedAt": now})
+	projection := map[string]any{"project": selected, "scope": team.Kind, "cache": cache, "cost": dashboard.ReadCost(p.cfg.DashboardCostsFile, "project", selected.ID), "updatedAt": now}
+	var inventory execution.Inventory
+	if read(execution.Path+"?period="+url.QueryEscape(r.URL.Query().Get("period")), &inventory) {
+		projection["executions"] = inventory
+	}
+	jsonResponse(w, 200, projection)
 }
 
 // teamUsage projects only the current member's team allocation. Artifact and

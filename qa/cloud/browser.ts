@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import type { ExecutionInventory } from '../../dashboard/execution-view.js';
 const origin=process.env.CLOUD_ORIGIN!;
 const engine=process.env.DASHBOARD_BROWSER||'chromium';
 if(engine!=='chromium'&&engine!=='firefox'&&engine!=='webkit')throw new Error('Invalid DASHBOARD_BROWSER');
@@ -105,6 +106,38 @@ try{
   assert.equal(usage.projectCount,1);assert.equal(usage.allocatedCacheBytes,null);assert.equal(usage.allocationComplete,false);
   const account=alice.getByRole('region',{name:'Account usage',exact:true});await account.getByText('1 project · Allocated capacity unavailable',{exact:true}).waitFor();
   assert.doesNotMatch(await account.innerText(),/0 B allocated cache capacity/);
+ });
+ await check('execution inventory follows the reporting period across authorized projects',async()=>{
+  const session=await (await alice.request.get(origin+'/api/session')).json() as {csrfToken:string;teams:{id:string;kind:string}[]};
+  const team=session.teams.find(team=>team.kind==='team')!;
+  const created=await alice.request.post(origin+`/api/teams/${team.id}/projects`,{headers:{Origin:origin,'X-CSRF-Token':session.csrfToken},data:{name:'Worker library',repository:'acme/worker'}});
+  assert.equal(created.status(),201);const otherProject=(await created.json()).id as string;
+  const snapshots:{project:string;period:string|null}[]=[];let failOther=false;
+  const pattern='**/api/projects/*/snapshot?*';
+  await alice.route(pattern,async route=>{
+   const url=new URL(route.request().url()),id=url.pathname.split('/')[3]!,period=url.searchParams.get('period');snapshots.push({project:id,period});
+   assert.ok(id===project||id===otherProject,'Inventory requested an unauthorized project');
+   if(failOther&&id===otherProject&&period==='7d'){await route.fulfill({status:503,json:{error:'fixture project temporarily unavailable'}});return;}
+   const response=await route.fetch();assert.equal(response.status(),200);const snapshot=await response.json();
+   const executions:ExecutionInventory={version:1,from:period==='7d'?'2026-10-13T12:00:00Z':'2026-10-19T12:00:00Z',to:'2026-10-20T12:00:00Z',updatedAt:'2026-10-20T12:00:00Z',retentionDays:30,staleAfterSeconds:86400,historyTruncated:false,jobs:[],installations:period==='7d'?[{id:(id===project?'a':'b').repeat(64),ownerId:'github-id:1',installationId:'c'.repeat(64),executionId:'client:'+id,kind:'client',provider:'unknown',providerEvidence:'unknown',runnerEnvironment:'unknown',lastObservedAt:'2026-10-17T12:00:00Z',phase:'finish',sample:{os:'linux',arch:'amd64'},cacheActivity:'unconfirmed'}]:[]};
+   await route.fulfill({response,json:{...snapshot,executions}});
+  });
+  try{
+   await alice.getByRole('button',{name:'Refresh',exact:true}).click();
+   await alice.getByRole('button',{name:'Worker library',exact:true}).waitFor();
+   const inventory=alice.getByRole('region',{name:'Where used',exact:true});
+   await inventory.getByText('0 observed client installations · 0 observed CI jobs',{exact:true}).waitFor();
+   for(const id of [project,otherProject])assert.equal(snapshots.filter(item=>item.project===id&&item.period==='24h').length,1,'Selected snapshot should be shared with the cache panel');
+   await alice.getByLabel('Reporting period').selectOption('7d');
+   await inventory.getByText('1 observed client installation · 0 observed CI jobs',{exact:true}).waitFor();
+   assert.match(await inventory.locator('.execution-projects').innerText(),/^2 projects · /);
+   assert.match(await inventory.innerText(),/2026-10-13 12:00:00 UTC/);
+   for(const id of [project,otherProject])assert.equal(snapshots.filter(item=>item.project===id&&item.period==='7d').length,1);
+   failOther=true;
+   await alice.getByLabel('Reporting period').selectOption('24h');await inventory.getByText('0 observed client installations · 0 observed CI jobs',{exact:true}).waitFor();
+   await alice.getByLabel('Reporting period').selectOption('7d');await inventory.locator('.execution-partial').filter({hasText:'1 project inventory is unavailable.'}).waitFor();
+   assert.equal(await inventory.locator('.execution-counts').innerText(),'1 observed client installation · 0 observed CI jobs');
+  }finally{await alice.unroute(pattern);await alice.getByRole('button',{name:'Refresh',exact:true}).click();await alice.getByText('10.0 KiB',{exact:true}).waitFor();}
  });
  await check('hosted evidence and account costs keep scope and coverage',async()=>{
   const snapshot=await (await alice.request.get(origin+`/api/projects/${project}/snapshot`)).json();

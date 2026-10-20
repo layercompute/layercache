@@ -15,6 +15,72 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
+- [ ] **Show where LayerCache runs and the resources available there.**
+  Owner: LayerCache observability. October 20 user outcome: recognize the same
+  persistent client installation across projects and worktrees, distinguish
+  GitHub Actions jobs and declared providers such as Ubicloud, and inspect
+  effective CPU, memory and filesystem capacity, used, available and reserved
+  space. Keep verified execution authority separate from client-reported
+  hardware facts. A client installation is not proof of a unique physical host;
+  CI jobs must not be collapsed using runner names or network addresses.
+  Add optional bounded observations through existing authenticated clients,
+  with backward-compatible feature discovery, live project authorization,
+  restart-safe bounded inventory and a shared local/hosted dashboard view.
+  Never upload hostnames, hardware identifiers, raw paths or environment maps.
+  Validate cross-project deduplication, independent CI jobs, unknown limits,
+  provider evidence, stale samples, membership removal and collection failure
+  without changing artifact keys or failing the underlying build. Record source
+  qualification separately from installed clients and deployed inventory.
+  The first [source qualification](docs/evidence/execution-observability-20261020.md)
+  now covers authenticated inventory, shared presentation, bounded collection,
+  persistence and standalone operation. Installed clients, deployed samples and
+  normal application CI adoption remain pending.
+
+- [ ] **Share one bounded local artifact cache across worktrees and projects.**
+  Owner: LayerCache storage/native clients. The latest user outcome adds local
+  hot-byte reuse to hosted R2 storage: fetch a compatible immutable artifact once,
+  reuse it across workspaces, and avoid multiplying independent disk budgets.
+  Reuse the existing content-addressed store, verified read-through, LRU and
+  reader protection. Start with the complete native Turbo path, then connect
+  Gradle through the same owner and budget. Preserve origin, project, profile,
+  integration and visibility authority before resolving a reference. Cloud-only
+  operation remains selectable. Qualify concurrent single-fetch reuse, equal
+  payload deduplication, corruption, cancellation, restart and quota pressure.
+  Account for committed blobs, metadata, staging and bytes held by readers;
+  the current committed-blob cap is not a ceiling on total disk allocation.
+  Track caller-owned extracted outputs separately. Prefer a leased immutable
+  path for read-only consumers; use isolated copies or verified native CoW
+  for writable consumers. Never hardlink arbitrary writable outputs. Measure
+  complete command time and total allocated bytes before rollout, preserving
+  existing package-manager deduplication and the machine's free-space reserve.
+
+- [ ] **Qualify portable reuse without weakening native compatibility.**
+  Owner: LayerCache native integrations. Architecture, target ABI, OS and SDK
+  belong in the logical identity when they can affect an output. Execution-host
+  architecture and compilation target are different facts. Keep native systems'
+  complete declared inputs; never strip architecture from an opaque key or
+  infer portability from a file extension. Current measured runtime profiles
+  deliberately separate platforms. Introduce narrower sharing only for an
+  explicitly declared and qualified task/output contract, including its
+  dependency closure. Prove equivalent outputs across supported architectures
+  and misses for changed target, ABI, SDK, toolchain and relevant inputs.
+  Keep logical compatibility independent of content-addressed byte identity:
+  different authorized references with identical payloads should share one blob
+  within the supported storage scope. Record project isolation and current
+  cross-project deduplication limits rather than claiming a global blob pool.
+
+- [ ] **Explain conflicting immutable Turbo publications before claiming full adoption.**
+  Owner: LayerCache native integrations with the producing application's owner.
+  Normal hosted browser work recorded two HTTP 409 publications under one
+  source/profile. The server correctly preserves the existing immutable bytes.
+  Task identities and semantic output equivalence are not yet established.
+  Native Turbo already normalizes archive ownership and timestamps; do not
+  attribute these conflicts to timestamps without source evidence. Identify
+  the producing tasks and differing output/log bytes from existing evidence,
+  then qualify deterministic output or a justified native-client contract.
+  Do not replace the winner, weaken integrity checks or add duplicate builds
+  merely to hide warnings. Cache failures remain distinct from task failures.
+
 - [x] **Qualify the live customer dashboard and fix verified reporting gaps.**
   Owner: LayerCache dashboard/integrations. The actual operator account completed
   its normal initial password change, with the current credential kept outside
@@ -748,6 +814,21 @@ workspaces and filesystem migration are outside the current product scope.
   does not establish reduced Mac use. Keep store release, experimental signing
   and simulator QA qualification separate. Turbo can remain the JS orchestrator;
   consider a bounded Bazel pilot only if residual native action work justifies it.
+
+- [ ] **Qualify compiler-cache lifecycle with Apple-managed Xcode builds.**
+  Owner: LayerCache compiler client with the application build owner. The current
+  adapter wraps its own `xcodebuild` child. It has no qualified standalone
+  service lifecycle or scoped snapshot transport for a build action orchestrated
+  by Xcode Cloud. Measure Apple's built-in cache first and preserve its own
+  managed build/test lifecycle. Add a bounded rootless service mode and transport
+  only if measured remaining compiler work justifies them. Qualify actual
+  worker/toolchain/SDK/target identities, fresh-worker restores and relevant
+  changed-input misses, complete graph integrity, readiness, cancellation,
+  closure before snapshots and trusted publication. Do not reuse GitHub OIDC
+  as an Apple workload identity or introduce a broad publication secret.
+  Xcode 27 and external Swift replay remain independent gates; the Xcode 26.6
+  Clang protocol proof establishes neither. No application workflow change or
+  build dispatch is requested by this service backlog entry.
 
 ## P1: complete supported private protocols
 

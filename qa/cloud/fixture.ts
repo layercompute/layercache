@@ -10,7 +10,7 @@ const binary=process.env.LAYERCACHE_BIN;
 if(!binary)throw new Error('Set LAYERCACHE_BIN to the built CLI');
 const root=mkdtempSync(join(tmpdir(),'layercache-cloud-qa.'));
 const users:Record<string,{id:number;login:string}>={alice:{id:1,login:'alice'},bob:{id:2,login:'bob'}};
-const repositoryIDs:Record<string,number>={'acme/web':123,'acme/no-admin':124,'acme/zero-id':0};
+const repositoryIDs:Record<string,number>={'acme/web':123,'acme/no-admin':124,'acme/worker':125,'acme/zero-id':0};
 const codes=new Map<string,{user:string;challenge:string;redirect:string}>();
 let expectedCallback='';
 const github=createServer(async(req,res)=>{

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { endpointURL, exchangeTurbo, fileCommand, setup } from './main.mjs';
 import { cleanup } from './post.mjs';
+import './execution.test.ts';
 
 test('endpoints reject plaintext and credential-bearing remote URLs', () => {
   for (const value of ['http://cache.example', 'https://user:pass@cache.example', 'https://cache.example?q=secret', 'https://cache.example/#a']) {
@@ -31,6 +32,45 @@ test('OIDC exchange requests only Turbo with bounded lifetime and no redirects',
   assert.equal(JSON.parse(requests[1][1].body).integration, 'turbo');
   assert.equal(JSON.parse(requests[1][1].body).ttlSeconds, 3600);
   assert.ok(requests.every(([, init]) => init.redirect === 'error'));
+});
+
+test('optional execution reporting never changes native exchange authority or its success', async () => {
+  for (const integration of ['turbo', 'gradle', 'buildkit']) {
+    for (const failedReport of [false, true]) {
+      const requests = [];
+      const masks = [];
+      const credentials = { teamToken: 'native-execution-token', expiresAt: new Date(Date.now() + 1800_000).toISOString(),
+        executionObservations: { version: 1, path: '/v1/executions/observations' } };
+      const result = await exchangeTurbo({ endpoint: 'https://cache.example', project: 'github.com/acme/widget',
+        compatibility: 'linux-amd64-schema1', minutes: 30, integration, observationPhase: 'finish',
+        env: { ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example/token', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'request-token', 'INPUT_EXECUTION-PROVIDER': 'ubicloud' },
+        log: value => masks.push(value),
+        fetcher: async (url, input) => {
+          requests.push([url, input]);
+          if (requests.length === 1) return Response.json({ value: 'identity-token' });
+          if (requests.length === 2) return Response.json(credentials);
+          assert.ok(masks.some(value => value.includes('::add-mask::native-execution-token')));
+          assert.equal(String(url), 'https://cache.example/v1/executions/observations');
+          assert.equal(input.redirect, 'error');
+          assert.equal(input.headers.Authorization, 'Bearer native-execution-token');
+          assert.equal(input.headers['X-LayerCache-Project'], 'github.com/acme/widget');
+          const body = JSON.parse(input.body);
+          assert.equal(body.version, 1);
+          assert.equal(body.phase, 'finish');
+          assert.equal(body.provider, 'ubicloud');
+          assert.equal(body.installationId, undefined);
+          assert.equal(body.repository, undefined);
+          assert.ok(!input.body.includes('identity-token'));
+          assert.ok(!input.body.includes('native-execution-token'));
+          if (failedReport) throw new Error('private-observation-error');
+          return new Response('private-server-body', { status: 503 });
+        },
+      });
+      assert.equal(requests.length, 3);
+      assert.equal(result.teamToken, credentials.teamToken);
+      assert.deepEqual(JSON.parse(requests[1][1].body), { project: 'github.com/acme/widget', compatibility: 'linux-amd64-schema1', idToken: 'identity-token', integration, ttlSeconds: 1800 });
+    }
+  }
 });
 
 test('file commands encode multiline values in independent records', () => {

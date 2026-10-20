@@ -22,6 +22,7 @@ import (
 	"github.com/layercache/layercache/internal/cloud"
 	"github.com/layercache/layercache/internal/compatibility"
 	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/measurement"
 	"github.com/layercache/layercache/internal/publicbuild"
 	"github.com/layercache/layercache/internal/publictrust"
@@ -68,6 +69,7 @@ type Server struct {
 	actionsPublic     *actionscache.PublicCacheIndex
 	actionsHandler    *actionscache.Handler
 	measurements      measurementRepository
+	executions        execution.Repository
 	uploads           *uploadqueue.Queue
 	uploadContext     context.Context
 	cancelUploads     context.CancelFunc
@@ -195,6 +197,13 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 	if err != nil {
 		_ = server.Close()
 		return nil, fmt.Errorf("open measurement persistence: %w", err)
+	}
+	if provider, ok := server.measurements.(interface {
+		ExecutionRepository(context.Context, string) (execution.Repository, error)
+	}); ok {
+		inventoryContext, cancelInventory := context.WithTimeout(ctx, 3*time.Second)
+		server.executions, _ = provider.ExecutionRepository(inventoryContext, cfg.ProjectID)
+		cancelInventory()
 	}
 	if cfg.Role == "local" && cfg.TeamURL != "" && cfg.TeamToken != "" {
 		server.team, err = remote.NewTurboClientForCompatibilityWithTimeouts(cfg.TeamURL, cfg.TeamToken, cfg.CompatibilityID, remote.Timeouts{
@@ -398,6 +407,7 @@ func (server *Server) routes() {
 	server.mux.Handle("GET /v1/reports", server.requireToken(http.HandlerFunc(server.periodReport)))
 	server.mux.Handle("GET /v1/reports/{runID}", server.requireToken(http.HandlerFunc(server.runReport)))
 	server.mux.Handle("POST /v1/reports/turbo", server.requireToken(http.HandlerFunc(server.reconcileTurboReport)))
+	server.executionRoutes()
 	server.mux.Handle("POST /v1/sync/turbo", server.requireToken(http.HandlerFunc(server.syncTurbo)))
 	server.cloudRoutes()
 	server.retainedRoutes()
@@ -441,6 +451,9 @@ func (server *Server) status(writer http.ResponseWriter, request *http.Request) 
 		}
 	}
 	result["visibility"] = visibility
+	if server.config.Role == "local" && server.executions != nil {
+		result["executionObservations"] = execution.Supported()
+	}
 	result["metadataBytes"] = stats.MetadataBytes
 	claims, authenticated := access.ClaimsFromContext(request.Context())
 	result["canPrune"] = server.config.Role != "public" && authenticated && claims.Allows(access.CapabilityAdmin) && server.currentMembershipAllows(request.Context(), claims, access.CapabilityAdmin)

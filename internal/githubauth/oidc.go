@@ -22,20 +22,21 @@ import (
 const DefaultOIDCIssuer = "https://token.actions.githubusercontent.com"
 
 type ActionsIdentity struct {
-	Subject         string
-	EventName       string
-	Repository      string
-	RepositoryID    string
-	ActorID         string
-	Actor           string
-	Ref             string
-	Commit          string
-	WorkflowRef     string
-	JobWorkflowRef  string
-	RepositoryOwner string
-	RunID           string
-	RunAttempt      string
-	CheckRunID      string
+	Subject           string
+	EventName         string
+	Repository        string
+	RepositoryID      string
+	ActorID           string
+	Actor             string
+	Ref               string
+	Commit            string
+	WorkflowRef       string
+	JobWorkflowRef    string
+	RepositoryOwner   string
+	RunID             string
+	RunAttempt        string
+	CheckRunID        string
+	RunnerEnvironment string
 }
 
 type OIDCVerifier struct {
@@ -108,10 +109,14 @@ func (verifier *OIDCVerifier) Verify(ctx context.Context, rawToken, audience str
 		Actor:   stringClaim(claims, "actor"),
 		Ref:     stringClaim(claims, "ref"), Commit: stringClaim(claims, "sha"),
 		WorkflowRef: stringClaim(claims, "workflow_ref"), JobWorkflowRef: stringClaim(claims, "job_workflow_ref"),
-		RepositoryOwner: stringClaim(claims, "repository_owner"),
-		RunID:           unsignedIntegerClaim(claims, "run_id"),
-		RunAttempt:      unsignedIntegerClaim(claims, "run_attempt"),
-		CheckRunID:      unsignedIntegerClaim(claims, "check_run_id"),
+		RepositoryOwner:   stringClaim(claims, "repository_owner"),
+		RunID:             unsignedIntegerClaim(claims, "run_id"),
+		RunAttempt:        unsignedIntegerClaim(claims, "run_attempt"),
+		CheckRunID:        unsignedIntegerClaim(claims, "check_run_id"),
+		RunnerEnvironment: stringClaim(claims, "runner_environment"),
+	}
+	if identity.RunnerEnvironment != "github-hosted" && identity.RunnerEnvironment != "self-hosted" {
+		identity.RunnerEnvironment = "unknown"
 	}
 	if identity.Subject == "" || identity.Repository == "" || identity.Ref == "" || identity.Commit == "" ||
 		identity.RunID == "" || identity.RunAttempt == "" || identity.CheckRunID == "" {

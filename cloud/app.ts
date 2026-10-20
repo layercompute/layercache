@@ -1,10 +1,11 @@
 import {renderCache, renderCost, renderScopes, scopeName, bytes, type Cache, type CostReport, type Scope} from '../dashboard/cache-view.js';
+import {renderExecutions, type ExecutionInventory, type ExecutionProject} from '../dashboard/execution-view.js';
 type Team = {id:string;name:string;role:string;kind:'team'|'personal';operatorManaged?:boolean};
 type Project = {id:string;teamId:string;name:string;repository:string;role:string;operatorManaged?:boolean};
 type Member = {userId:string;login:string;role:string};
 type Session = {user:{id:string;login:string};csrfToken:string;cloudOrigin:string;authMethod:'github'|'password';passwordChangeRequired:boolean;canChangePassword:boolean;canManageGitHub:boolean;canCreateTeam:boolean;teams:Team[]|null;projects:Project[]|null;invitations:{id:string;teamName:string;role:string}[]|null};
 type PublicConfig = {githubClientId:string;passwordLogin:boolean};
-type Snapshot = {cache: Cache; scope?: Scope; cost?: CostReport; updatedAt: string};
+type Snapshot = {cache: Cache; scope?: Scope; cost?: CostReport; updatedAt: string; executions?: ExecutionInventory | null};
 type TeamUsage = {cost?: CostReport; projectCount: number; allocatedCacheBytes: number | null; allocationComplete: boolean};
 const root = document.querySelector<HTMLElement>('#app')!;
 const notice = document.querySelector<HTMLElement>('#notice')!;
@@ -59,10 +60,22 @@ function render(){if(!session)return renderLogin();const current=session;const v
  const usage=el('section','','card account-usage');usage.setAttribute('aria-label','Account usage');usage.append(el('h2',team.kind==='personal'?'Personal account usage':'Team usage'),el('p','Loading account usage…','muted'));main.append(usage);
  void api<TeamUsage>(`/api/teams/${encodeURIComponent(team.id)}/usage`).then(data=>{if(version!==generation)return;usage.replaceChildren(el('h2',team.kind==='personal'?'Personal account usage':'Team usage'));const capacity=data.allocationComplete&&data.allocatedCacheBytes!==null?`${bytes(data.allocatedCacheBytes)} allocated cache capacity`:'Allocated capacity unavailable';const allocation=el('p',`${data.projectCount} ${data.projectCount===1?'project':'projects'} · ${capacity}`,'muted');usage.append(allocation,renderCost(data.cost,team.kind==='personal'?'Personal account cost':'Team cost'),el('p','Allocated capacity is a configured limit. It does not measure current usage or billed storage.','coverage-note'));}).catch(error=>{if(version===generation)usage.replaceChildren(el('h2','Account usage'),el('p',error instanceof Error?error.message:'Usage unavailable','error'),renderCost(undefined,team.kind==='personal'?'Personal account cost':'Team cost'));});
  main.append(renderScopes());
+ const executionPanel=el('div');executionPanel.append(el('p','Loading execution inventory…','muted'));main.append(executionPanel);
+ let inventoryRequest=0;
+ const loadInventories=async(reportingPeriod:string,selectedSnapshot?:Promise<Snapshot>)=>{
+  const order=++inventoryRequest;
+  executionPanel.replaceChildren(el('p','Loading execution inventory…','muted'));
+  const executionProjects:ExecutionProject[]=projects.toSorted((a,b)=>Number(b.id===selectedProject)-Number(a.id===selectedProject)).map(item=>({id:item.id,name:item.name,repository:item.repository}));
+  let inventoryCursor=0;
+  const readInventories=async()=>{while(version===generation&&order===inventoryRequest&&inventoryCursor<Math.min(32,executionProjects.length)){const item=executionProjects[inventoryCursor++]!;try{const pending=item.id===selectedProject&&selectedSnapshot?selectedSnapshot:api<Snapshot>(`/api/projects/${encodeURIComponent(item.id)}/snapshot?period=${encodeURIComponent(reportingPeriod)}`);item.executions=(await pending).executions;}catch{item.executions=undefined;}}};
+  await Promise.all(Array.from({length:Math.min(3,executionProjects.length)},()=>readInventories()));
+  if(version===generation&&order===inventoryRequest)executionPanel.replaceChildren(renderExecutions(executionProjects));
+ };
  const project=projects.find(p=>p.id===selectedProject);
  if(project){main.append(el('h1',project.name),el('p',project.repository,'muted'));const cache=el('section','','card');cache.setAttribute('aria-label','Cache visibility');cache.append(el('h2','Cache activity'));const period=el('select');period.setAttribute('aria-label','Reporting period');for(const [id,text] of [['24h','Last 24 hours'],['7d','Last 7 days']]){const o=el('option',text!);o.value=id!;period.append(o);}const metrics=el('div');cache.append(period,metrics);main.append(cache);let request=0;
  const load=async()=>{const order=++request;metrics.replaceChildren(el('p','Loading cache activity…'));try{
-   const snapshot=await api<Snapshot>(`/api/projects/${encodeURIComponent(project.id)}/snapshot?period=${period.value}`);if(version!==generation||order!==request)return;
+   const pending=api<Snapshot>(`/api/projects/${encodeURIComponent(project.id)}/snapshot?period=${period.value}`);void loadInventories(period.value,pending);
+   const snapshot=await pending;if(version!==generation||order!==request)return;
    const scope=snapshot.scope??snapshot.cache.status?.visibility??team.kind;
    const prune=async(targetBytes:number)=>{try{await api(`/api/projects/${encodeURIComponent(project.id)}/prune`,'POST',{targetBytes,confirm:true});}finally{await load();}};
    metrics.replaceChildren(renderCache(scopeName(scope),snapshot.cache,{scope,canPrune:snapshot.cache.status?.canPrune===true,onPrune:prune}),renderCost(snapshot.cost));
@@ -70,7 +83,7 @@ function render(){if(!session)return renderLogin();const current=session;const v
    metrics.append(el('p','Project and account costs may overlap. Local and remote reports must not be added into a global savings total.','coverage-note'),el('p',`Updated ${new Date(snapshot.updatedAt).toLocaleString()}`,'muted'));
  }catch(error){if(version===generation&&order===request)metrics.replaceChildren(el('p',error instanceof Error?error.message:'Cache unavailable','error'));}};
  period.onchange=()=>{void load();};void load();const connect=el('section','','card');connect.append(el('h2','Connect your CLI'),el('p','Run this inside your repository with the LayerCache CLI installed.'));const command=`layercache connect --cloud '${current.cloudOrigin.replaceAll("'","'\\''")}' --project '${project.id.replaceAll("'","'\\''")}' --github-cli${project.operatorManaged?' --remote-only':''}`;connect.append(el('pre',command),el('p',publicConfig?.githubClientId?'Uses your GitHub CLI sign-in. Omit --github-cli to sign in through a browser code.':'Uses existing GitHub CLI sign-in (gh auth login). Dashboard password does not replace GitHub authentication.','muted'));if(current.authMethod==='password'&&publicConfig?.githubClientId)connect.append(el('p','Your password signs in to this dashboard. CLI and cache access continue to use your GitHub identity.','muted'));if(project.operatorManaged)connect.append(el('p','This connection uses the hosted backend directly and creates no Local Cache store.','muted'));connect.append(button('Copy command',async()=>{await navigator.clipboard.writeText(command);message('Connection command copied.');}));main.append(connect);
- }else{main.append(el('h1','Add your first project'),el('p',team.kind==='personal'?'Personal projects keep your full build context private to your account.':'Projects keep cache artifacts isolated. Team members share access according to their role.'));}
+ }else{executionPanel.replaceChildren(renderExecutions([]));main.append(el('h1','Add your first project'),el('p',team.kind==='personal'?'Personal projects keep your full build context private to your account.':'Projects keep cache artifacts isolated. Team members share access according to their role.'));}
  if(team.operatorManaged){const access=el('section','','card');access.append(el('h2','Operator-managed access'),el('p','These existing caches keep their original project identities and native membership authority. Dashboard membership does not grant cache access. Project registration and cache membership changes are managed by the operator.'),el('p','Current native permissions and revocations still apply to every read, publication and prune.','muted'));main.append(access);return;}
  if(!current.canManageGitHub){const access=el('section','','card');access.append(el('h2','Project access'),el('p','Project registration and membership changes require GitHub sign-in or help from your LayerCache operator.'));main.append(access);return;}
  if(team.role==='admin'){const add=form('Add project','Create project',async f=>{const project=await api<Project>(`/api/teams/${team.id}/projects`,'POST',{name:value(f,'name'),repository:value(f,'repository')});selectedProject=project.id;await refresh();message('Project created. Connect your CLI to start caching.');});appendField(add,'Project name','name','Web app');appendField(add,'GitHub repository','repository','owner/repository');add.append(el('p','Your GitHub account must administer this repository.','muted'));main.append(add);}

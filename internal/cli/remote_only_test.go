@@ -23,6 +23,8 @@ import (
 func TestRemoteOnlyNativeRunUsesHostedMemberAuthorityWithoutLocalStore(t *testing.T) {
 	t.Setenv("GITHUB_REF", "")
 	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "user-config"))
+	t.Setenv("HOME", filepath.Join(root, "user-home"))
 	clone := filepath.Join(root, "clone")
 	commit := initCLIRepository(t, clone, "feature/hosted", "hosted")
 	t.Chdir(clone)

@@ -30,6 +30,9 @@ inputs:
   max-bytes:
     description: Maximum local archive cache bytes.
     default: '5368709120'
+  execution-provider:
+    description: Optional declared runner provider for resource observations, github, ubicloud, selfHosted, or unknown.
+    default: unknown
 outputs:
   compatibility:
     description: Resolved compatibility identity; pass it alongside key from Linux lookup to macOS save to reject mismatches.

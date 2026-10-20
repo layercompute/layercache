@@ -79,13 +79,16 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if cfg.RemoteOnly && isAdapterBypassed(cfg, "turbo") && isAdapterBypassed(cfg, "actions") && isAdapterBypassed(cfg, "nx") && isAdapterBypassed(cfg, "gradle") && isAdapterBypassed(cfg, "buildkit") {
 		return runCommandWithScopeBypass(ctx, commandArgs, stdout, stderr)
 	}
+	var executionReport *clientExecutionObservation
 	if !cfg.RemoteOnly {
-		if _, err := probeRuntime(cfg); err != nil {
+		live, probeErr := probeRuntime(cfg)
+		if probeErr != nil {
 			_, _ = fmt.Fprintf(stderr,
-				"Layer Cache warning: the local daemon is unavailable; running the command without Layer Cache environment injection: %v\n", err,
+				"Layer Cache warning: the local daemon is unavailable; running the command without Layer Cache environment injection: %v\n", probeErr,
 			)
 			return runCommandWithoutCache(ctx, commandArgs, stdout, stderr)
 		}
+		executionReport = prepareLocalExecutionObservation(ctx, cfg, live.ExecutionObservations, discovered.Root)
 	}
 	random, err := config.NewToken()
 	if err != nil {
@@ -115,6 +118,9 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		authority.SourceCommit = discovered.Commit
 	}
 	authority.WorkspaceID = workspaceMeasurementIdentity(cfg.ProjectID, discoveredRoot, cfg.ProjectRoot)
+	if executionReport != nil {
+		authority.Execution = executionReport.localContext(runID)
+	}
 	endpoint := localRuntimeURL(cfg.Listen)
 	var turboToken, actionsToken, buildkitToken, nxToken, gradleToken string
 	if cfg.RemoteOnly {
@@ -137,6 +143,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		runID, authority.RunID, authority.WorkspaceID = exchanged.RunID, exchanged.RunID, exchanged.WorkspaceID
 		endpoint = strings.TrimRight(cfg.TeamURL, "/")
 		turboToken, actionsToken, nxToken, gradleToken = exchanged.NativeTokens["turbo"], exchanged.NativeTokens["actions"], exchanged.NativeTokens["nx"], exchanged.NativeTokens["gradle"]
+		executionReport = startClientExecutionObservation(ctx, cfg, exchanged, discoveredRoot)
 		// BuildKit uses its configured authenticated registry; no locally minted
 		// measurement capability can authorize requests against a hosted service.
 	} else {
@@ -169,6 +176,10 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		gradleToken, err = access.MintCapabilityToken(cfg.LocalToken, gradleAuthority, now)
 		if err != nil {
 			return err
+		}
+		if executionReport != nil {
+			executionReport.token = turboToken
+			executionReport.report(ctx, "start")
 		}
 	}
 	command := exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
@@ -235,6 +246,9 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}
 	commandErr := command.Run()
 	finishedAt := time.Now().UTC()
+	if executionReport != nil {
+		executionReport.report(ctx, "finish")
+	}
 	var documents [][]byte
 	if summaryEnabled {
 		var summaryErr error

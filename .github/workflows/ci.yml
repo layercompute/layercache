@@ -104,7 +104,7 @@ jobs:
           retention-days: 30
       - name: Verify shipped JavaScript matches TypeScript
         if: steps.scope.outputs.mode != 'docs'
-        run: git diff --exit-code -- native/dist action/native/dist internal/dashboard/assets/app.js internal/portal/assets/app.js
+        run: git diff --exit-code -- native/dist action/native/dist action/setup/execution-worker.cjs internal/dashboard/assets/app.js internal/portal/assets/app.js
 
   performance:
     name: Cache performance

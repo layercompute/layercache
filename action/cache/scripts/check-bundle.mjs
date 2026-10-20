@@ -34,6 +34,14 @@ if (JSON.stringify(after) !== JSON.stringify(before)) {
 
 process.stdout.write(`Verified ${Object.keys(after).length} reproducible action bundle files.\n`);
 
+const worker = spawnSync(process.execPath, [resolve(root, "scripts/check-execution-worker.mjs")], {
+  cwd: root,
+  encoding: "utf8",
+  stdio: "inherit",
+});
+if (worker.error) throw worker.error;
+if (worker.status !== 0) process.exit(worker.status ?? 1);
+
 async function snapshot(directory) {
   const files = await walk(directory);
   const result = {};

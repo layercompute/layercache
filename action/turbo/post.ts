@@ -63,6 +63,7 @@ export async function reportTurbo(
       env,
       fetcher,
       log,
+      observationPhase: 'finish',
     });
     stage = 'submit';
     const response = await fetcher(new URL('/v1/reports/turbo', endpoint), {

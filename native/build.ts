@@ -3,6 +3,10 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { buildExecutionWorker } from '../action/setup/build-execution-worker.mjs';
+
+await buildExecutionWorker();
+await buildExecutionWorker('action/native/dist/execution-worker.cjs');
 
 for (const [entry, outfile, format] of [
   ['native/expo.ts', 'native/dist/expo.cjs', 'cjs'],

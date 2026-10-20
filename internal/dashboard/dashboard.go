@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/measurement"
 )
 
@@ -43,10 +44,11 @@ type Cache struct {
 }
 
 type Project struct {
-	ID    string     `json:"id"`
-	Local Cache      `json:"local"`
-	Team  Cache      `json:"team"`
-	Cost  CostReport `json:"cost"`
+	Executions *execution.Inventory `json:"executions,omitempty"`
+	ID         string               `json:"id"`
+	Local      Cache                `json:"local"`
+	Team       Cache                `json:"team"`
+	Cost       CostReport           `json:"cost"`
 }
 
 type Snapshot struct {

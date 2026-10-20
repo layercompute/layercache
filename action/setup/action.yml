@@ -24,6 +24,9 @@ inputs:
   ttl-minutes:
     description: Lifetime of issued job credentials, 1 to 60 minutes. Rerun setup for longer jobs.
     default: '60'
+  execution-provider:
+    description: Optional declared runner provider for resource observations, github, ubicloud, selfHosted, or unknown.
+    default: unknown
 outputs:
   binary:
     description: Installed binary path.
