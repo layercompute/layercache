@@ -69,9 +69,18 @@ workspaces and filesystem migration are outside the current product scope.
   the bounded native endpoint, Gradle listener/action, offline native exporters,
   original publication/resource matching and local/hosted dashboard coverage.
   [The coverage audit](docs/native-metering.md#coverage-audit) names the remaining
-  reporters and distinguishes missing evidence from zero usage. Published pins,
-  live rollout and normal application adoption remain separate gates; allocation,
-  pricing and shared snapshot-purpose work keep this parent task open.
+  reporters and distinguishes missing evidence from zero usage. Reviewed
+  [PR #81](https://github.com/ziahamza/layercache/pull/81) merged as
+  `9c071a6e94aa7a173a810165020c6f3eaedda01e`; all main workflows passed and
+  [beta.8](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.8)
+  is immutable. The guarded cloud rollout passed 63 authenticated browser checks
+  across three engines. Existing application native reports were absent in both
+  selected periods; adoption pins and normal-run receipt requests were delivered
+  to the application owners. A private operator ledger now shows partial
+  provider-reported GitHub charges with an explicit UTC watermark, excluding
+  other providers. Automatic job-allocation/billing ingestion, native application
+  receipts, attributable savings and shared snapshot-purpose work keep this
+  parent task open. Do not infer zero cost from a provider's absent timing data.
 
 - [ ] **Show where LayerCache runs and the resources available there.**
   Owner: LayerCache observability. October 20 user outcome: recognize the same

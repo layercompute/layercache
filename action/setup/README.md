@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: ziahamza/layercache/action/setup@104b3fb7483986dcad485ceb30e9c8b37973b286
+  - uses: ziahamza/layercache/action/setup@9c071a6e94aa7a173a810165020c6f3eaedda01e
     id: layercache
     with:
       repository: ziahamza/layercache
-      version: v0.1.0-beta.7
+      version: v0.1.0-beta.8
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: ziahamza/layercache/action/cache@104b3fb7483986dcad485ceb30e9c8b37973b286
+  - uses: ziahamza/layercache/action/cache@9c071a6e94aa7a173a810165020c6f3eaedda01e
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,7 +30,7 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The action and release are pinned to CLI beta.7. It includes confirmed Turbo
+The action and release are pinned to CLI beta.8. It includes confirmed Turbo
 publication, permanent-conflict pin retirement, owner-only Personal projects,
 native Nx Local/direct private endpoints, native Bazel HTTP integration, storage
 inspection and standalone Xcode cache lifecycle with scoped snapshot access.

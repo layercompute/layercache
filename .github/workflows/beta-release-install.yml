@@ -43,10 +43,10 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.1.0-beta.7
-      SOURCE_SHA: 104b3fb7483986dcad485ceb30e9c8b37973b286
+      RELEASE_TAG: v0.1.0-beta.8
+      SOURCE_SHA: 9c071a6e94aa7a173a810165020c6f3eaedda01e
       RELEASE_REPOSITORY: ziahamza/layercache
-      NATIVE_BUNDLE_SHA256: 7a1cfc2d035ea7489bcb3fc1e0ed40957f79e413267075ddc7108f0d145a5070
+      NATIVE_BUNDLE_SHA256: eb4e5c2b6595dd7f3dd738aaed8c2ac60c2d08a4d942fa8b31966b0393bd39c7
     steps:
       # The workflow is reviewed on this PR; the script comes from the exact
       # commit that published the release, independent of PR branch contents.
@@ -54,7 +54,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ziahamza/layercache
-          ref: 104b3fb7483986dcad485ceb30e9c8b37973b286
+          ref: 9c071a6e94aa7a173a810165020c6f3eaedda01e
           persist-credentials: false
 
       - name: Check published release and exact source commit
@@ -133,7 +133,7 @@ jobs:
             --signer-workflow "$RELEASE_REPOSITORY/.github/workflows/release.yml" \
             --source-ref "refs/tags/$RELEASE_TAG" --source-digest "$SOURCE_SHA" \
             --deny-self-hosted-runners >/dev/null
-          go version -m "$binary" >"$RUNNER_TEMP/beta7-go-build-metadata.txt"
+          go version -m "$binary" >"$RUNNER_TEMP/beta8-go-build-metadata.txt"
           awk -v revision="vcs.revision=$SOURCE_SHA" \
             -v goos="GOOS=$EXPECTED_GOOS" -v goarch="GOARCH=$EXPECTED_GOARCH" '
             $1 == "build" && $2 == "vcs=git" { git++ }
@@ -144,7 +144,7 @@ jobs:
             $1 == "build" && $2 == "CGO_ENABLED=0" { cgo_count++ }
             END { exit !(git == 1 && revision_count == 1 && clean == 1 &&
                          os_count == 1 && arch_count == 1 && cgo_count == 1) }
-          ' "$RUNNER_TEMP/beta7-go-build-metadata.txt"
+          ' "$RUNNER_TEMP/beta8-go-build-metadata.txt"
           test "$(shasum -a 256 native/dist/cli.js | awk '{print $1}')" = "$NATIVE_BUNDLE_SHA256"
 
       - name: Check installer and setup integrity with the installed binary
@@ -163,16 +163,16 @@ jobs:
           python3 qa/local-ci-reuse/run.py \
             --binary "$RUNNER_TEMP/layercache-beta-install/layercache" \
             --turbo "$GITHUB_WORKSPACE/qa/fixtures/local-ci-reuse/node_modules/.bin/turbo" \
-            --output "$RUNNER_TEMP/beta7-local-ci-reuse.json"
+            --output "$RUNNER_TEMP/beta8-local-ci-reuse.json"
           jq -e '
             .schemaVersion == "local-ci-reuse-v1" and .passed == true and
             (.scenarios | length) == 17
-          ' "$RUNNER_TEMP/beta7-local-ci-reuse.json" >/dev/null
+          ' "$RUNNER_TEMP/beta8-local-ci-reuse.json" >/dev/null
 
       - name: Prove native Nx replay using the published binary
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
-          NX_QA_OUTPUT: ${{ runner.temp }}/beta7-nx-native.json
+          NX_QA_OUTPUT: ${{ runner.temp }}/beta8-nx-native.json
         run: node qa/nx-native/run.mjs
 
       - name: Qualify standalone lifecycle and scoped archives using the published binary
@@ -180,12 +180,12 @@ jobs:
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
           NATIVE_CACHE_CLI: ${{ github.workspace }}/native/dist/cli.js
-          LAYER_CACHE_XCODE_LIFECYCLE_REPORT: ${{ runner.temp }}/beta7-xcode-lifecycle/receipt.json
+          LAYER_CACHE_XCODE_LIFECYCLE_REPORT: ${{ runner.temp }}/beta8-xcode-lifecycle/receipt.json
           GOMAXPROCS: "2"
           INSTALLER_PLATFORM: ${{ matrix.system }}
         run: |
           set -euo pipefail
-          install -d -m 0700 "$RUNNER_TEMP/beta7-xcode-lifecycle"
+          install -d -m 0700 "$RUNNER_TEMP/beta8-xcode-lifecycle"
           test -x "$LAYERCACHE_BIN"
           test -f "$NATIVE_CACHE_CLI"
           test ! -e "$LAYER_CACHE_XCODE_LIFECYCLE_REPORT"
@@ -209,14 +209,14 @@ jobs:
                  installedBinary:true,
                  boundary:"loopback lifecycle and scoped archives; synthetic CAS; no native compilation or Apple-managed build"}
           ' "$LAYER_CACHE_XCODE_LIFECYCLE_REPORT" \
-            >"$RUNNER_TEMP/beta7-installed-xcode-lifecycle.json"
+            >"$RUNNER_TEMP/beta8-installed-xcode-lifecycle.json"
 
       - name: Preserve installed lifecycle and scoped archive evidence
         if: always() && steps.xcode-lifecycle.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: beta7-installed-xcode-lifecycle-${{ matrix.name }}
-          path: ${{ runner.temp }}/beta7-installed-xcode-lifecycle.json
+          name: beta8-installed-xcode-lifecycle-${{ matrix.name }}
+          path: ${{ runner.temp }}/beta8-installed-xcode-lifecycle.json
           if-no-files-found: error
           retention-days: 30
 
@@ -225,7 +225,7 @@ jobs:
         if: matrix.system == 'Linux/x86_64'
         env:
           LAYERCACHE_BIN: ${{ runner.temp }}/layercache-beta-install/layercache
-          GRADLE_QA_OUTPUT: ${{ runner.temp }}/beta7-gradle-native.json
+          GRADLE_QA_OUTPUT: ${{ runner.temp }}/beta8-gradle-native.json
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location --retry 2 \
@@ -252,8 +252,8 @@ jobs:
         if: always() && steps.gradle-native.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: beta7-installed-gradle-${{ matrix.name }}
-          path: ${{ runner.temp }}/beta7-gradle-native.json
+          name: beta8-installed-gradle-${{ matrix.name }}
+          path: ${{ runner.temp }}/beta8-gradle-native.json
           if-no-files-found: error
           retention-days: 30
 
@@ -261,9 +261,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: beta7-installed-reuse-${{ matrix.name }}
+          name: beta8-installed-reuse-${{ matrix.name }}
           path: |
-            ${{ runner.temp }}/beta7-local-ci-reuse.json
-            ${{ runner.temp }}/beta7-nx-native.json
+            ${{ runner.temp }}/beta8-local-ci-reuse.json
+            ${{ runner.temp }}/beta8-nx-native.json
           if-no-files-found: warn
           retention-days: 30
