@@ -1,4 +1,125 @@
 import org.gradle.caching.http.HttpBuildCache
+import org.gradle.api.Plugin
+import org.gradle.api.invocation.Gradle
+import org.gradle.api.provider.Property
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.services.BuildService
+import org.gradle.api.services.BuildServiceParameters
+import org.gradle.build.event.BuildEventsListenerRegistry
+import org.gradle.tooling.events.OperationCompletionListener
+import org.gradle.tooling.events.FinishEvent
+import org.gradle.tooling.events.task.TaskFinishEvent
+import org.gradle.tooling.events.task.TaskSuccessResult
+import org.gradle.tooling.events.task.TaskSkippedResult
+import org.gradle.tooling.events.task.TaskFailureResult
+import javax.inject.Inject
+import groovy.json.JsonOutput
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
+import java.security.MessageDigest
+
+// Public completion events report accepted native outcomes. They do not expose
+// cache eligibility, keys, source, producer timing or dependency graphs. Native
+// key correlation is a separate, opt-in client projection of one info log.
+abstract class LayerCacheGradleTaskResults implements BuildService<LayerCacheGradleTaskResults.Parameters>, OperationCompletionListener, AutoCloseable {
+    interface Parameters extends BuildServiceParameters {
+        DirectoryProperty getReportDirectory()
+        Property<String> getProjectIdentity()
+        Property<String> getCompatibilityIdentity()
+        Property<String> getGradleVersion()
+    }
+    private final String invocationId = 'gradle-' + UUID.randomUUID().toString()
+    private final List<Map<String, Object>> observations = []
+    private boolean truncated = false
+
+    @Override
+    synchronized void onFinish(FinishEvent event) {
+        try {
+            if (!(event instanceof TaskFinishEvent)) return
+            if (observations.size() >= 4096) { truncated = true; return }
+            String taskPath = event.descriptor.taskPath
+            if (!taskPath || taskPath.length() > 1024 || taskPath.any { it < ' ' || it == '\u007f' }) {
+                truncated = true
+                return
+            }
+            def result = event.result
+            long start = result.startTime
+            long end = result.endTime
+            if (start <= 0 || end < start || end - start > 86400000L) { truncated = true; return }
+            String outcome = 'unknown'
+            if (result instanceof TaskSuccessResult) {
+                // FROM-CACHE also reports upToDate in Gradle 9.3.1.
+                outcome = result.fromCache ? 'fromCache' : result.upToDate ? 'upToDate' : 'executed'
+            } else if (result instanceof TaskFailureResult) outcome = 'failed'
+            else if (result instanceof TaskSkippedResult) outcome = result.skipMessage == 'NO-SOURCE' ? 'noSource' : 'skipped'
+            String identity = 'layercache-gradle-task-v1\u0000' + parameters.projectIdentity.get() + '\u0000' + parameters.compatibilityIdentity.get() + '\u0000' + taskPath
+            String workRef = 'sha256:' + MessageDigest.getInstance('SHA-256').digest(identity.getBytes('UTF-8')).encodeHex().toString()
+            def observation = [taskPath: taskPath, workRef: workRef, outcome: outcome, startedAtMs: start, finishedAtMs: end]
+            if (outcome == 'executed') observation.executionMs = end - start
+            observations.add(observation)
+        } catch (Exception ignored) {
+            // Optional reporting cannot change native task execution.
+            truncated = true
+        }
+    }
+
+    @Override
+    synchronized void close() {
+        if (observations.isEmpty()) return
+        java.nio.file.Path temporary = null
+        try {
+            def directory = parameters.reportDirectory.get().asFile.toPath()
+            if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(directory)) return
+            if (!directory.fileSystem.supportedFileAttributeViews().contains('posix')) return
+            if (Files.getPosixFilePermissions(directory) != PosixFilePermissions.fromString('rwx------')) return
+            def document = [version: 1, invocationId: invocationId, gradleVersion: parameters.gradleVersion.get(),
+                startedAtMs: observations.collect { it.startedAtMs }.min(), finishedAtMs: observations.collect { it.finishedAtMs }.max(),
+                status: observations.any { it.outcome == 'failed' } ? 'failed' : 'unknown', truncated: truncated, tasks: observations]
+            byte[] encoded = JsonOutput.toJson(document).getBytes('UTF-8')
+            if (encoded.length > 4 * 1024 * 1024) return
+            temporary = Files.createTempFile(directory, '.gradle-metering-', '.partial', PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString('rw-------')))
+            Files.write(temporary, encoded)
+            Files.move(temporary, directory.resolve(invocationId + '.json'), StandardCopyOption.ATOMIC_MOVE)
+        } catch (Exception ignored) {
+            // Leave reporting unavailable rather than fail a successful build.
+        } finally {
+            if (temporary != null) try { Files.deleteIfExists(temporary) } catch (Exception ignored) { }
+        }
+    }
+}
+
+abstract class LayerCacheGradleMeteringPlugin implements Plugin<Gradle> {
+    @Inject
+    abstract BuildEventsListenerRegistry getBuildEventsListenerRegistry()
+
+    @Override
+    void apply(Gradle target) {
+        // One root listener receives buildSrc and included-build task events.
+        if (target.parent != null) return
+        def directory = System.getenv('LAYER_CACHE_GRADLE_REPORT_DIR')
+        def projectIdentity = System.getenv('LAYER_CACHE_GRADLE_REPORT_PROJECT')
+        def compatibilityIdentity = System.getenv('LAYER_CACHE_GRADLE_REPORT_COMPATIBILITY')
+        if (!directory || !projectIdentity || !compatibilityIdentity) return
+        try {
+            if (!new File(directory).isAbsolute()) return
+            def provider = target.sharedServices.registerIfAbsent('layercacheNativeTaskResultsV1', LayerCacheGradleTaskResults) {
+                parameters.reportDirectory.set(new File(directory))
+                parameters.projectIdentity.set(projectIdentity)
+                parameters.compatibilityIdentity.set(compatibilityIdentity)
+                parameters.gradleVersion.set(target.gradleVersion)
+            }
+            // Pass the direct provider so Gradle can restore the service with
+            // the configuration cache. Do not capture Project or script state.
+            buildEventsListenerRegistry.onTaskCompletion(provider)
+        } catch (Exception ignored) {
+            // The existing cache configuration remains usable without metering.
+        }
+    }
+}
+
+apply plugin: LayerCacheGradleMeteringPlugin
 
 // Load explicitly with -I. Gradle still owns --build-cache/--no-build-cache,
 // task keys, execution and its separate filesystem cache.

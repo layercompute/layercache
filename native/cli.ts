@@ -5,11 +5,15 @@ import { resolve } from 'node:path';
 import { detectSimulatorTarget, parseSimulatorTarget, planExpoSimulator } from './expo-identity.ts';
 import { authenticateSnapshot, SnapshotAuthenticationError } from './snapshot-auth.ts';
 import { snapshotArchiveErrorMessage } from './snapshot-error.ts';
+import { exportXcodeReport } from './xcode-report.ts';
+import { exportGradleReport } from './gradle-report.ts';
 
 // Deliberately uses the same key and transport as CI. No checkout path or runner
 // identity is included, so compatible worktrees can share outputs.
 async function main(): Promise<void> {
   const [operation, ...args] = process.argv.slice(2);
+  if (operation === 'xcode-report') {await exportXcodeReport(args); return;}
+  if (operation === 'gradle-report') {await exportGradleReport(args); return;}
   if (operation === 'key' && args.length === 0) { console.log(await sourceKey(process.cwd())); return; }
   if (operation === 'expo-target' && args.length === 0) { console.log(JSON.stringify(await detectSimulatorTarget(process.cwd()))); return; }
   const values: Record<string, string> = {};

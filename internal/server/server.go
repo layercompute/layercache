@@ -69,6 +69,7 @@ type Server struct {
 	actionsPublic     *actionscache.PublicCacheIndex
 	actionsHandler    *actionscache.Handler
 	measurements      measurementRepository
+	nativeReports     measurement.NativeRepository
 	executions        execution.Repository
 	uploads           *uploadqueue.Queue
 	uploadContext     context.Context
@@ -207,6 +208,13 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 		inventoryContext, cancelInventory := context.WithTimeout(ctx, 3*time.Second)
 		server.executions, _ = provider.ExecutionRepository(inventoryContext, cfg.ProjectID)
 		cancelInventory()
+	}
+	if provider, ok := server.measurements.(interface {
+		NativeRepository(context.Context, string) (measurement.NativeRepository, error)
+	}); ok {
+		reportContext, cancelReports := context.WithTimeout(ctx, 3*time.Second)
+		server.nativeReports, _ = provider.NativeRepository(reportContext, cfg.ProjectID)
+		cancelReports()
 	}
 	if cfg.Role == "local" && cfg.TeamURL != "" && cfg.TeamToken != "" {
 		server.team, err = remote.NewTurboClientForCompatibilityWithTimeouts(cfg.TeamURL, cfg.TeamToken, cfg.CompatibilityID, remote.Timeouts{
@@ -411,6 +419,7 @@ func (server *Server) routes() {
 	server.mux.Handle("GET /v1/reports", server.requireToken(http.HandlerFunc(server.periodReport)))
 	server.mux.Handle("GET /v1/reports/{runID}", server.requireToken(http.HandlerFunc(server.runReport)))
 	server.mux.Handle("POST /v1/reports/turbo", server.requireToken(http.HandlerFunc(server.reconcileTurboReport)))
+	server.mux.Handle("POST "+measurement.NativePath, server.nativeReportAccess(http.HandlerFunc(server.recordNativeReport)))
 	server.executionRoutes()
 	server.mux.Handle("POST /v1/sync/turbo", server.requireToken(http.HandlerFunc(server.syncTurbo)))
 	server.cloudRoutes()
@@ -458,6 +467,9 @@ func (server *Server) status(writer http.ResponseWriter, request *http.Request) 
 	result["visibility"] = visibility
 	if server.config.Role == "local" && server.executions != nil {
 		result["executionObservations"] = execution.Supported()
+	}
+	if feature := server.nativeReportCapability(); feature != nil {
+		result["nativeReports"] = feature
 	}
 	result["metadataBytes"] = stats.MetadataBytes
 	claims, authenticated := access.ClaimsFromContext(request.Context())

@@ -19,6 +19,9 @@ inputs:
   execution-provider:
     description: Optional declared runner provider for resource observations, github, ubicloud, selfHosted, or unknown.
     default: unknown
+  native-info-log:
+    description: Optional absolute path to one completed Gradle 9.3.1 --info log. Enables strict native-key correlation; raw logs and task paths are never uploaded. Use one invocation per action instance.
+    required: false
 outputs:
   configured:
     description: Whether the private native HTTP connection is configured.

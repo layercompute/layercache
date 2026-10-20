@@ -47,6 +47,7 @@ Usage:
   layercache uninstall --preserve-cache|--delete-cache [options]
   layercache report --run RUN_ID [options]
   layercache report --from RFC3339 --to RFC3339 [options]
+  layercache report native --input FILE --integration gradle|xcode [--config FILE] [--source-commit SHA] [--json]
   layercache backtest --input FILE --retention DURATION --source CACHE [options]
   layercache integration turbo [--apply] [options]
   layercache integration buildkit [--apply] [options]

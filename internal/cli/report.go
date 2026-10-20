@@ -17,6 +17,9 @@ import (
 )
 
 func runReport(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "native" {
+		return runNativeReport(ctx, args[1:], stdout, stderr)
+	}
 	defaultPath, err := config.DefaultPath()
 	if err != nil {
 		return err

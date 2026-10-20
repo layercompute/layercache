@@ -1,7 +1,7 @@
 // The real pinned Gradle client owns keys, task execution and opaque archives.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer as createHttpServer, request as requestHttp } from 'node:http';
 import { chmodSync, closeSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -10,6 +10,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { cleanupOnSignals, stopChild, stopChildren, trackChild } from '../nx-native/processes.mjs';
+import {readGradleReports} from '../../action/gradle/reports.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const fixture = join(repo, 'qa/fixtures/gradle-native');
@@ -17,6 +18,7 @@ const init = join(repo, 'native/gradle/init.gradle');
 const root = mkdtempSync(join(tmpdir(), 'layercache-gradle-native-'));
 chmodSync(root, 0o700);
 const started = performance.now();
+const reportFrom = new Date(Date.now() - 5000).toISOString();
 const gradle = process.env.GRADLE_BIN ?? 'gradle';
 let profile;
 const project = 'github.com/layercache/gradle-native-qa';
@@ -26,6 +28,7 @@ const finishSignals = cleanupOnSignals(processes, cancellation);
 const stages = [];
 const proxies = [];
 let completed;
+let nativeObserverControls;
 let commandIndex = 0;
 let binary = process.env.LAYERCACHE_BIN;
 const tokenBinary = join(root, 'mint-token');
@@ -50,7 +53,7 @@ async function execute(program, args, options = {}) {
     let bytes = 0;
     let failure;
     const abort = error => { failure ??= error; void stopChild(child).catch(() => {}); };
-    const timeout = setTimeout(() => abort(new Error(`${basename(program)} exceeded 120 seconds; inspect ${root}`)), 120_000);
+    const timeout = setTimeout(() => abort(new Error(`${basename(program)} exceeded its command time budget; inspect ${root}`)), options.timeoutMs ?? 120_000);
     for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => {
       bytes += chunk.length;
       if (bytes > 8 * 1024 * 1024) abort(new Error(`${basename(program)} exceeded the output budget; inspect ${root}`));
@@ -61,7 +64,7 @@ async function execute(program, args, options = {}) {
       clearTimeout(timeout);
       const text = Buffer.concat(chunks).toString();
       writeFileSync(log, text, { mode: 0o600 });
-      const result = { status, signal, text, commandWallMs: Math.round(performance.now() - begin) };
+      const result = { status, signal, text, log, commandWallMs: Math.round(performance.now() - begin) };
       if (cancellation.signal.aborted) fail(cancellation.signal.reason);
       else if (failure) fail(failure);
       else if (!options.allowFailure && status !== 0) fail(new Error(`${basename(program)} exited ${status}; inspect ${log}`));
@@ -108,6 +111,7 @@ async function setup(name, role, maxBytes = 64 * 1024 * 1024) {
     '--role', role, '--project', project, '--compatibility-id', profile, '--max-size', String(maxBytes), '--non-interactive', '--json']);
   const config = JSON.parse(readFileSync(path, 'utf8'));
   config.teamMembers = { qa: 'writer' };
+  config.actionsRepository = 'layercache/gradle-native-qa';
   writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
   const runtime = await start({ name, path, config, url: `http://${address}`, exchanges: [] });
   // Record only protocol facts. Headers, credentials, bodies and paths never
@@ -147,8 +151,9 @@ async function setup(name, role, maxBytes = 64 * 1024 * 1024) {
   return runtime;
 }
 
-async function mint(runtime, capability = 'read', compatibility = profile) {
-  return (await execute(tokenBinary, ['--config', runtime.path, '--capability', capability, '--compatibility', compatibility])).text.trim();
+async function mint(runtime, capability = 'read', compatibility = profile, run) {
+  return (await execute(tokenBinary, ['--config', runtime.path, '--capability', capability, '--compatibility', compatibility,
+    ...(run ? ['--run', run.id, '--workspace', run.workspace] : [])])).text.trim();
 }
 
 function workspace(name) {
@@ -176,12 +181,20 @@ function outputDigests(work) {
 }
 
 async function run(name, work, runtime, token, options = {}) {
+  const reportDirectory = join(root, `${name}-metering`);
+  mkdirSync(reportDirectory, {mode: 0o700});
   const env = { ...environment, GRADLE_USER_HOME: work.home, GRADLE_FIXTURE_COUNTER: work.counter,
     GRADLE_FIXTURE_EXPECTED: options.expected ?? 'hello baseline', GRADLE_FIXTURE_FAIL: options.fail ? '1' : '0',
-    LAYER_CACHE_GRADLE_LOCAL_ENABLED: '0', ...options.env };
+    LAYER_CACHE_GRADLE_LOCAL_ENABLED: '0', LAYER_CACHE_GRADLE_REPORT_DIR: reportDirectory,
+    LAYER_CACHE_GRADLE_REPORT_PROJECT: project, LAYER_CACHE_GRADLE_REPORT_COMPATIBILITY: profile, ...options.env };
+  let reportingToken;
   if (runtime) {
+    const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+    reportingToken = await mint(runtime, claims.capabilities.includes('write') ? 'write' : 'read', claims.compatibility,
+      {id: 'run-' + randomUUID(), workspace: digest(work.path)});
+    env.LAYER_CACHE_GRADLE_REPORT_COMPATIBILITY = claims.compatibility;
     env.LAYER_CACHE_GRADLE_URL = `${runtime.proxyUrl}/v1/gradle-cache/`;
-    env.LAYER_CACHE_GRADLE_TOKEN = token;
+    env.LAYER_CACHE_GRADLE_TOKEN = reportingToken;
     if (options.push) env.LAYER_CACHE_GRADLE_PUSH = '1';
   }
   const before = counts(work);
@@ -204,9 +217,62 @@ async function run(name, work, runtime, token, options = {}) {
     requests: runtime?.exchanges.slice(exchangeStart) ?? [],
     remoteDisabled: result.text.includes('remote build cache was disabled'),
     ...(options.expectFailure ? {} : { outputDigests: outputDigests(work) }) };
+  const reports = readGradleReports(reportDirectory, {project, compatibility: env.LAYER_CACHE_GRADLE_REPORT_COMPATIBILITY, infoLogPath: result.log});
+  const observed = reports.flatMap(report => report.body.tasks);
+  for (const row of Object.values(tasks)) if (row.outcome !== 'NOT-SCHEDULED') {
+    const expected = {EXECUTED: 'executed', 'FROM-CACHE': 'fromCache', FAILED: 'failed', 'UP-TO-DATE': 'upToDate'}[row.outcome];
+    assert.ok(observed.some(task => task.outcome === expected), `${name}: native completion report preserves ${row.outcome}`);
+    if (row.hash && ['EXECUTED', 'FROM-CACHE'].includes(row.outcome)) assert.ok(observed.some(task => task.nativeKey === row.hash && task.outcome === expected), `${name}: exact native key correlated`);
+  }
+  stage.metering = {invocations: reports.length, tasks: observed.length, keyed: observed.filter(task => task.nativeKey).length,
+    fromCache: observed.filter(task => task.outcome === 'fromCache').length, keyEvidence: reports.map(report => report.keyEvidence)};
+  if (runtime && reportingToken && !options.expectFailure && !stage.remoteDisabled) {
+    for (const report of reports) {
+      const response = await fetch(`${runtime.url}/v1/reports/native`, {method: 'POST', headers: {Authorization: `Bearer ${reportingToken}`, 'Content-Type': 'application/json'}, body: JSON.stringify(report.body), signal: AbortSignal.timeout(5000)});
+      assert.equal(response.status, 200, `${name}: scoped native report accepted`);
+      await response.body?.cancel();
+      assert.equal(JSON.stringify(report.body).includes('taskPath'), false, 'raw task paths stay local');
+    }
+  }
   stages.push(stage);
   console.log(`${name}: ${Object.entries(tasks).map(([task, row]) => `${task} ${row.outcome}`).join(', ')}`);
-  return { stage, text: result.text };
+  return { stage, text: result.text, reports };
+}
+
+async function nativeReport(runtime) {
+  const query = new URLSearchParams({from: reportFrom, to: new Date(Date.now() + 1000).toISOString()});
+  const response = await fetch(`${runtime.url}/v1/reports?${query}`, {
+    headers: {Authorization: `Bearer ${runtime.config.localToken}`}, signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(response.status, 200, 'fixture aggregate native report available');
+  const report = (await response.json()).nativeReports.find(row => row.integration === 'gradle');
+  assert.ok(report, 'native Gradle integration reported separately');
+  assert.equal(report.netEstimatedBuildTimeSaved.milliseconds, null, 'native task evidence does not establish build critical path');
+  assert.equal(report.allocatedCpuSecondsSaved, null, 'no original producer resource evidence means allocated CPU unknown');
+  assert.equal(report.measuredCpuSecondsSaved, null, 'native elapsed is not CPU usage');
+  assert.equal(report.costSaved, null, 'fixture does not establish provider charges');
+  return report;
+}
+
+function nativeExecutedMs(result, key) {
+  const tasks = result.reports.flatMap(report => report.body.tasks)
+    .filter(task => task.outcome === 'executed' && task.nativeKey && (!key || task.nativeKey === key));
+  assert.ok(tasks.length > 0);
+  return tasks.reduce((total, task) => total + task.executionMs, 0);
+}
+
+function assertNativeHits(report, {invocations, hits, misses, source, producerMs}) {
+  assert.equal(report.reportedInvocations, invocations);
+  assert.equal(report.eligibilityUnknown, 0, 'explicit disabled native tasks excluded from eligible denominator');
+  assert.equal(report.knownEligible, hits + misses);
+  assert.equal(report.eligible, hits + misses);
+  assert.equal(report.hits, hits);
+  assert.equal(report.misses, misses);
+  assert.equal(report.hitRate, hits / (hits + misses));
+  assert.deepEqual(report.sources, hits ? [{source, hits}] : []);
+  assert.deepEqual(report.producerTiming, {known: hits, total: hits});
+  assert.deepEqual(report.producerResources, {known: 0, total: hits});
+  assert.equal(report.grossAvoidedTaskTime.milliseconds, hits ? producerMs : null);
 }
 
 function assertHit(result, hashes, expectedDigests) {
@@ -239,6 +305,16 @@ try {
   await execute('go', ['build', '-trimpath', '-o', tokenBinary, './qa/gradle-native/token']);
   const sourceRevision = (await execute('git', ['rev-parse', 'HEAD'])).text.trim();
   const binaryDigest = digest(readFileSync(binary));
+  if (process.argv.includes('--with-metering')) {
+    const observerOutput = join(root, 'native-observer-controls.json');
+    await execute(process.execPath, [join(repo, 'qa/gradle-native/metering.mjs')], {
+      env: {...environment, GRADLE_BIN: gradle, GRADLE_METERING_QA_OUTPUT: observerOutput}, timeoutMs: 600_000,
+    });
+    nativeObserverControls = JSON.parse(readFileSync(observerOutput, 'utf8'));
+    assert.equal(nativeObserverControls.passed, true);
+    assert.equal(nativeObserverControls.stages.length, 7);
+    console.log('native-observer-controls: all 7 stages passed');
+  }
   const local = await setup('local', 'local');
   const team = await setup('team', 'team');
   const localWriter = await mint(local, 'write');
@@ -248,15 +324,19 @@ try {
 
   const producer = workspace('local-producer');
   const cold = await run('local-cold', producer, local, localWriter, { push: true });
+  assertNativeHits(await nativeReport(local), {invocations: 1, hits: 0, misses: 2});
   const hashes = Object.fromEntries(Object.entries(cold.stage.tasks).map(([task, row]) => [task, row.hash]));
   for (const row of Object.values(cold.stage.tasks)) { assert.equal(row.executions, 1); assert.match(row.hash, /^[a-f0-9]{32}$/); }
   const expectedDigests = cold.stage.outputDigests;
   const localArchives = {};
   for (const [task, hash] of Object.entries(hashes)) localArchives[task] = await archive(local, localWriter, hash);
   assertHit(await run('local-empty-consumer', workspace('local-consumer'), local, localWriter), hashes, expectedDigests);
+  const localPair = await nativeReport(local);
+  assertNativeHits(localPair, {invocations: 2, hits: 2, misses: 2, source: 'localCache', producerMs: nativeExecutedMs(cold)});
   await stopChild(local.child);
   await start(local);
   assertHit(await run('local-restart-consumer', workspace('local-restart-consumer'), local, localWriter), hashes, expectedDigests);
+  assertNativeHits(await nativeReport(local), {invocations: 3, hits: 4, misses: 2, source: 'localCache', producerMs: 2 * nativeExecutedMs(cold)});
 
   const direct = workspace('team-producer');
   const publication = await run('team-cold', direct, team, teamWriter, { push: true });
@@ -264,6 +344,8 @@ try {
   const teamArchives = {};
   for (const [task, hash] of Object.entries(hashes)) teamArchives[task] = await archive(team, teamReader, hash);
   assertHit(await run('team-empty-reader', workspace('team-reader'), team, teamReader), hashes, expectedDigests);
+  const teamPair = await nativeReport(team);
+  assertNativeHits(teamPair, {invocations: 2, hits: 2, misses: 2, source: 'teamCache', producerMs: nativeExecutedMs(publication)});
 
   team.forceMiss = true;
   const duplicate = await run('duplicate-first-winner', workspace('duplicate-producer'), team, teamWriter, { push: true });
@@ -277,12 +359,16 @@ try {
     assert.notEqual(upload.uploadDigest, teamArchives[task].digest, 'new native origin metadata changes archive bytes');
   }
   assert.equal(duplicate.stage.requests.filter(row => row.method === 'PUT' && row.status === 200).length, 2);
+  assertNativeHits(await nativeReport(team), {invocations: 3, hits: 2, misses: 4, source: 'teamCache', producerMs: nativeExecutedMs(publication)});
 
   const inputMiss = await run('declared-input-miss', workspace('input-miss'), team, teamReader,
     { env: { GRADLE_FIXTURE_LABEL: 'changed' } });
   assert.equal(inputMiss.stage.tasks.compileJava.outcome, 'FROM-CACHE');
   assert.notEqual(inputMiss.stage.tasks.verifyFixture.hash, hashes.verifyFixture);
   assert.equal(inputMiss.stage.tasks.verifyFixture.executions, 1);
+  const afterDuplicateReader = await nativeReport(team);
+  assertNativeHits(afterDuplicateReader, {invocations: 4, hits: 3, misses: 5, source: 'teamCache',
+    producerMs: nativeExecutedMs(publication) + nativeExecutedMs(publication, hashes.compileJava)});
 
   const changed = workspace('source-miss');
   const javaSource = join(changed.path, 'src/main/java/example/Hello.java');
@@ -365,6 +451,8 @@ try {
   completed = { schemaVersion: 'gradle-native-v1', passed: true, sourceRevision, binaryDigest, initScriptDigest: digest(readFileSync(init)),
     gradleVersion: '9.3.1', javaVersion: java.text.match(/version "([^"]+)"/)[1], profile,
     setupWallMs, hashes, localArchives, teamArchives, outputDigests: expectedDigests, stages,
+    nativeReports: {localPair, teamPair, afterDuplicateReader},
+    ...(nativeObserverControls ? {nativeObserverControls} : {}),
     actualDifferentJdkQualified: false, phoneAndroidBuildQualified: false,
     gradleFilesystemCacheBoundedByLayerCache: false, localToPrivateForwardingImplemented: false };
   completed.nativeTransferBytes = stages.flatMap(stage => stage.requests).reduce((sum, row) => ({

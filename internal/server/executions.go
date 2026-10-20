@@ -23,7 +23,7 @@ func (server *Server) executionRoutes() {
 func (server *Server) executionAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := server.authenticateRequest(r, "")
-		if !ok || !claims.Allows(access.CapabilityRead) || !server.authorizesSelectors(r, claims) || !server.currentMembershipAllows(r.Context(), claims, access.CapabilityRead) {
+		if !ok || claims.Integration == "xcode" || !claims.Allows(access.CapabilityRead) || !server.authorizesSelectors(r, claims) || !server.currentMembershipAllows(r.Context(), claims, access.CapabilityRead) {
 			server.writeAuthorizationFailure(w, r)
 			return
 		}

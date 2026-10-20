@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/layercache/layercache/internal/access"
 	"github.com/layercache/layercache/internal/artifact"
@@ -97,11 +98,13 @@ func (server *Server) gradleArtifact(writer http.ResponseWriter, request *http.R
 }
 
 func (server *Server) getGradle(writer http.ResponseWriter, request *http.Request, key artifact.Key) {
+	startedAt := time.Now().UTC()
 	entry, body, err := server.store.Get(request.Context(), key)
 	if errors.Is(err, artifact.ErrNotFound) || errors.Is(err, artifact.ErrCorrupt) {
 		if errors.Is(err, artifact.ErrCorrupt) {
 			_ = server.store.Delete(context.WithoutCancel(request.Context()), key)
 		}
+		server.observeNative(request, "missed", key.Project, key.Compatibility, key.Native, "", startedAt, 0)
 		http.NotFound(writer, request)
 		return
 	}
@@ -141,10 +144,14 @@ func (server *Server) getGradle(writer http.ResponseWriter, request *http.Reques
 	writer.Header().Set("Content-Length", strconv.FormatInt(entry.Size, 10))
 	writer.Header().Set("x-layercache-digest", "sha256:"+entry.Digest)
 	writer.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(writer, body)
+	count, copyErr := io.Copy(writer, body)
+	if copyErr == nil && count == entry.Size {
+		server.observeNative(request, "delivered", key.Project, key.Compatibility, key.Native, entry.Digest, startedAt, count)
+	}
 }
 
 func (server *Server) putGradle(writer http.ResponseWriter, request *http.Request, key artifact.Key) {
+	startedAt := time.Now().UTC()
 	defer request.Body.Close()
 	maximum, err := server.cacheLimit(request.Context())
 	if err != nil || maximum <= 0 || maximum == math.MaxInt64 {
@@ -156,7 +163,7 @@ func (server *Server) putGradle(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	reader := &gradleUploadReader{ctx: request.Context(), body: io.LimitReader(request.Body, maximum+1), expected: request.ContentLength, maximum: maximum}
-	_, _, err = server.store.Put(request.Context(), key, artifact.Metadata{}, reader)
+	entry, created, err := server.store.Put(request.Context(), key, artifact.Metadata{}, reader)
 	if reader.terminalErr != nil {
 		// Cloud error redaction may remove wrapping. The reader owns the
 		// canonical request failure, independently of backend error formatting.
@@ -180,6 +187,9 @@ func (server *Server) putGradle(writer http.ResponseWriter, request *http.Reques
 	if err != nil {
 		http.Error(writer, "cache write failed", http.StatusInternalServerError)
 		return
+	}
+	if created {
+		server.observeNative(request, "published", key.Project, key.Compatibility, key.Native, entry.Digest, startedAt, entry.Size)
 	}
 	writer.WriteHeader(http.StatusOK)
 }

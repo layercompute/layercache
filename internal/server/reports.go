@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 )
@@ -29,6 +30,19 @@ func (server *Server) periodReport(writer http.ResponseWriter, request *http.Req
 		}
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "read period report"})
 		return
+	}
+	if server.nativeReports != nil {
+		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+		native, nativeErr := server.nativeReports.PeriodReport(ctx, from, to)
+		cancel()
+		if nativeErr != nil {
+			// Native reporting is an independent observation plane. Its failure must
+			// not hide completed generic task graphs or turn missing native data into
+			// zero outcomes. The existing graph estimate retains its generic scope.
+			report.NativeReportsUnavailable = true
+		} else {
+			report.NativeReports = native
+		}
 	}
 	writeJSON(writer, http.StatusOK, report)
 }

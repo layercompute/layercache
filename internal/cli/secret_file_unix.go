@@ -28,6 +28,10 @@ func readSecretFile(path string) (string, error) {
 }
 
 func readProtectedFile(path string) ([]byte, error) {
+	return readProtectedFileUpTo(path, maximumSecretFileBytes)
+}
+
+func readProtectedFileUpTo(path string, maximumBytes int64) ([]byte, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open protected secret file: %w", err)
@@ -47,15 +51,15 @@ func readProtectedFile(path string) ([]byte, error) {
 	if stat.Uid != uint32(os.Geteuid()) {
 		return nil, errors.New("secret file must be owned by the current user")
 	}
-	if stat.Size > maximumSecretFileBytes {
-		return nil, fmt.Errorf("secret file exceeds %d bytes", maximumSecretFileBytes)
+	if stat.Size > maximumBytes {
+		return nil, fmt.Errorf("protected file exceeds %d bytes", maximumBytes)
 	}
-	contents, err := io.ReadAll(io.LimitReader(file, maximumSecretFileBytes+1))
+	contents, err := io.ReadAll(io.LimitReader(file, maximumBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read protected secret file: %w", err)
 	}
-	if int64(len(contents)) > maximumSecretFileBytes {
-		return nil, fmt.Errorf("secret file exceeds %d bytes", maximumSecretFileBytes)
+	if int64(len(contents)) > maximumBytes {
+		return nil, fmt.Errorf("protected file exceeds %d bytes", maximumBytes)
 	}
 	return contents, nil
 }

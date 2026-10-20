@@ -1,3 +1,5 @@
+import {compilerScopeLabel, integrationLabel, nativeSourceLabel, projectInsights, scopedCompilerRate} from './insights.js';
+
 export type Scope = 'personal' | 'team' | 'public' | 'unknown';
 export type Estimate = {milliseconds: number | null; known: number; total: number; confidence: string};
 export type Timing = {lookupMs: number; downloadMs: number; verificationMs: number; restoreMs: number; uploadMs: number};
@@ -5,6 +7,28 @@ export type IntegrationReport = {
   integration: string; hits: number; eligible: number; misses?: number; groups?: number;
   bytes?: {downloaded: number; uploaded: number}; timing?: Timing; degraded?: boolean;
   grossAvoidedTaskTime?: Estimate;
+};
+export type NativeCompilerCounters = {
+  scope: 'clang-pch' | 'swift' | 'mixed' | 'unknown';
+  coverage: 'complete' | 'partial' | 'unsupported' | 'unknown';
+  reason?: 'missing' | 'truncated' | 'unsupported' | 'ambiguous' | 'none';
+  hits: number | null; misses: number | null; skipped: number | null; unknown: number | null;
+};
+export type NativeCounters = {
+  rpc?: {actionReads: number | null; actionHits: number | null; actionWrites: number | null; casReads: number | null; casHits: number | null; casWrites: number | null; cacheErrors: number | null};
+  compiler?: NativeCompilerCounters;
+};
+export type NativeIntegrationReport = {
+  integration: 'gradle' | 'xcode'; reportedInvocations: number; reportedTasks: number;
+  outcomes: {executed: number; fromCache: number; upToDate: number; noSource: number; skipped: number; failed: number; unknown: number};
+  knownEligible: number; eligibilityUnknown: number; eligible: number | null; hits: number; misses: number; hitRate: number | null;
+  sources: {source: string; hits: number}[];
+  producerTiming: {known: number; total: number}; producerResources: {known: number; total: number};
+  grossAvoidedTaskTime: Estimate; netEstimatedBuildTimeSaved: Estimate; netAvoidedTaskTime?: Estimate;
+  allocatedCpuSecondsSaved: number | null; measuredCpuSecondsSaved: number | null; costSaved: number | null;
+  counters?: NativeCounters;
+  timingMs?: {operation: number | null; compile: number | null; load: number | null; restore: number | null; close: number | null; snapshot: number | null};
+  historyTruncated: boolean;
 };
 export type ArtifactReport = {
   ref: string; integration: string; hits: number; restores: number; runs: number;
@@ -18,6 +42,8 @@ export type Report = {
   bytes?: {downloaded: number; uploaded: number}; timing?: Timing;
   sources?: {source: string; hits: number; downloadedBytes: number; uploadedBytes: number}[] | null;
   integrations: IntegrationReport[] | null;
+  nativeReports?: NativeIntegrationReport[];
+  nativeReportsUnavailable?: boolean;
   topArtifacts?: ArtifactReport[]; topArtifactsTruncated?: boolean; activity?: ActivityBucket[];
 };
 export type Cache = {
@@ -35,7 +61,7 @@ export type CostReport = {
   items?: {name: string; amountMinor: number}[] | null;
   knownSubtotalMinor: number; totalMinor: number | null;
 };
-type CacheOptions = {scope?: Scope; canPrune?: boolean; onPrune?: (targetBytes: number) => Promise<void>};
+type CacheOptions = {scope?: Scope; canPrune?: boolean; showNative?: boolean; onPrune?: (targetBytes: number) => Promise<void>};
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag); node.className = className; node.textContent = text; return node;
@@ -94,6 +120,41 @@ function sourceTable(report: Report, scope: Scope): HTMLElement {
   return section;
 }
 
+function nativeResults(cache: Cache, scope: Scope): HTMLElement | null {
+  const unavailable = cache.report?.nativeReportsUnavailable === true;
+  const insights = projectInsights(cache).integrations.filter(item => item.nativeReport || unavailable && (item.id === 'gradle' || item.id === 'xcode'));
+  if (!insights.length) return null;
+  const details = el('details', 'native-results integration-coverage execution-details'); details.setAttribute('aria-label', 'Native cache results');
+  details.append(el('summary', '', unavailable ? 'Native reporting unavailable' : `Native cache results · ${insights.length} integrations`));
+  const number = (value: number | null) => value === null ? 'Unknown' : value.toLocaleString();
+  const rate = (value: number | null) => value === null ? 'Not measured' : `${Math.round(value * 100)}%`;
+  for (const item of insights) {
+    const report = item.nativeReport;
+    const section = el('section', 'source-usage'); section.dataset.integration = item.id;
+    section.setAttribute('aria-label', `${integrationLabel(item.id)} native results`);
+    section.append(el('h4', '', `${item.name} · ${item.coverage.label}`), el('p', 'coverage-note', `${report ? `${number(report.reportedInvocations)} reported invocations. ` : ''}${item.coverage.reason}`));
+    if (!report) {section.append(el('p', 'coverage-note', item.coverage.action));details.append(section);continue;}
+    if (item.id === 'gradle') {
+      section.append(el('p', 'coverage-note', `${number(report.outcomes.fromCache)} native task cache hits · ${rate(report.hitRate)} eligible-task hit rate · ${number(report.knownEligible)} known eligible tasks · ${number(report.eligibilityUnknown)} outcomes with unknown eligibility.`));
+      section.append(el('p', 'coverage-note', `Executed ${number(report.outcomes.executed)} · FROM-CACHE ${number(report.outcomes.fromCache)} · Up to date ${number(report.outcomes.upToDate)} · No source ${number(report.outcomes.noSource)} · Skipped ${number(report.outcomes.skipped)} · Failed ${number(report.outcomes.failed)} · Unknown ${number(report.outcomes.unknown)}.`));
+      const sources = report.sources.map(source => `${nativeSourceLabel(source.source, scope)} ${number(source.hits)}`).join(' · ');
+      section.append(el('p', 'coverage-note', sources ? `Native hit sources · ${sources}.` : 'Native hit sources unavailable.'), el('p', 'coverage-note', 'FROM-CACHE proves native reuse. Source attribution and original-producer matching need separate key and transport evidence.'));
+      section.append(el('p', 'coverage-note', `Original producer timing matched for ${number(report.producerTiming.known)} of ${number(report.producerTiming.total)} cache hits; resources matched for ${number(report.producerResources.known)} of ${number(report.producerResources.total)}.`));
+      section.append(el('p', 'coverage-note', `Avoided task time ${duration(report.grossAvoidedTaskTime.milliseconds)} · ${number(report.grossAvoidedTaskTime.known)} of ${number(report.grossAvoidedTaskTime.total)} outcomes timed.`));
+      if (report.netAvoidedTaskTime) section.append(el('p', 'coverage-note', `Net avoided task elapsed time ${duration(report.netAvoidedTaskTime.milliseconds)} · ${number(report.netAvoidedTaskTime.known)} of ${number(report.netAvoidedTaskTime.total)} outcomes timed. This subtracts cached-task elapsed from matched original task time. It can be negative.`));
+    } else if (item.id === 'xcode') {
+      const rpc = report.counters?.rpc, compiler = report.counters?.compiler;
+      if (rpc) section.append(el('p', 'coverage-note native-rpc', `Action-index requests · ${number(rpc.actionHits)} hits / ${number(rpc.actionReads)} reads · ${number(rpc.actionWrites)} writes. CAS requests · ${number(rpc.casHits)} hits / ${number(rpc.casReads)} reads · ${number(rpc.casWrites)} writes. Cache errors ${number(rpc.cacheErrors)}. These count protocol requests, not compiler replay or snapshot restores.`));
+      if (compiler) section.append(el('p', 'coverage-note native-compiler', `${compilerScopeLabel(compiler.scope)} · ${compiler.coverage} compiler verdict coverage · ${number(compiler.hits)} hits · ${number(compiler.misses)} misses · ${number(compiler.skipped)} skipped · ${number(compiler.unknown)} unknown. Scoped compiler-verdict hit rate ${rate(scopedCompilerRate(compiler))}.`));
+      else section.append(el('p', 'coverage-note native-compiler', 'Compiler verdicts unavailable. Protocol requests cannot establish compiler replay.'));
+      if (report.timingMs) section.append(el('p', 'coverage-note native-phases', `Lifecycle phases · Operation ${duration(report.timingMs.operation)} · Compile ${duration(report.timingMs.compile)} · Load ${duration(report.timingMs.load)} · Restore ${duration(report.timingMs.restore)} · Close ${duration(report.timingMs.close)} · Snapshot ${duration(report.timingMs.snapshot)}. Phase times can overlap and do not measure time saved.`));
+    }
+    details.append(section);
+  }
+  details.append(el('p', 'coverage-note', 'Native task elapsed estimates and scoped compiler verdicts do not establish elapsed build-time savings. CPU-hours and compute cost saved are not measured. They need matched producer resources, usage and billing evidence. Current host capacity cannot supply those facts.'));
+  return details;
+}
+
 function pruneDialog(name: string, currentBytes: number, mutate: (targetBytes: number) => Promise<void>, trigger: HTMLButtonElement): void {
   const dialog = el('dialog', 'prune-dialog'); dialog.setAttribute('aria-label', `Prune ${name}`);
   const form = el('form'); form.noValidate = true;
@@ -137,10 +198,10 @@ export function renderCache(name: string, cache: Cache, options: CacheOptions = 
   const stats = el('div', 'stats');
   const storage = metric('Artifact storage', bytes(status.usageBytes), status.maxBytes === null ? 'Capacity unavailable' : `of ${bytes(status.maxBytes)} artifact capacity`);
   if (status.maxBytes !== null && status.maxBytes > 0) {const meter = el('progress', 'meter'); meter.max = status.maxBytes; meter.value = Math.min(status.usageBytes, status.maxBytes); meter.setAttribute('aria-label', `${name} artifact capacity used`); storage.append(meter);}
-  stats.append(storage, metric('Effective cache hit rate', report && report.eligible > 0 ? `${Math.round(report.hits / report.eligible * 100)}%` : 'Unknown', report ? report.eligible > 0 ? `${report.hits.toLocaleString()} hits / ${report.eligible.toLocaleString()} eligible · ${report.misses.toLocaleString()} misses` : 'No eligible outcomes in this period' : cache.reportState === 'authentication-required' ? 'Sign in again to read reports' : 'Report unavailable'));
+  stats.append(storage, metric('Reported cache hit rate', report && report.eligible > 0 ? `${Math.round(report.hits / report.eligible * 100)}%` : 'Unknown', report ? (report.eligible > 0 ? `${report.hits.toLocaleString()} hits / ${report.eligible.toLocaleString()} eligible · ${report.misses.toLocaleString()} misses` : 'No eligible outcomes in this period') + ' · Turbo, Actions and BuildKit coverage' : cache.reportState === 'authentication-required' ? 'Sign in again to read reports' : 'Report unavailable'));
   node.append(stats);
   const metrics = el('div', 'metrics'), estimate = report?.netEstimatedBuildTimeSaved;
-  metrics.append(metric('Stored artifacts', status.artifacts.toLocaleString(), `${status.evictionPolicy || 'Unknown'} eviction policy`), metric('Net estimated time saved', estimate && estimate.total > 0 ? duration(estimate.milliseconds) : 'Unknown', estimate && estimate.total > 0 ? `${estimate.known}/${estimate.total} known · ${estimate.confidence} confidence` : 'Timing evidence unavailable')); node.append(metrics);
+  metrics.append(metric('Stored artifacts', status.artifacts.toLocaleString(), `${status.evictionPolicy || 'Unknown'} eviction policy`), metric('Net estimated time saved', estimate && estimate.total > 0 ? duration(estimate.milliseconds) : 'Unknown', (estimate && estimate.total > 0 ? `${estimate.known}/${estimate.total} known · ${estimate.confidence} confidence` : 'Timing evidence unavailable') + ' · Turbo, Actions and BuildKit reported graphs')); node.append(metrics);
   const storageDetail: string[] = [];
   if (status.entries !== undefined) storageDetail.push(`${status.entries.toLocaleString()} entries`);
   if (status.metadataBytes !== undefined) storageDetail.push(`${bytes(status.metadataBytes)} logical metadata`);
@@ -157,8 +218,9 @@ export function renderCache(name: string, cache: Cache, options: CacheOptions = 
   const integrations = el('div', 'integrations');
   for (const item of report?.integrations ?? []) integrations.append(el('span', 'integration', `${item.integration} · ${item.hits}/${item.eligible} hits`));
   if (report?.degraded) integrations.append(el('span', 'integration', 'Partial or degraded evidence'));
-  if (report) integrations.append(el('span', 'integration', `${report.runs} observed runs`));
-  node.append(integrations, el('p', 'coverage-note integration-coverage', 'Reports cover reconciled Turbo, Actions and BuildKit outcomes. Native Gradle, Nx, Bazel and Xcode usage is not yet fully metered here.'));
+  if (report) integrations.append(el('span', 'integration', `${report.runs} observed runs · Turbo, Actions and BuildKit coverage`));
+  node.append(integrations, el('p', 'coverage-note integration-coverage', 'Task, archive and vertex totals cover only clients that submit outcome reports. Native task outcomes and protocol activity have separate coverage.'));
+  const native = options.showNative === false ? null : nativeResults(cache, scope); if (native) node.append(native);
   if ((options.canPrune ?? cache.pruneAllowed) === true && options.onPrune && scope !== 'public') {
     const controls = el('div', 'cache-maintenance'), button = el('button', '', `Prune ${name}`); button.type = 'button'; button.onclick = () => pruneDialog(name, status.usageBytes, options.onPrune!, button);
     controls.append(button, el('span', 'coverage-note', 'Only eligible artifacts can be removed.')); node.append(controls);
