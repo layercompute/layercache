@@ -96,12 +96,26 @@ negative. These sums can overlap across parallel tasks: they are neither
 critical-path savings nor measured CPU consumption. Native graph coverage is
 currently unavailable, so native build-time savings remain unknown.
 
-Archives published before native instrumentation do not acquire historical
-producer timings retroactively. A later duplicate upload cannot replace that
-missing origin. Manual report imports have their own observation authority;
+This reporter cannot reconstruct missing original task-event timing for
+archives first published before native instrumentation. A later duplicate
+upload cannot replace that missing observed origin. Manual report imports have their own observation authority;
 they do not impersonate a different producing run to recover its transport
 provenance. Native outcome counts can still be useful when those joins are
 unavailable.
+
+Gradle 9.3.1 and 9.4.1 also write an archive-native estimate in
+`METADATA.executionTime`: original work execution plus output snapshotting,
+in milliseconds. It is a different interval from a public task-finish event.
+[Gradle's origin writer](https://github.com/gradle/gradle/blob/v9.4.1/platforms/core-execution/build-cache-base/src/main/java/org/gradle/caching/internal/origin/OriginMetadataFactory.java#L44-L75)
+and [duration composition](https://github.com/gradle/gradle/blob/v9.4.1/platforms/core-execution/execution/src/main/java/org/gradle/internal/execution/steps/CaptureOutputsAfterExecutionStep.java#L94-L106)
+document that estimate. LayerCache does not extract it yet. A bounded decoder
+could recover an explicitly archive-declared estimate from older retained bytes;
+it would not recover signed producer, hardware or billing provenance. The
+[upstream tar reader](https://github.com/gradle/gradle/blob/v9.4.1/platforms/core-execution/build-cache-packaging/src/main/java/org/gradle/caching/internal/packaging/impl/TarBuildCacheEntryPacker.java#L168-L215)
+can consume later metadata members, so a prefix alone cannot establish the
+final consumed value. A decoder must verify exact bytes and bounded stream
+structure, handle Java Properties semantics and reject ambiguous metadata.
+Keep that estimate separate from observed task elapsed time and CPU savings.
 
 When available, the first publication freezes the original execution's recent
 resource sample. The lookup requires exact primary execution authority, not an
