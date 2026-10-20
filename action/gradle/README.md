@@ -13,7 +13,7 @@ permissions:
 steps:
   - uses: actions/checkout@v7
   - id: gradle-cache
-    uses: ziahamza/layercache/action/gradle@9c071a6e94aa7a173a810165020c6f3eaedda01e
+    uses: ziahamza/layercache/action/gradle@466b0f21d4485709405bac9093ded0de6de0f221
     with:
       team-url: https://cache.example.com
       project: private-project
@@ -81,7 +81,7 @@ accepted task hits. Gradle's completion API does not supply cache keys or cache
 source.
 
 For exact native-key correlation, provide `native-info-log` as an absolute path
-to one completed Gradle 9.3.1 `--info` log. Keep the caller's existing command and
+to one completed Gradle 9.3.1 or 9.4.1 `--info` log. Keep the caller's existing command and
 preserve its exit status, for example:
 
 ```yaml

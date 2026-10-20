@@ -16,7 +16,9 @@ chmodSync(root, 0o700);
 const workspace = join(root, 'workspace'), reports = join(root, 'reports');
 mkdirSync(workspace, {mode: 0o700});mkdirSync(reports, {mode: 0o700});
 const gradle = process.env.GRADLE_BIN ?? 'gradle';
-const project = 'synthetic-gradle-project', compatibility = 'synthetic-gradle931-jdk17';
+const gradleVersion = process.env.GRADLE_METERING_VERSION ?? '9.3.1';
+assert.ok(['9.3.1', '9.4.1'].includes(gradleVersion), 'Only qualified Gradle versions can run the observer controls');
+const project = 'synthetic-gradle-project', compatibility = `synthetic-gradle${gradleVersion.replaceAll('.', '')}-jdk17`;
 const init = join(repository, 'native/gradle/init.gradle');
 const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => ['HOME', 'PATH', 'JAVA_HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TMPDIR'].includes(name)));
 Object.assign(environment, {GRADLE_USER_HOME: join(root, 'gradle-home'), CI: 'true', TERM: 'dumb',
@@ -73,6 +75,7 @@ function execute(name, args, {metered = true, oldInit, expectFailure = false, ho
   if (metered) {
     assert.equal(fresh.length, 1, `${name} needs exactly one root listener report`);
     document = JSON.parse(readFileSync(join(reports, fresh[0]), 'utf8'));
+    assert.equal(document.gradleVersion, gradleVersion);
     assert.equal(document.truncated, false);
     projection = projectGradleInvocation(document, {project, compatibility, infoText: text, infoMtimeMs: statSync(log).mtimeMs});
     assert.equal(JSON.stringify(projection.body).includes('taskPath'), false);
@@ -99,12 +102,12 @@ function task(result, path) {
 
 try {
   const version = spawnSync(gradle, ['--version'], {env: environment, encoding: 'utf8', timeout: 30000});
-  assert.equal(version.status, 0);assert.match(version.stdout, /Gradle 9\.3\.1(?:\s|$)/);
+  assert.equal(version.status, 0);assert.equal(version.stdout.match(/^Gradle (\S+)$/m)?.[1], gradleVersion);
   const original = readFileSync(join(repository, 'qa/gradle-native/fixtures/pre-metering-init.gradle'));
   assert.equal(createHash('sha256').update(original).digest('hex'), 'b45b47190b38f9f439d2324a49fbc5bbfdb8bf3a8671b63900c11d64ef32eaf5', 'Pre-metering baseline bytes must remain unchanged');
   const oldInit = join(root, 'original-init.gradle');writeFileSync(oldInit, original, {mode: 0o600});
   const baseline = execute('original-init-native-keys', ['--no-configuration-cache', '--build-cache', ...selected], {metered: false, oldInit, home: join(root, 'original-gradle-home')});
-  const originalKeys = parseGradleInfo(baseline.text).keys;
+  const originalKeys = parseGradleInfo(baseline.text, {gradleVersion}).keys;
   clearOutputs({configuration: true});
   const cold = execute('root-multi-composite-parallel-cold', ['--configuration-cache', '--build-cache', ...selected]);
   for (const path of [':cached', ':one:cached', ':two:cached', ':included:cached']) {
@@ -137,7 +140,7 @@ try {
   const duplicate = execute('equivalent-tasks-share-native-key', ['--configuration-cache', '--build-cache', ':duplicateA', ':duplicateB']);
   assert.equal(task(duplicate, ':duplicateA').wire.nativeKey, task(duplicate, ':duplicateB').wire.nativeKey);
   assert.match(task(duplicate, ':duplicateA').wire.nativeKey, /^[a-f0-9]{32}$/);
-  const receipt = {version: 1, passed: true, gradleVersion: '9.3.1', stages, boundaries: {nativeKeysUnchanged: true, exactTaskOutcomes: true,
+  const receipt = {version: 1, passed: true, gradleVersion, stages, boundaries: {nativeKeysUnchanged: true, exactTaskOutcomes: true,
     completeTaskGraph: false, httpSourceAttribution: false, applicationBuildSavings: false}};
   const encoded = JSON.stringify(receipt, null, 2) + '\n';
   writeFileSync(join(root, 'evidence.json'), encoded, {mode: 0o600});

@@ -2,6 +2,7 @@ const maximumBytes = 64 * 1024 * 1024;
 const maximumMatches = 8192;
 const maximumPaths = 4096;
 const maximumPathCharacters = 1024;
+const qualifiedVersions = new Set(['9.3.1', '9.4.1']);
 const taskKeyLine = /^Build cache key for task '(:[^'\r\n]*)' is ([a-f0-9]{32})$/;
 const disabledLine = /^Caching disabled for task '(:[^'\r\n]*)' because:$/;
 const pathControls = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
@@ -10,14 +11,16 @@ function unavailable(reason) {
   return { keys: new Map(), ineligiblePaths: new Set(), ambiguousPaths: new Set(), duplicateKeys: new Set(), reason };
 }
 
-// Gradle 9.3.1 AbstractResolveCachingStateStep.logCacheKey logs this template:
+// Qualified Gradle versions log the same exact template in
+// AbstractResolveCachingStateStep.logCacheKey and logDisabledReasons:
 // https://github.com/gradle/gradle/blob/v9.3.1/platforms/core-execution/execution/src/main/java/org/gradle/internal/execution/steps/AbstractResolveCachingStateStep.java#L113
+// https://github.com/gradle/gradle/blob/v9.4.1/platforms/core-execution/execution/src/main/java/org/gradle/internal/execution/steps/AbstractResolveCachingStateStep.java#L109
 // TaskExecution.getDisplayName uses task.toString() for the task label.
 // Exact text is a local correlation hint, not authenticated Gradle provenance.
 // The caller must separately establish that the log belongs to its completed
 // invocation. A parser cannot detect a file truncated exactly at a line boundary.
 export function parseGradleInfo(text, { gradleVersion = '9.3.1' } = {}) {
-  if (gradleVersion !== '9.3.1') return unavailable('unsupported-gradle-version');
+  if (!qualifiedVersions.has(gradleVersion)) return unavailable('unsupported-gradle-version');
   if (typeof text !== 'string') return unavailable('invalid-info-log');
   if (text.length > maximumBytes || Buffer.byteLength(text, 'utf8') > maximumBytes) {
     return unavailable('info-log-too-large');

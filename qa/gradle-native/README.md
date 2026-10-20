@@ -14,6 +14,9 @@ Its existing `GRADLE_QA_OUTPUT` receipt includes the sanitized listener summary;
 raw logs and private task identities stay in local scratch. Each ordinary
 command is bounded to 120 seconds; the seven-command listener subprocess has a
 separate ten-minute total limit.
+The Linux CI gate also runs the seven listener controls with pinned Gradle
+9.4.1. Distribution ZIPs are cached together and checked against their published
+SHA256 on every run before extraction; the 9.3.1 HTTP matrix remains unchanged.
 
 The fixture uses Gradle's standard `JavaCompile` task and an explicitly cacheable
 verification task that launches the compiled class and checks its output. Source,
@@ -82,6 +85,9 @@ Run the separate public-listener controls with:
 ```sh
 GRADLE_BIN=/absolute/path/to/gradle-9.3.1/bin/gradle \
   node qa/gradle-native/metering.mjs
+
+GRADLE_BIN=/absolute/path/to/gradle-9.4.1/bin/gradle \
+  GRADLE_METERING_VERSION=9.4.1 node qa/gradle-native/metering.mjs
 ```
 
 Its small generated text tasks cover root and multiple projects, an included
@@ -98,3 +104,8 @@ in shallow checkouts and exported source trees without Git history.
 These filesystem-cache controls qualify native outcomes and projection; the
 HTTP runner separately qualifies private source and producer correlation.
 Neither fixture establishes application or billing savings.
+The observer controls accept only those exact versions. The requested version
+must match the actual runtime and every collected report. Keys are compared
+with the original init script within each version, without assuming compatible
+keys across Gradle versions. See the
+[9.4.1 qualification](../../docs/evidence/gradle-941-metering-20261020.md).
