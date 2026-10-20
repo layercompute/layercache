@@ -667,10 +667,7 @@ func runUninstall(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	if cfg.RemoteOnly {
 		credentialRemoved, removeErr := uninstallRemoteOnlyClient(ctx, *configPath, cfg, (credentials.Store{}).Delete)
-		if removeErr != nil {
-			return removeErr
-		}
-		return printResult(stdout, *jsonOutput, map[string]any{"uninstalled": true, "remoteOnly": true, "cachePreserved": true, "localDataTouched": false, "credentialRemoved": credentialRemoved}, "Layer Cache cloud client disconnected; local data was left untouched")
+		return reportRemoteOnlyUninstall(stdout, stderr, *jsonOutput, credentialRemoved, removeErr)
 	}
 	if err := validateDeletionTarget(cfg.DataDir); err != nil {
 		return fmt.Errorf("refusing to uninstall from unsafe Local Cache directory: %w", err)

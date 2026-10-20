@@ -619,3 +619,69 @@ func TestRemoteOnlyUninstallPreservesDurableRecoveryWhenRestorationFails(t *test
 		t.Fatal("recovery touched the unused data directory")
 	}
 }
+
+func TestRemoteOnlyCompletedDisconnectReportsPendingRecoveryCleanupAsSuccess(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("directory permission denial requires an unprivileged process")
+	}
+	root := t.TempDir()
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RemoteOnly = true
+	cfg.TeamURL = "https://cache.example"
+	cfg.DataDir = filepath.Join(root, "unused")
+	cfg.GitHubCredentialAccount, err = newGitHubCredentialAccount(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "client.json")
+	if err = config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	unlock, err := lockConfiguration(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	defer func() { _ = os.Chmod(root, 0700) }()
+	credentialRemoved, removeErr := uninstallRemoteOnlyClient(context.Background(), path, cfg, func(context.Context, string) error {
+		// Credential removal completed, then permissions changed before the
+		// remaining recovery copy could be unlinked.
+		if err := os.Chmod(root, 0500); err != nil {
+			t.Fatal(err)
+		}
+		return nil
+	})
+	if !credentialRemoved {
+		t.Fatal("credential deletion was not completed")
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatal("completed disconnect left installed configuration")
+	}
+	var stdout, stderr bytes.Buffer
+	if err = reportRemoteOnlyUninstall(&stdout, &stderr, true, credentialRemoved, removeErr); err != nil {
+		t.Fatalf("completed disconnect reported false failure: %v", err)
+	}
+	var receipt struct {
+		Uninstalled, CredentialRemoved bool
+		PendingRecoveryCleanupPath     string
+	}
+	if err = json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if !receipt.Uninstalled || !receipt.CredentialRemoved || receipt.PendingRecoveryCleanupPath == "" || !strings.Contains(stderr.String(), receipt.PendingRecoveryCleanupPath) {
+		t.Fatal("completed disconnect omitted pending cleanup receipt/warning")
+	}
+	data, readErr := readProtectedFile(receipt.PendingRecoveryCleanupPath)
+	if readErr != nil || !bytes.Equal(data, before) {
+		t.Fatal("pending cleanup path does not retain protected original connection bytes")
+	}
+	// A credential failure joined with cleanup failure must still fail.
+	var ignored bytes.Buffer
+	if err = reportRemoteOnlyUninstall(&ignored, &ignored, true, false, errors.Join(errors.New("credential removal failed"), removeErr)); err == nil {
+		t.Fatal("credential failure was hidden by cleanup warning")
+	}
+}

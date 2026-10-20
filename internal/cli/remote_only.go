@@ -102,6 +102,14 @@ func uninstallRemoteOnlyClient(ctx context.Context, path string, cfg config.Conf
 			return false, errors.New("cloud client configuration changed before uninstall")
 		}
 	}
+	if cfg.GitHubCredentialAccount == "" {
+		// GitHub CLI owns its own login. Removing this configuration needs no
+		// recovery copy because no external credential will be changed.
+		if err := os.Remove(path); err != nil {
+			return false, fmt.Errorf("remove cloud client configuration: %w", err)
+		}
+		return false, nil
+	}
 	if cfg.GitHubCredentialAccount != "" {
 		prefix := githubCredentialAccount(cfg)
 		owned := cfg.GitHubCredentialAccount == prefix
@@ -136,9 +144,36 @@ func uninstallRemoteOnlyClient(ctx context.Context, path string, cfg config.Conf
 			}
 			return false, errors.Join(credentialErr, cleanupRecovery())
 		}
-		return true, cleanupRecovery()
+		if cleanupErr := cleanupRecovery(); cleanupErr != nil {
+			return true, &remoteOnlyRecoveryCleanupPending{Path: backup, Cause: cleanupErr}
+		}
+		return true, nil
 	}
 	return false, cleanupRecovery()
+}
+
+// This warning is returned only after configuration and credential removal
+// both completed. Failed credential deletion or restoration remains an error.
+type remoteOnlyRecoveryCleanupPending struct {
+	Path  string
+	Cause error
+}
+
+func (pending *remoteOnlyRecoveryCleanupPending) Error() string {
+	return fmt.Sprintf("cloud client disconnected; protected recovery cleanup is pending at %s: %v", pending.Path, pending.Cause)
+}
+
+func reportRemoteOnlyUninstall(stdout, stderr io.Writer, jsonOutput bool, credentialRemoved bool, removeErr error) error {
+	pending, warning := removeErr.(*remoteOnlyRecoveryCleanupPending)
+	if removeErr != nil && !warning {
+		return removeErr
+	}
+	result := map[string]any{"uninstalled": true, "remoteOnly": true, "cachePreserved": true, "localDataTouched": false, "credentialRemoved": credentialRemoved}
+	if warning {
+		result["pendingRecoveryCleanupPath"] = pending.Path
+		_, _ = fmt.Fprintf(stderr, "Layer Cache warning: %s\n", pending.Error())
+	}
+	return printResult(stdout, jsonOutput, result, "Layer Cache cloud client disconnected; local data was left untouched")
 }
 
 // Exclusive creation preserves a configuration another process may have created

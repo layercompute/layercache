@@ -76,5 +76,25 @@ R2 hosts artifact bytes. API processes, PostgreSQL and bounded verification
 staging still need compute and storage somewhere. Moving them off a developer
 machine requires a separate hosting and recovery migration.
 
+## Disconnect a cloud client
+
+`layercache uninstall --config FILE --preserve-cache` removes a cloud-only
+client configuration and its LayerCache-owned credential. It leaves hosted
+artifacts, local path hints and the GitHub CLI login untouched. A client using
+GitHub CLI has no LayerCache-owned keychain credential, so disconnecting it
+requires no recovery-copy write, even when storage is full.
+
+A client with a LayerCache-owned keychain credential first saves and syncs a
+0600 recovery copy beside its configuration. Keep enough space for that small
+file, usually a few KiB, and one inode; the bounded configuration can be up to
+1 MiB. If that copy cannot be persisted, disconnect stops before changing the
+configuration or credential. There is no force option that skips recovery.
+
+If restoration fails, the error includes the protected recovery file's exact
+path. After a completed disconnect, failure to remove that remaining copy is a
+warning, and JSON reports success with `pendingRecoveryCleanupPath`. Remove
+that exact file after directory access is restored; repeating uninstall is
+unnecessary. Both uninstall modes preserve the cloud-only data-directory hint.
+
 See [hosted storage pools](hosted-storage.md), the
 [customer dashboard](dashboard.md) and [retained artifacts](retained-artifacts.md).
