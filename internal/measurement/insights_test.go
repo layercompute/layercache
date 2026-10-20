@@ -143,3 +143,76 @@ func TestActivityBucketsMatchHalfOpenRunSelectionAndUTCBoundaries(t *testing.T) 
 		t.Fatalf("activity totals = %d/%d/%d, report = %d/%d/%d", runs, hits, eligible, report.Runs, report.Hits, report.Eligible)
 	}
 }
+
+func TestBacktestActivityIncludesZeroDurationFinalRun(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	for _, onlyZeroDuration := range []bool{false, true} {
+		t.Run(fmt.Sprint(onlyZeroDuration), func(t *testing.T) {
+			history := []measurement.HistoricalRun{}
+			if !onlyZeroDuration {
+				history = append(history, measurement.HistoricalRun{
+					RunID: "producer", StartedAt: start.Add(-time.Hour), FinishedAt: start.Add(-time.Hour + time.Second),
+					Work: []measurement.HistoricalWork{{WorkID: "build", ArtifactID: "bytes", CompatibilityID: "profile", ExecutionDuration: duration(time.Second)}},
+				})
+			}
+			history = append(history, measurement.HistoricalRun{
+				RunID: "zero-duration", StartedAt: start, FinishedAt: start,
+				Work: []measurement.HistoricalWork{{WorkID: "build", ArtifactID: "bytes", CompatibilityID: "profile", ExecutionDuration: duration(0)}},
+			})
+			backtest, err := measurement.Backtest(history, measurement.BacktestPolicy{HitSource: measurement.SourceTeamCache})
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := backtest.Period
+			if !report.To.Equal(start) || len(report.Activity) != 1 {
+				t.Fatalf("backtest actual boundary changed: %+v", report)
+			}
+			bucket := report.Activity[0]
+			if bucket.Runs != report.Runs || bucket.Hits != report.Hits || bucket.Misses != report.Misses || bucket.Eligible != report.Eligible {
+				t.Fatalf("activity dropped selected zero-duration run: bucket=%+v period=%+v", bucket, report)
+			}
+			if onlyZeroDuration && !bucket.From.Equal(bucket.To) {
+				t.Fatalf("zero-duration backtest invented elapsed time: %+v", bucket)
+			}
+		})
+	}
+}
+
+func TestPeriodTopArtifactsSelectExactHighestFrequenciesBeforeHitUnits(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	r := measurement.NewRecorder()
+	for artifact := range 64 {
+		for repeat := range artifact + 1 {
+			// The least frequent artifact has many native hit units. Frequency
+			// still ranks it below a repeatedly reused complete task artifact.
+			units := 1
+			if artifact == 0 {
+				units = 5000
+			}
+			if err := r.Record(measurement.FinalOutcome{
+				RunID: "run", WorkID: fmt.Sprintf("%d/%d", artifact, repeat), ArtifactID: fmt.Sprint(artifact),
+				Integration: measurement.IntegrationBuildkit, CompatibilityID: "profile",
+				Result: measurement.ResultHit, Source: measurement.SourceTeamCache,
+				StartedAt: start, FinishedAt: start.Add(time.Second), EligibleUnits: units, HitUnits: units,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for range 3 {
+		report, err := r.PeriodReport(start, start.Add(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(report.TopArtifacts) != 20 || !report.TopArtifactsTruncated {
+			t.Fatalf("bounded top artifacts = %+v", report.TopArtifacts)
+		}
+		for index, artifact := range report.TopArtifacts {
+			if artifact.Restores != 64-index || artifact.Hits != artifact.Restores {
+				t.Fatalf("rank %d = %+v, want %d restores", index, artifact, 64-index)
+			}
+		}
+	}
+}

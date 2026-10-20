@@ -30,7 +30,7 @@ const executions:ExecutionInventory={version:1,from:new Date(Date.now()-24*60*60
 const baseSnapshot:Snapshot={scope:'team',updatedAt:observedAt,cache:{state:'connected',reportState:'available',status:{usageBytes:512*1024**2,maxBytes:5*1024**3,artifacts:32,entries:32,role:'admin',visibility:'team',storageBackend:'s3',canPrune:false,storageByIntegration:[{integration:'turbo',usageBytes:256*1024**2,artifacts:16,entries:16},{integration:'actions',usageBytes:128*1024**2,artifacts:8,entries:8},{integration:'shared',usageBytes:128*1024**2,artifacts:8,entries:8}]},report:{eligible:10,hits:7,misses:3,runs:4,degraded:false,netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:4,confidence:'unknown'},bytes:{downloaded:7168,uploaded:2048},timing:{lookupMs:10,downloadMs:200,verificationMs:30,restoreMs:400,uploadMs:50},sources:[{source:'teamCache',hits:7,downloadedBytes:7168,uploadedBytes:2048}],integrations:[{integration:'buildkit',hits:5,eligible:6},{integration:'turbo',hits:2,eligible:4}]}},executions};
 let origin='';
 const snapshots:{project:string;period:string;method:string}[]=[],held:{response:ServerResponse;period:string}[]=[];
-let hold=false,capacityBytes=5*1024**3,failNextCapacityWrite=false,capacityCanChange=true;
+let hold=false,capacityBytes=5*1024**3,failNextCapacityWrite=false,capacityCanChange=true,largeInfrastructure=false,signedIn=true,alternateAccount=false;
 const capacityChanges:unknown[]=[],mutations:{method:string;path:string}[]=[];
 function capacity(){return {state:'connected',maxBytes:capacityBytes,usedBytes:512*1024**2,reservedBytes:0,retainedBytes:0,retainedStagingBytes:0,softTargetBytes:1024**3,minimumBytes:1024**3,ceilingBytes:5*1024**3,canChange:capacityCanChange,limitSource:'operator',...(capacityCanChange?{}:{reason:'An administrator can adjust this limit.'})};}
 function json(response:ServerResponse,value:unknown,status=200){if(response.destroyed)return;response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(value));}
@@ -46,6 +46,7 @@ function snapshot(period:string){
   ];
   report.topArtifactsTruncated=true;
   report.activity=[{from:'2026-10-13T12:00:00Z',to:observedAt,runs:4,eligible:10,hits:8,misses:2}];
+  if(largeInfrastructure){assert.ok(data.executions);data.executions.jobs=Array.from({length:45},(_,index)=>entry(`large-job-${index}`,`github-actions:123:${1000+index}:1:${2000+index}`,'githubActions'));}
  }
  return data;
 }
@@ -54,7 +55,9 @@ const server=createServer(async(request,response)=>{
  if(url.pathname==='/'||/^\/(projects|teams)\//.test(url.pathname)||url.pathname==='/app.js'||url.pathname==='/style.css'){
   const name=url.pathname==='/app.js'?'app.js':url.pathname==='/style.css'?'style.css':'index.html';response.writeHead(200,{'Content-Type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html'});response.end(readFileSync(path.resolve('internal/portal/assets',name)));return;
  }
- if(url.pathname==='/api/session'){json(response,{user:{id:'fixture',login:'ux-user'},csrfToken:'synthetic-csrf',cloudOrigin:origin,authMethod:'password',passwordChangeRequired:false,canChangePassword:true,canManageGitHub:false,canCreateTeam:false,teams:[{id:'engineering',name:'Engineering',role:'admin',kind:'team',operatorManaged:true}],projects,invitations:[]});return;}
+ if(url.pathname==='/api/logout'&&request.method==='POST'){signedIn=false;json(response,undefined,204);return;}
+ if(url.pathname==='/auth/password'&&request.method==='POST'){let raw='';for await(const chunk of request)raw+=chunk;const body=JSON.parse(raw);assert.equal(body.email,'alternate@example.com');assert.equal(body.password,'synthetic-password');alternateAccount=true;signedIn=true;json(response,undefined,204);return;}
+ if(url.pathname==='/api/session'){if(!signedIn){json(response,{error:'Unauthorized'},401);return;}json(response,{user:alternateAccount?{id:'second-fixture',login:'alternate-user'}:{id:'fixture',login:'ux-user'},csrfToken:'synthetic-csrf',cloudOrigin:origin,authMethod:'password',passwordChangeRequired:false,canChangePassword:true,canManageGitHub:false,canCreateTeam:false,teams:alternateAccount?[{id:'alternate-team',name:'Another team',role:'reader',kind:'team',operatorManaged:true}]:[{id:'engineering',name:'Engineering',role:'admin',kind:'team',operatorManaged:true}],projects:alternateAccount?[{id:'alternate',teamId:'alternate-team',name:'Another project',repository:'example/alternate',role:'reader',operatorManaged:true}]:projects,invitations:[]});return;}
  if(url.pathname==='/api/public-config'){json(response,{githubClientId:'',passwordLogin:true});return;}
  if(url.pathname==='/api/teams/engineering/usage'){json(response,{projectCount:2,allocatedCacheBytes:10*1024**3,allocationComplete:true});return;}
  if(url.pathname==='/api/projects/phone/capacity'){
@@ -188,6 +191,33 @@ try{
   assert.match(await evidence.innerText(),/CPU-hours saved[\s\S]*Not measured/);assert.match(await evidence.innerText(),/Compute cost saved[\s\S]*Not measured/);
   assert.equal(await page.getByRole('region',{name:'Cache activity',exact:true}).getByRole('progressbar').count(),2);
  });
+ await check('a shorter report at the top removes the previous full-page height',async()=>{
+  largeInfrastructure=true;await navigate('Infrastructure');await page.locator('.page-content:not([aria-busy="true"])').waitFor();
+  assert.equal(await page.locator('.infra-run').count(),45);await page.evaluate(()=>scrollTo(0,0));
+  const longHeight=await page.locator('.page-content').evaluate(node=>node.getBoundingClientRect().height),before=snapshots.length;
+  await page.getByLabel('Reporting period').selectOption('24h');await page.locator('.page-content:not([aria-busy="true"])').waitFor();
+  assert.equal(await page.locator('.infra-run').count(),2);assert.equal(snapshots.length,before+1);
+  const shortHeight=await page.locator('.page-content').evaluate(node=>node.getBoundingClientRect().height);
+  assert.ok(shortHeight<longHeight-500,'A shorter report retained the previous full content height');
+  assert.equal(await page.evaluate(()=>scrollY),0);assert.equal(await page.locator('.page-content').evaluate(node=>Number.parseFloat((node as HTMLElement).style.minHeight)||0),0,'No scroll reservation is needed at the top');
+ });
+ await check('a shrinking report preserves deep scroll then releases spare height when scrolling up',async()=>{
+  const content=page.locator('.page-content'),shortHeight=await content.evaluate(node=>node.getBoundingClientRect().height);
+  await page.getByLabel('Reporting period').selectOption('7d');await page.locator('.page-content:not([aria-busy="true"])').waitFor();
+  assert.equal(await page.locator('.infra-run').count(),45);
+  await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight-innerHeight-120));const y=await page.evaluate(()=>scrollY);assert.ok(y>shortHeight);
+  hold=true;const before=snapshots.length;
+  await page.getByLabel('Reporting period').evaluate((node:HTMLSelectElement)=>{node.focus({preventScroll:true});node.value='24h';node.dispatchEvent(new Event('change',{bubbles:true}));});
+  await expect.poll(()=>held.length).toBe(1);assert.ok(Math.abs((await page.evaluate(()=>scrollY))-y)<4);
+  hold=false;for(const item of held.splice(0))json(item.response,snapshot(item.period));
+  await page.locator('.page-content:not([aria-busy="true"])').waitFor();assert.equal(await page.locator('.infra-run').count(),2);
+  assert.ok(Math.abs((await page.evaluate(()=>scrollY))-y)<4,'Shrinking content moved the user before they chose to scroll');
+  assert.equal(snapshots.length,before+1);const after=snapshots.length;
+  await page.evaluate(()=>scrollTo(0,0));
+  await expect.poll(()=>content.evaluate(node=>Number.parseFloat((node as HTMLElement).style.minHeight)||0)).toBe(0);
+  const releasedHeight=await content.evaluate(node=>node.getBoundingClientRect().height);assert.ok(Math.abs(releasedHeight-shortHeight)<4,'Scrolling up should return the report to its natural height');
+  assert.equal(snapshots.length,after,'Releasing scroll reservation must not fetch another report');largeInfrastructure=false;
+ });
  await check('capacity changes stay inside the allocation without pruning artifacts',async()=>{
   await navigate('Storage');const capacity=page.getByRole('region',{name:'Cache capacity',exact:true});
   await capacity.getByLabel('Cache limit in GiB').waitFor();const start=capacityChanges.length;
@@ -236,6 +266,15 @@ try{
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   await expect(page.getByRole('link',{name:'Account & team',exact:true})).toBeVisible();
   await page.screenshot({path:path.join(output,`overview-${width}.png`),fullPage:true});
+ });
+ await check('signing out clears the project route before a different account signs in',async()=>{
+  assert.equal(new URL(page.url()).pathname,'/projects/phone/overview');
+  await page.getByRole('button',{name:'Sign out',exact:true}).click();await page.getByRole('heading',{name:'Email and password',exact:true}).waitFor();
+  assert.equal(new URL(page.url()).pathname,'/');assert.equal(await page.getByRole('button',{name:'Phone App',exact:true}).count(),0);
+  await page.getByLabel('Email',{exact:true}).fill('alternate@example.com');await page.getByLabel('Password',{exact:true}).fill('synthetic-password');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();await summary().waitFor();
+  assert.equal(new URL(page.url()).pathname,'/projects/alternate/overview');assert.equal(await page.locator('main h1').innerText(),'Another project');
+  assert.equal(await page.getByRole('heading',{name:'Page unavailable',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Phone App',exact:true}).count(),0);
  });
  await check('no browser exceptions',async()=>assert.deepEqual(errors,[]));
 }catch(error){console.error(error);process.exitCode=1;}

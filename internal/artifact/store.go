@@ -139,6 +139,9 @@ func Open(ctx context.Context, root string, maxBytes, minFreeBytes int64) (*Stor
 			PRIMARY KEY (integration, project, compatibility, native_key, version, ref_scope)
 		)`,
 		`CREATE INDEX IF NOT EXISTS cache_entries_lru ON cache_entries(last_accessed_at)`,
+		// Reuse a covering digest lookup across statistics polls and digest-based
+		// cleanup. Otherwise SQLite builds an automatic join index for each read.
+		`CREATE INDEX IF NOT EXISTS cache_entries_digest ON cache_entries(digest, integration)`,
 		`CREATE TABLE IF NOT EXISTS cache_entry_pins (
 			namespace TEXT NOT NULL,
 			owner TEXT NOT NULL,

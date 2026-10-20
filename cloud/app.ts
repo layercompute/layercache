@@ -24,6 +24,7 @@ function value(form:HTMLFormElement,name:string){return (form.elements.namedItem
 function appendField(form:HTMLFormElement,label:string,name:string,placeholder=''){const input=field(form,label,name,placeholder);form.append(form.querySelector('button')!);return input;}
 function passwordField(form:HTMLFormElement,label:string,name:string,autocomplete:'current-password'|'new-password'):HTMLInputElement{const input=appendField(form,label,name);input.type='password';input.autocomplete=autocomplete;input.maxLength=72;return input;}
 function renderLogin(){
+ workspace?.dispose();workspace=undefined;
  document.title='Sign in · LayerCache';
  const version=++generation;root.replaceChildren();const card=el('section','','welcome');card.append(el('p','LAYER CACHE CLOUD','eyebrow'),el('h1','One cache. Your whole team.'),el('p','Connect your CLI, share project caches, and see what your builds reuse.'));const methods=el('div');methods.append(el('p','Loading sign-in options…','muted'));card.append(methods);root.append(card);
  void api<PublicConfig>('/api/public-config','GET',undefined,false).then(config=>{
@@ -93,7 +94,8 @@ function render() {
 }
 async function signOut() {
   await api('/api/logout', 'POST'); workspace?.dispose(); workspace = undefined;
-  session = undefined; passwordFormOpen = false; generation++; renderLogin(); message('Signed out.');
+  session = undefined; passwordFormOpen = false; generation++;
+  history.replaceState({}, '', '/'); renderLogin(); message('Signed out.');
 }
 
 // One workspace owns navigation and one selected project's requests. A period
@@ -112,6 +114,15 @@ class Workspace {
   private route: Route = {kind: 'missing'};
   private request = 0;
   private alive = true;
+  private reservedScrollY: number | undefined;
+  private readonly releaseScrollSpace = () => {
+    if (!this.valid()) return;
+    const y = window.scrollY;
+    if (this.reservedScrollY !== undefined && y < this.reservedScrollY) this.keepScrollPosition(window.scrollX, y);
+  };
+  private readonly resizeScrollSpace = () => {
+    if (this.valid() && this.reservedScrollY !== undefined) this.keepScrollPosition(window.scrollX, window.scrollY);
+  };
   private readonly version = generation;
   constructor(private readonly current: Session) {
     const header = el('header', '', 'app-header');
@@ -137,8 +148,14 @@ class Workspace {
     this.requestError.setAttribute('role', 'alert');
     this.main.append(this.heading, this.tabs, this.toolbar, this.requestError, this.content);
     const layout = el('div', '', 'layout workspace-body'); layout.append(this.sidebar, this.main); this.element.append(layout);
+    window.addEventListener('scroll', this.releaseScrollSpace, {passive: true});
+    window.addEventListener('resize', this.resizeScrollSpace);
   }
-  dispose() {this.alive = false; this.request++;}
+  dispose() {
+    this.alive = false; this.request++;
+    window.removeEventListener('scroll', this.releaseScrollSpace);
+    window.removeEventListener('resize', this.resizeScrollSpace);
+  }
   private valid(order?: number): boolean {return this.alive && this.version === generation && (order === undefined || order === this.request);}
   navigate(href: string) {
     if (!this.valid()) return;
@@ -149,6 +166,7 @@ class Workspace {
     this.request++; this.route = readRoute(); this.selector.value = period();
     this.heading.replaceChildren(); this.tabs.replaceChildren(); this.content.replaceChildren();
     this.content.style.minHeight = ''; this.content.removeAttribute('aria-busy');
+    this.reservedScrollY = undefined;
     this.update.textContent = ''; this.requestError.textContent = '';
     const project = this.route.kind === 'project' ? this.current.projects?.find(item => item.id === this.routeProject()) : undefined;
     const teamID = project?.teamId ?? (this.route.kind === 'team' ? this.route.team : '');
@@ -189,6 +207,16 @@ class Workspace {
     if (this.route.kind !== 'project') return;
     for (const link of Array.from(this.tabs.querySelectorAll<HTMLAnchorElement>('a[data-page]'))) link.href = projectURL(this.route.project, link.dataset.page as ProjectPage);
   }
+  private keepScrollPosition(x: number, y: number) {
+    // Keep only the space needed for the current viewport, rather than the old
+    // report's full height. Release it as the user scrolls toward shorter data.
+    this.content.style.minHeight = '';
+    const natural = this.content.getBoundingClientRect().height;
+    const deficit = Math.max(0, y + window.innerHeight - document.documentElement.scrollHeight);
+    if (deficit > 0) this.content.style.minHeight = `${Math.ceil(natural + deficit)}px`;
+    this.reservedScrollY = deficit > 0 ? y : undefined;
+    window.scrollTo(x, y);
+  }
   private renderSidebar(team?: Team, project?: Project) {
     this.sidebar.replaceChildren(); this.sidebar.append(el('p', 'WORKSPACE', 'sidebar-heading'));
     const selector = el('select'); selector.setAttribute('aria-label', 'Team');
@@ -226,7 +254,7 @@ class Workspace {
       const view = renderProjectPage(page, project, team, snapshot, {api, message, reload: () => this.load(true), navigate: next => this.navigate(projectURL(project.id, next))});
       this.content.replaceChildren(view);
       this.update.textContent = `Updated ${new Date(snapshot.updatedAt).toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'})}`;
-      if (preserve) window.scrollTo(x, y); else if (restoreY !== undefined) window.scrollTo(0, restoreY);
+      if (preserve) this.keepScrollPosition(x, y); else if (restoreY !== undefined) window.scrollTo(0, restoreY);
     } catch (error) {
       if (this.valid(order)) {
         this.requestError.textContent = `${error instanceof Error ? error.message : 'Project activity unavailable.'}${preserve ? ' Showing the previous report. Refresh to retry.' : ''}`;

@@ -1,6 +1,7 @@
 package measurement
 
 import (
+	"container/heap"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -105,35 +106,61 @@ func commonArtifacts(reports []RunReport) ([]ArtifactReport, bool) {
 			}
 		}
 	}
-	result := make([]ArtifactReport, 0, len(entries))
+	const maximumArtifacts = 20
+	// Exact frequencies still require the aggregation map above. Keep only the
+	// best twenty candidates during selection instead of allocating and sorting
+	// a second slice containing every unique artifact.
+	leaders := make(artifactLeaders, 0, min(maximumArtifacts, len(entries)))
 	for _, entry := range entries {
 		entry.Runs = len(entry.runs)
 		entry.GrossAvoidedTaskTime = completeEstimate(entry.ms, "producerDuration", entry.known, entry.Restores, ConfidenceHigh)
-		result = append(result, entry.ArtifactReport)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Restores != result[j].Restores {
-			return result[i].Restores > result[j].Restores
+		if len(leaders) < maximumArtifacts {
+			heap.Push(&leaders, entry.ArtifactReport)
+		} else if artifactRanksBefore(entry.ArtifactReport, leaders[0]) {
+			leaders[0] = entry.ArtifactReport
+			heap.Fix(&leaders, 0)
 		}
-		if result[i].Hits != result[j].Hits {
-			return result[i].Hits > result[j].Hits
-		}
-		return result[i].Ref < result[j].Ref
-	})
-	const maximumArtifacts = 20
-	truncated := len(result) > maximumArtifacts
-	if truncated {
-		result = result[:maximumArtifacts]
 	}
-	return result, truncated
+	result := []ArtifactReport(leaders)
+	sort.Slice(result, func(i, j int) bool { return artifactRanksBefore(result[i], result[j]) })
+	return result, len(entries) > maximumArtifacts
+}
+
+func artifactRanksBefore(left, right ArtifactReport) bool {
+	if left.Restores != right.Restores {
+		return left.Restores > right.Restores
+	}
+	if left.Hits != right.Hits {
+		return left.Hits > right.Hits
+	}
+	return left.Ref < right.Ref
+}
+
+// The root is the worst retained candidate, so replacing it costs log(20).
+type artifactLeaders []ArtifactReport
+
+func (items artifactLeaders) Len() int           { return len(items) }
+func (items artifactLeaders) Less(i, j int) bool { return artifactRanksBefore(items[j], items[i]) }
+func (items artifactLeaders) Swap(i, j int)      { items[i], items[j] = items[j], items[i] }
+func (items *artifactLeaders) Push(item any)     { *items = append(*items, item.(ArtifactReport)) }
+func (items *artifactLeaders) Pop() any {
+	last := len(*items) - 1
+	item := (*items)[last]
+	*items = (*items)[:last]
+	return item
 }
 
 func activityBuckets(from, to time.Time, reports []RunReport) []ActivityBucket {
 	result := make([]ActivityBucket, 0)
-	if from.IsZero() || to.IsZero() || !to.After(from) {
+	if from.IsZero() || to.IsZero() || to.Before(from) {
 		return result
 	}
 	from, to = from.UTC(), to.UTC()
+	if from.Equal(to) && len(reports) > 0 {
+		// Backtest can include a single zero-duration run. Preserve its actual
+		// interval rather than inventing elapsed time to create a bucket.
+		result = append(result, ActivityBucket{From: from, To: to})
+	}
 	span := to.Sub(from)
 	width := time.Hour
 	if span > 24*time.Hour {
@@ -153,7 +180,11 @@ func activityBuckets(from, to time.Time, reports []RunReport) []ActivityBucket {
 	for _, report := range reports {
 		for index := range result {
 			bucket := &result[index]
-			if !report.StartedAt.Before(bucket.From) && report.StartedAt.Before(bucket.To) {
+			// These reports were selected by the caller. Ordinary period queries
+			// already exclude starts at their upper bound. A backtest's final
+			// zero-duration run may start exactly at its recorded latest finish.
+			atSelectedEnd := index == len(result)-1 && report.StartedAt.Equal(to)
+			if !report.StartedAt.Before(bucket.From) && (report.StartedAt.Before(bucket.To) || atSelectedEnd) {
 				bucket.Runs++
 				bucket.Eligible += report.Eligible
 				bucket.Hits += report.Hits
