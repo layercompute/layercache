@@ -6,6 +6,67 @@ for configured projects. The CLI works without a cloud account. The authenticate
 Team projects. Source qualification, CLI release and hosted deployment are
 separate outcomes; these additions need a CLI built from the updated source.
 
+## Hosted project pages
+
+The hosted dashboard opens one project at a time. Its Overview starts with
+current cached bytes, effective hit rate, estimated build time saved and reported
+measurement runs. It remembers the last authorized project in that browser.
+Project pages have direct URLs:
+
+```text
+/projects/<encoded-project-id>/overview
+/projects/<encoded-project-id>/activity?period=7d
+/projects/<encoded-project-id>/infrastructure
+/projects/<encoded-project-id>/storage
+/projects/<encoded-project-id>/settings
+/teams/<encoded-team-id>/settings
+```
+
+IDs containing slashes are encoded as one URL segment. Reload, back and forward
+preserve the selected page. Changing the period fetches only that project's
+snapshot and retains navigation, focus, scroll position and the previous report
+while the request is pending. A failed update labels the previous report;
+session expiry clears private content.
+
+Overview shows reported integration hit rates. Unmetered clients remain unknown
+under a compact disclosure, with the full breakdown on Activity. Common artifact
+references are opaque, project-scoped hashes, rather than task paths or commands.
+Hits follow native work units. BuildKit vertices, Turbo tasks and Actions archive
+outcomes do not establish equivalent amounts of avoided work. Reported runs are
+measurement invocations, not GitHub workflow counts.
+
+Infrastructure groups authenticated GitHub Actions jobs by repository, run and
+attempt. Individual jobs and resource samples expand on demand. Persistent
+client installations appear separately from transient CI jobs. An installation
+identity does not establish unique physical hardware or repeated observations.
+Unknown compute providers and resource limits remain unknown.
+
+Storage shows a deduplicated artifact-byte breakdown from explicit integration
+metadata. A blob referenced by several integrations belongs to Shared and is
+counted once. Turbo-protocol archives include Xcode and Expo snapshots; their
+purpose cannot be inferred from this transport identity. Registry storage and
+separate Bazel engine stores are excluded. Personal/Team/Public visibility and
+storage protocol are different dimensions.
+
+Administrators can lower or restore the operating capacity within the project's
+assigned allocation. The mutation checks current native access, the previous
+limit, committed bytes, retained reservations/staging, metadata and the soft
+cleanup target. It persists across restart and never evicts entries. Raising the
+assigned allocation needs an operator or storage-plan change. Pruning is a
+separate, explicitly confirmed action. An uncertain capacity response requires
+a fresh capacity read before retrying.
+
+Savings estimates retain original-timing coverage and confidence. Gross task
+durations can overlap; partial native groups cannot claim their entire producer
+duration as work avoided. Critical-path estimates require usable graph evidence
+and can be negative after cache overhead. CPU-hours and money saved remain
+unmeasured until producer resources and prices can be joined to the reused work.
+Current runner specifications are not a substitute for that evidence.
+
+Account costs, team membership and project onboarding are on Account & team.
+CLI connection instructions are on project Settings. The existing local CLI
+dashboard retains its current layout and explicit configuration selection.
+
 Build the CLI normally, then run:
 
 ```bash

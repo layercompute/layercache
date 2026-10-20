@@ -384,6 +384,8 @@ func TestPasswordSessionScopesImportedProjectsWithoutBroadeningGitHubIdentity(t 
 		path := "/api/projects/" + url.PathEscape(id)
 		requireStatus(t, q.request("GET", path+"/snapshot", "", password, nil), 403)
 		requireStatus(t, q.request("POST", path+"/prune", `{"targetBytes":0,"confirm":true}`, password, map[string]string{"Content-Type": "application/json"}), 403)
+		requireStatus(t, q.request("GET", path+"/capacity", "", password, nil), 403)
+		requireStatus(t, q.request("PUT", path+"/capacity", `{"maxBytes":1024,"expectedMaxBytes":2048,"confirm":true}`, password, map[string]string{"Content-Type": "application/json"}), 403)
 	}
 	for _, id := range []string{ordinaryTeam.ID, personalTeam.ID, foreign.TeamID, bobTeam.ID} {
 		requireStatus(t, q.request("GET", "/api/teams/"+id+"/usage", "", password, nil), 403)

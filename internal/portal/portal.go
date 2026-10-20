@@ -256,6 +256,20 @@ func (p *Portal) routes() {
 	files, _ := fs.Sub(assets, "assets")
 	static := http.FileServer(http.FS(files))
 	p.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { static.ServeHTTP(w, r) })
+	// Deep links load the same public shell. Each data request still requires
+	// a live session and current project authority. Unknown paths stay 404.
+	projectPage := func(w http.ResponseWriter, r *http.Request) {
+		switch r.PathValue("page") {
+		case "overview", "activity", "infrastructure", "storage", "settings":
+			http.ServeFileFS(w, r, files, "index.html")
+		default:
+			http.NotFound(w, r)
+		}
+	}
+	p.mux.HandleFunc("GET /projects/{project}/{page}", projectPage)
+	p.mux.HandleFunc("GET /teams/{team}/settings", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, files, "index.html")
+	})
 	for _, path := range []string{"/app.js", "/style.css"} {
 		p.mux.Handle("GET "+path, static)
 	}
@@ -280,6 +294,8 @@ func (p *Portal) routes() {
 	p.mux.Handle("GET /api/projects/{project}/snapshot", p.auth(p.projectSnapshot))
 	p.mux.Handle("GET /api/teams/{team}/usage", p.auth(p.teamUsage))
 	p.mux.Handle("POST /api/projects/{project}/prune", p.auth(p.pruneProject))
+	p.mux.Handle("GET /api/projects/{project}/capacity", p.auth(p.projectCapacity))
+	p.mux.Handle("PUT /api/projects/{project}/capacity", p.auth(p.changeProjectCapacity))
 }
 func jsonResponse(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")

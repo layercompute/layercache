@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/measurement"
 )
@@ -22,17 +23,18 @@ import (
 var assets embed.FS
 
 type Status struct {
-	ProjectID      string `json:"projectId"`
-	UsageBytes     int64  `json:"usageBytes"`
-	MaxBytes       *int64 `json:"maxBytes"`
-	Artifacts      int64  `json:"artifacts"`
-	EvictionPolicy string `json:"evictionPolicy"`
-	Role           string `json:"role"`
-	Visibility     string `json:"visibility"`
-	StorageBackend string `json:"storageBackend"`
-	Entries        int64  `json:"entries"`
-	MetadataBytes  int64  `json:"metadataBytes"`
-	CanPrune       bool   `json:"canPrune"`
+	ProjectID            string                      `json:"projectId"`
+	UsageBytes           int64                       `json:"usageBytes"`
+	MaxBytes             *int64                      `json:"maxBytes"`
+	Artifacts            int64                       `json:"artifacts"`
+	EvictionPolicy       string                      `json:"evictionPolicy"`
+	Role                 string                      `json:"role"`
+	Visibility           string                      `json:"visibility"`
+	StorageBackend       string                      `json:"storageBackend"`
+	Entries              int64                       `json:"entries"`
+	MetadataBytes        int64                       `json:"metadataBytes"`
+	CanPrune             bool                        `json:"canPrune"`
+	StorageByIntegration []artifact.IntegrationStats `json:"storageByIntegration"`
 }
 
 type Cache struct {

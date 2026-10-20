@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,7 +42,7 @@ func TestPutKeepsFiveGiBFloorWhenConfiguredReserveIsLower(t *testing.T) {
 	if statsErr != nil {
 		t.Fatal(statsErr)
 	}
-	if stats != (Stats{}) {
+	if !reflect.DeepEqual(stats, Stats{StorageByIntegration: []IntegrationStats{}}) {
 		t.Fatalf("stats after rejected Put = %+v, want empty Local Cache", stats)
 	}
 }

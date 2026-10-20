@@ -21,9 +21,9 @@ function json(response:ServerResponse,value:unknown,status=200){if(response.dest
 const snapshot={cache:{state:'unavailable',reportState:'unavailable'},scope:'team',updatedAt:'2026-10-20T12:00:00Z',executions:{version:1,from:'2026-10-19T12:00:00Z',to:'2026-10-20T12:00:00Z',updatedAt:'2026-10-20T12:00:00Z',retentionDays:30,staleAfterSeconds:86400,historyTruncated:false,installations:[],jobs:[]}};
 const server=createServer((request,response)=>{
  const url=new URL(request.url!,origin||'http://fixture');
- if(url.pathname==='/'||url.pathname==='/app.js'||url.pathname==='/style.css'){
-  if(url.pathname==='/')holdSnapshots=false;
-  const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
+ if(url.pathname==='/'||/^\/projects\/[^/]+\/(overview|activity|infrastructure|storage|settings)$/.test(url.pathname)||url.pathname==='/app.js'||url.pathname==='/style.css'){
+  const document=url.pathname==='/'||url.pathname.startsWith('/projects/');if(document)holdSnapshots=false;
+  const name=document?'index.html':url.pathname.slice(1);
   response.writeHead(200,{'Content-Type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html'});
   response.end(readFileSync(path.resolve('internal/portal/assets',name)));return;
  }
@@ -47,39 +47,38 @@ await page.addInitScript(()=>{
  const identity=crypto.randomUUID(),original=window.fetch.bind(window);
  window.fetch=(...args)=>{console.debug('lifecycle-fetch:'+JSON.stringify({document:identity,path:new URL(String(args[0]),location.href).pathname}));return original(...args);};
 });
-const inventory=()=>page.getByRole('region',{name:'Where used',exact:true});
-const settled=()=>inventory().getByText('0 observed client installations · 0 observed CI jobs',{exact:true}).waitFor();
+const settled=async()=>{await page.locator('.page-content:not([aria-busy="true"])').waitFor();await page.locator('.infrastructure-panel').waitFor();};
 const snapshotsFor=(records:typeof fetches)=>records.filter(item=>item.path.endsWith('/snapshot'));
 async function check(name:string,run:()=>Promise<void>){try{await run();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error instanceof Error?error.message:String(error)});throw error;}}
 try{
- await page.goto(origin);await settled();
+ await page.goto(origin+'/projects/project-1/infrastructure');await settled();
  // HTTP arrival and rendered DOM do not order Playwright console delivery.
  // Drain the exact initial document observations before taking any offsets.
- await expect.poll(()=>snapshotsFor(fetches).length).toBe(projects.length);
- await check('in-flight reload stops queued inventory fetches without page errors',async()=>{
+ await expect.poll(()=>snapshotsFor(fetches).length).toBe(1);
+ await check('in-flight reload leaves only the selected project request and no page errors',async()=>{
   const start=fetches.length;holdSnapshots=true;
   await page.getByRole('button',{name:'Refresh',exact:true}).click();
-  await expect.poll(()=>heldSnapshots.length).toBe(3);
-  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(3);
+  await expect.poll(()=>heldSnapshots.length).toBe(1);
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(1);
   const document=snapshotsFor(fetches.slice(start))[0]!.document;
   await page.reload({waitUntil:'networkidle'});await settled();
-  await expect.poll(()=>snapshotsFor(fetches.slice(start)).filter(item=>item.document!==document).length).toBe(projects.length);
-  assert.equal(snapshotsFor(fetches.slice(start)).filter(item=>item.document===document).length,3,'The unloading document started queued project requests');
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).filter(item=>item.document!==document).length).toBe(1);
+  assert.equal(snapshotsFor(fetches.slice(start)).filter(item=>item.document===document).length,1,'The unloading document requested other projects');
   assert.deepEqual(errors,[]);
  });
- await check('explicit HTTP failure preserves later-project reads and partial state',async()=>{
+ await check('explicit HTTP failure stays in the selected project and refresh recovers',async()=>{
   httpFailure=true;const start=fetches.length;
   await page.getByRole('button',{name:'Refresh',exact:true}).click();
-  await inventory().locator('.execution-partial').filter({hasText:'1 project inventory is unavailable.'}).waitFor();
-  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(projects.length);
-  assert.equal(snapshotsFor(fetches.slice(start)).length,5);httpFailure=false;
+  await page.getByText('fixture unavailable',{exact:false}).waitFor();
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(1);
+  assert.equal(snapshotsFor(fetches.slice(start))[0]!.path,'/api/projects/project-1/snapshot');httpFailure=false;
+  await page.getByRole('button',{name:'Refresh',exact:true}).click();await settled();
  });
- await check('transport loss stops the optional queue and leaves unknown inventory',async()=>{
+ await check('transport loss never fetches unrelated projects or raises a page exception',async()=>{
   const start=fetches.length,pattern='**/api/projects/*/snapshot?*';await page.route(pattern,route=>route.abort());
   await page.getByRole('button',{name:'Refresh',exact:true}).click();
-  await inventory().getByText('Execution inventory unavailable.',{exact:false}).waitFor();
-  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(3);
-  assert.equal(snapshotsFor(fetches.slice(start)).length,3);assert.deepEqual(errors,[]);await page.unroute(pattern);
+  await expect.poll(()=>snapshotsFor(fetches.slice(start)).length).toBe(1);
+  assert.equal(snapshotsFor(fetches.slice(start))[0]!.path,'/api/projects/project-1/snapshot');assert.deepEqual(errors,[]);await page.unroute(pattern);
   await page.getByRole('button',{name:'Refresh',exact:true}).click();await settled();
  });
  await check('persisted restore clears old private content and revalidates authorization',async()=>{

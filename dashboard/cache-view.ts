@@ -1,18 +1,31 @@
 export type Scope = 'personal' | 'team' | 'public' | 'unknown';
 export type Estimate = {milliseconds: number | null; known: number; total: number; confidence: string};
 export type Timing = {lookupMs: number; downloadMs: number; verificationMs: number; restoreMs: number; uploadMs: number};
+export type IntegrationReport = {
+  integration: string; hits: number; eligible: number; misses?: number; groups?: number;
+  bytes?: {downloaded: number; uploaded: number}; timing?: Timing; degraded?: boolean;
+  grossAvoidedTaskTime?: Estimate;
+};
+export type ArtifactReport = {
+  ref: string; integration: string; hits: number; restores: number; runs: number;
+  downloadedBytes: number; lastHitAt: string; grossAvoidedTaskTime: Estimate;
+};
+export type ActivityBucket = {from: string; to: string; runs: number; eligible: number; hits: number; misses: number};
 export type Report = {
   eligible: number; hits: number; misses: number; runs: number; degraded: boolean;
   netEstimatedBuildTimeSaved: Estimate;
+  grossAvoidedTaskTime?: Estimate;
   bytes?: {downloaded: number; uploaded: number}; timing?: Timing;
   sources?: {source: string; hits: number; downloadedBytes: number; uploadedBytes: number}[] | null;
-  integrations: {integration: string; hits: number; eligible: number}[] | null;
+  integrations: IntegrationReport[] | null;
+  topArtifacts?: ArtifactReport[]; topArtifactsTruncated?: boolean; activity?: ActivityBucket[];
 };
 export type Cache = {
   state: string; reportState: string; pruneAllowed?: boolean;
   status?: {
     usageBytes: number; maxBytes: number | null; artifacts: number; evictionPolicy?: string;
     role?: string; visibility?: Scope; storageBackend?: string; entries?: number; metadataBytes?: number; canPrune?: boolean;
+    storageByIntegration?: {integration: string; usageBytes: number; artifacts: number; entries: number}[] | null;
   };
   report?: Report;
 };

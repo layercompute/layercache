@@ -338,20 +338,32 @@ func (store *Store) Usage(ctx context.Context) (int64, error) {
 }
 
 func (store *Store) Stats(ctx context.Context) (artifact.Stats, error) {
+	tx, err := store.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return artifact.Stats{}, store.safeError("begin cloud statistics snapshot", err)
+	}
+	defer tx.Rollback()
 	var stats artifact.Stats
-	if err := store.database.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 		SELECT used_bytes, metadata_bytes FROM layercache_projects_v1 WHERE project_id = $1`, store.config.Project).
 		Scan(&stats.UsageBytes, &stats.MetadataBytes); err != nil {
 		return artifact.Stats{}, store.safeError("read cloud cache statistics", err)
 	}
-	if err := store.database.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM layercache_artifacts_v1
 		WHERE project_id = $1 AND ref_count > 0`, store.config.Project).Scan(&stats.Artifacts); err != nil {
 		return artifact.Stats{}, store.safeError("count cloud artifacts", err)
 	}
-	if err := store.database.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM layercache_entries_v1 WHERE project_id = $1`, store.config.Project).Scan(&stats.Entries); err != nil {
 		return artifact.Stats{}, store.safeError("count cloud cache entries", err)
+	}
+	stats.StorageByIntegration, err = store.integrationStats(ctx, tx)
+	if err != nil {
+		return artifact.Stats{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return artifact.Stats{}, store.safeError("finish cloud statistics snapshot", err)
 	}
 	return stats, nil
 }

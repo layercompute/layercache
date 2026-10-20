@@ -33,13 +33,5 @@ func ReadStats(ctx context.Context, root string) (Stats, error) {
 	defer database.Close()
 	database.SetMaxOpenConns(1)
 
-	var stats Stats
-	if err := database.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0), COUNT(*) FROM artifacts`).
-		Scan(&stats.UsageBytes, &stats.Artifacts); err != nil {
-		return Stats{}, fmt.Errorf("read artifact statistics: %w", err)
-	}
-	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM cache_entries`).Scan(&stats.Entries); err != nil {
-		return Stats{}, fmt.Errorf("read cache entry statistics: %w", err)
-	}
-	return stats, nil
+	return readArtifactStats(ctx, database)
 }

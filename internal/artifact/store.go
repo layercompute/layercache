@@ -60,10 +60,11 @@ type Entry struct {
 }
 
 type Stats struct {
-	UsageBytes    int64 `json:"usageBytes"`
-	MetadataBytes int64 `json:"metadataBytes"`
-	Artifacts     int64 `json:"artifacts"`
-	Entries       int64 `json:"entries"`
+	UsageBytes           int64              `json:"usageBytes"`
+	MetadataBytes        int64              `json:"metadataBytes"`
+	Artifacts            int64              `json:"artifacts"`
+	Entries              int64              `json:"entries"`
+	StorageByIntegration []IntegrationStats `json:"storageByIntegration"`
 }
 
 type Store struct {
@@ -416,18 +417,23 @@ func (store *Store) Usage(ctx context.Context) (int64, error) {
 }
 
 func (store *Store) Stats(ctx context.Context) (Stats, error) {
-	var stats Stats
-	if err := store.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0), COUNT(*) FROM artifacts`).Scan(&stats.UsageBytes, &stats.Artifacts); err != nil {
-		return Stats{}, fmt.Errorf("read artifact statistics: %w", err)
+	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return Stats{}, fmt.Errorf("begin artifact statistics snapshot: %w", err)
 	}
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cache_entries`).Scan(&stats.Entries); err != nil {
-		return Stats{}, fmt.Errorf("read cache entry statistics: %w", err)
+	defer tx.Rollback()
+	stats, err := readArtifactStats(ctx, tx)
+	if err != nil {
+		return Stats{}, err
 	}
-	metadataBytes, err := store.metadataUsage(ctx)
+	metadataBytes, err := readMetadataUsage(ctx, tx)
 	if err != nil {
 		return Stats{}, err
 	}
 	stats.MetadataBytes = metadataBytes
+	if err := tx.Commit(); err != nil {
+		return Stats{}, fmt.Errorf("finish artifact statistics snapshot: %w", err)
+	}
 	return stats, nil
 }
 
@@ -461,8 +467,14 @@ func (store *Store) evictBlob(ctx context.Context) (bool, error) {
 }
 
 func (store *Store) metadataUsage(ctx context.Context) (int64, error) {
+	return readMetadataUsage(ctx, store.db)
+}
+
+func readMetadataUsage(ctx context.Context, query interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) (int64, error) {
 	var usage int64
-	err := store.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(
+	err := query.QueryRowContext(ctx, `SELECT COALESCE(SUM(
 		length(integration) + length(project) + length(compatibility) + length(native_key) +
 		length(version) + length(ref_scope) + length(digest) + length(metadata_json) + 160
 	), 0) FROM cache_entries`).Scan(&usage)
