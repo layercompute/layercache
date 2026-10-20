@@ -45,13 +45,17 @@ type descriptorFlags struct {
 	Flag4 string `json:"flag4"`
 }
 type chunkShape struct {
-	Field                    fieldShape `json:"field"`
-	IsSingleByteOne          bool       `json:"isSingleByteOne"`
-	PayloadBytes             int        `json:"payloadBytes"`
-	AllBytesOne              bool       `json:"allBytesOne"`
-	FollowingLiteralChunks   int        `json:"followingLiteralChunks"`
-	LeadingUniqueMarker      bool       `json:"leadingUniqueMarker"`
-	VectorCardinalityMatches bool       `json:"vectorCardinalityMatches"`
+	Field                     fieldShape `json:"field"`
+	IsSingleByteOne           bool       `json:"isSingleByteOne"`
+	PayloadBytes              int        `json:"payloadBytes"`
+	AllBytesOne               bool       `json:"allBytesOne"`
+	FollowingLiteralChunks    int        `json:"followingLiteralChunks"`
+	LeadingUniqueMarker       bool       `json:"leadingUniqueMarker"`
+	VectorCardinalityMatches  bool       `json:"vectorCardinalityMatches"`
+	CanonicalOneBased         bool       `json:"canonicalOneBased"`
+	CanonicalZeroBased        bool       `json:"canonicalZeroBased"`
+	DecodedIndexCount         int        `json:"decodedIndexCount"`
+	IndexCountMatchesLiterals bool       `json:"indexCountMatchesLiterals"`
 }
 type linkedReference struct {
 	TargetOrdinal int  `json:"targetOrdinal"`
@@ -73,6 +77,7 @@ type nodeShape struct {
 	SequenceComplete     bool              `json:"sequenceComplete"`
 	OnlyTopLevelChunks   bool              `json:"onlyTopLevelChunks"`
 	WireReferenceCount   int               `json:"wireReferenceCount"`
+	inlineChunks         []wireInlineChunk
 }
 type objectShape struct {
 	Ordinal            int               `json:"ordinal"`
@@ -154,6 +159,30 @@ func descriptor(data []byte) descriptorFlags {
 	return flags
 }
 
+// This QA predicate exposes no encoded values and changes no replay grammar.
+func canonicalIndexSequence(data []byte) (count int, oneBased, zeroBased bool) {
+	oneBased, zeroBased = len(data) > 0, len(data) > 0
+	for len(data) > 0 {
+		if count >= maxInspectedFields {
+			return 0, false, false
+		}
+		value, consumed := protowire.ConsumeVarint(data)
+		if consumed < 0 || consumed != protowire.SizeVarint(value) {
+			return 0, false, false
+		}
+		oneBased = oneBased && value == uint64(count+1)
+		zeroBased = zeroBased && value == uint64(count)
+		count++
+		data = data[consumed:]
+	}
+	return count, oneBased, zeroBased
+}
+
+type wireInlineChunk struct {
+	SHA256    string `json:"sha256"`
+	DataBytes int    `json:"dataBytes"`
+}
+
 func describeNode(data []byte) *nodeShape {
 	refs, err := xcodecache.NativeNodeReferences(data)
 	result := &nodeShape{Bytes: len(data), StrictAccepted: err == nil, Fields: []fieldShape{}, Descriptors: []descriptorFlags{}, Chunks: []chunkShape{}, OnlyTopLevelChunks: true}
@@ -199,12 +228,18 @@ func describeNode(data []byte) *nodeShape {
 				displayIndex := -1
 				if len(result.Chunks) < maxFields {
 					displayIndex = len(result.Chunks)
-					result.Chunks = append(result.Chunks, chunkShape{Field: chunk, IsSingleByteOne: len(payload) == 1 && payload[0] == 1, PayloadBytes: len(payload), AllBytesOne: allOne})
+					description := chunkShape{Field: chunk, IsSingleByteOne: len(payload) == 1 && payload[0] == 1, PayloadBytes: len(payload), AllBytesOne: allOne}
+					if chunk.Number == 2 {
+						description.DecodedIndexCount, description.CanonicalOneBased, description.CanonicalZeroBased = canonicalIndexSequence(payload)
+					}
+					result.Chunks = append(result.Chunks, description)
 				} else {
 					result.ChunksTruncated = true
 				}
 				if chunk.Number == 1 {
 					result.LiteralChunkCount++
+					sum := sha256.Sum256(payload)
+					result.inlineChunks = append(result.inlineChunks, wireInlineChunk{hex.EncodeToString(sum[:]), len(payload)})
 				} else {
 					result.MarkerCount++
 					markers = append(markers, marker{displayIndex, result.LiteralChunkCount, len(payload), count == 0})
@@ -234,6 +269,7 @@ func describeNode(data []byte) *nodeShape {
 			chunk.FollowingLiteralChunks = result.LiteralChunkCount - marker.literalsBefore
 			chunk.LeadingUniqueMarker = complete && marker.leading && len(markers) == 1
 			chunk.VectorCardinalityMatches = complete && marker.payloadBytes > 0 && marker.payloadBytes == chunk.FollowingLiteralChunks
+			chunk.IndexCountMatchesLiterals = complete && chunk.DecodedIndexCount > 0 && chunk.DecodedIndexCount == chunk.FollowingLiteralChunks
 		}
 	}
 	return result
@@ -503,11 +539,12 @@ func encodeReport(value report) ([]byte, error) {
 }
 
 type semanticTarget struct {
-	Ordinal                int    `json:"ordinal"`
-	NativeDigestHex        string `json:"nativeDigestHex"`
-	WireReferenceCount     int    `json:"wireReferenceCount"`
-	WireReferencesComplete bool   `json:"wireReferencesComplete"`
-	WireDataBytes          *int   `json:"wireDataBytes"`
+	Ordinal                int               `json:"ordinal"`
+	NativeDigestHex        string            `json:"nativeDigestHex"`
+	WireReferenceCount     int               `json:"wireReferenceCount"`
+	WireReferencesComplete bool              `json:"wireReferencesComplete"`
+	WireDataBytes          *int              `json:"wireDataBytes"`
+	WireInlineChunks       []wireInlineChunk `json:"wireInlineChunks"`
 }
 
 func privateManifestDirectory(info os.FileInfo) bool {
@@ -531,6 +568,7 @@ func writeSemanticManifest(path string, value report) error {
 		Project string           `json:"project"`
 		Targets []semanticTarget `json:"targets"`
 	}{1, "github.com/layercache/xcode-standalone-qa", []semanticTarget{}}
+	totalChunks, totalBytes := 0, 0
 	for index, object := range value.Objects {
 		if !object.ExpectedNativeNode {
 			continue
@@ -539,13 +577,27 @@ func writeSemanticManifest(path string, value report) error {
 		if len(digest) != 65 || object.Node == nil || object.Node.WireReferenceCount > maxInspectedFields {
 			return errors.New("fixture native digest or wire context unavailable")
 		}
-		manifest.Targets = append(manifest.Targets, semanticTarget{index + 1, hex.EncodeToString(digest), object.Node.WireReferenceCount, object.Node.SequenceComplete, nil})
+		var inline []wireInlineChunk
+		if object.Node.SequenceComplete && object.Node.OnlyTopLevelChunks {
+			inline = append([]wireInlineChunk{}, object.Node.inlineChunks...)
+			if len(inline) > maxInspectedFields || totalChunks+len(inline) > 1024 {
+				return errors.New("fixture inline comparison count unavailable")
+			}
+			for _, chunk := range inline {
+				if chunk.DataBytes > 64<<10 || chunk.DataBytes > maxReadBytes-totalBytes {
+					return errors.New("fixture inline comparison byte bound exceeded")
+				}
+				totalBytes += chunk.DataBytes
+			}
+			totalChunks += len(inline)
+		}
+		manifest.Targets = append(manifest.Targets, semanticTarget{index + 1, hex.EncodeToString(digest), object.Node.WireReferenceCount, object.Node.SequenceComplete, nil, inline})
 	}
 	if len(manifest.Targets) > maxRows {
 		return errors.New("fixture semantic target bound exceeded")
 	}
 	encoded, err := json.Marshal(manifest)
-	if err != nil || len(encoded) > 128<<10 {
+	if err != nil || len(encoded)+1 > 128<<10 {
 		return errors.New("fixture semantic manifest bound exceeded")
 	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)

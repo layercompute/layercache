@@ -182,7 +182,10 @@ _other:
                     self.assertEqual(arguments[arguments.index("--cas-path") + 1], plugin)
                     return json.dumps({"version": 1, "available": True, "reason": "available", "abi": {"major": 0, "minor": 1},
                         "workerStopped": True, "objects": [{"ordinal": 1, "available": False, "reason": "notFound", "dataBytes": None,
-                            "referenceCount": None, "wireReferenceCountMatches": None, "wireDataBytesMatches": None}]})
+                            "referenceCount": None, "wireReferenceCountMatches": None, "wireDataBytesMatches": None,
+                            "comparisonComplete": False, "referenceObjectsChecked": 0, "referenceDataBytes": 0,
+                            "inlineReferenceCountMatches": None, "inlineReferencesMatch": None,
+                            "inlineReferenceMultisetMatches": None, "referencedObjectsAreLeaves": None}]})
 
                 with mock.patch.object(fixture, "run", side_effect=run):
                     self.assertTrue(fixture.collect_producer_semantics(store))

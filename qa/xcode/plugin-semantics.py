@@ -13,7 +13,9 @@ This does not decode Apple's wire chunks. Counts cannot establish that a wire
 encoding has no indirect references. Never use this tool against a shared CAS.
 """
 import argparse
+from collections import Counter
 import ctypes as c
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,6 +30,9 @@ MAX_REPORT_BYTES = 128 << 10
 MAX_TARGETS = 256
 MAX_OBJECT_BYTES = 64 << 20
 MAX_REFERENCES = 100_000
+MAX_INLINE_CHUNKS = 256
+MAX_INLINE_BYTES = 64 << 10
+MAX_CHILD_LOADS = 1024
 REASONS = {"available", "invalidInput", "unsupportedABI", "missingSymbol", "loadUnavailable",
            "nativeError", "notFound", "bounds", "timeout", "workerFailed"}
 
@@ -88,9 +93,10 @@ def read_manifest(path, cas_path):
         info = current.lstat()
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
             raise ValueError("private fixture directory")
-    seen = set()
+    seen, inline_count, inline_bytes = set(), 0, 0
+    required = {"ordinal", "nativeDigestHex", "wireReferenceCount", "wireReferencesComplete", "wireDataBytes"}
     for target in targets:
-        if type(target) is not dict or set(target) != {"ordinal", "nativeDigestHex", "wireReferenceCount", "wireReferencesComplete", "wireDataBytes"}:
+        if type(target) is not dict or set(target) not in (required, required | {"wireInlineChunks"}):
             raise ValueError("target fields")
         ordinal, digest = target["ordinal"], target["nativeDigestHex"]
         if not integer(ordinal, 1, MAX_TARGETS) or ordinal in seen or type(digest) is not str or re.fullmatch(r"[0-9a-f]{130}", digest) is None:
@@ -100,6 +106,17 @@ def read_manifest(path, cas_path):
             raise ValueError("target refs")
         if target["wireDataBytes"] is not None and not integer(target["wireDataBytes"], 0, MAX_OBJECT_BYTES):
             raise ValueError("target data")
+        chunks = target.get("wireInlineChunks")
+        if chunks is not None:
+            if type(chunks) is not list or len(chunks) > MAX_INLINE_CHUNKS:
+                raise ValueError("inline bounds")
+            for chunk in chunks:
+                if type(chunk) is not dict or set(chunk) != {"sha256", "dataBytes"} or type(chunk["sha256"]) is not str or re.fullmatch(r"[0-9a-f]{64}", chunk["sha256"]) is None or not integer(chunk["dataBytes"], 0, MAX_INLINE_BYTES):
+                    raise ValueError("inline fields")
+                inline_count += 1
+                inline_bytes += chunk["dataBytes"]
+            if inline_count > MAX_CHILD_LOADS or inline_bytes > MAX_OBJECT_BYTES:
+                raise ValueError("inline total bounds")
     return targets
 
 
@@ -125,6 +142,7 @@ class NativeAPI:
         self.bind("llcas_loaded_object_get_data", Data, c.c_void_p, Loaded)
         self.bind("llcas_loaded_object_get_refs", Refs, c.c_void_p, Loaded)
         self.bind("llcas_object_refs_get_count", c.c_size_t, c.c_void_p, Refs)
+        self.bind("llcas_object_refs_get_id", ObjectID, c.c_void_p, Refs, c.c_size_t)
 
     def bind(self, name, result, *arguments):
         function = getattr(self.lib, name)
@@ -139,41 +157,93 @@ class NativeAPI:
             error.value = None
         return failed
 
-    def inspect(self, cas, target):
+    def load(self, cas, object_id):
+        error = c.c_void_p()
+        # No remote options are configured, and presence is restricted to local.
+        found = self.llcas_cas_contains_object(cas, object_id, False, c.byref(error))
+        if self.clear_error(error) or found not in (0, 1):
+            return None, "nativeError"
+        if found == 1:
+            return None, "notFound"
+        loaded = Loaded()
+        found = self.llcas_cas_load_object(cas, object_id, c.byref(loaded), c.byref(error))
+        if self.clear_error(error) or found not in (0, 1):
+            return None, "nativeError"
+        return (loaded, "available") if found == 0 else (None, "notFound")
+
+    def shape(self, cas, loaded, budget):
+        data = self.llcas_loaded_object_get_data(cas, loaded)
+        refs = self.llcas_loaded_object_get_refs(cas, loaded)
+        count = self.llcas_object_refs_get_count(cas, refs)
+        if data.size > MAX_OBJECT_BYTES or count > MAX_REFERENCES or (data.size and not data.data) or budget["bytes"] + data.size > MAX_OBJECT_BYTES:
+            return None
+        budget["bytes"] += data.size
+        return data, refs, count
+
+    def inspect(self, cas, target, budget):
         result = {"ordinal": target["ordinal"], "available": False, "reason": "nativeError",
                   "dataBytes": None, "referenceCount": None,
-                  "wireReferenceCountMatches": None, "wireDataBytesMatches": None}
+                  "wireReferenceCountMatches": None, "wireDataBytesMatches": None,
+                  "comparisonComplete": False, "referenceObjectsChecked": 0, "referenceDataBytes": 0,
+                  "inlineReferenceCountMatches": None, "inlineReferencesMatch": None, "inlineReferenceMultisetMatches": None, "referencedObjectsAreLeaves": None}
         raw = bytes.fromhex(target["nativeDigestHex"])
         storage = (c.c_uint8 * len(raw)).from_buffer_copy(raw)
         error, object_id = c.c_void_p(), ObjectID()
         failed = self.llcas_cas_get_objectid(cas, Digest(storage, len(raw)), c.byref(object_id), c.byref(error))
         if self.clear_error(error) or failed:
             return result
-        # Restrict lookup to the existing local fixture; no remote option is set.
-        found = self.llcas_cas_contains_object(cas, object_id, False, c.byref(error))
-        if self.clear_error(error) or found not in (0, 1):
+        loaded, result["reason"] = self.load(cas, object_id)
+        if loaded is None:
             return result
-        if found == 1:
-            result["reason"] = "notFound"
-            return result
-        loaded = Loaded()
-        found = self.llcas_cas_load_object(cas, object_id, c.byref(loaded), c.byref(error))
-        if self.clear_error(error) or found not in (0, 1):
-            return result
-        if found == 1:
-            result["reason"] = "notFound"
-            return result
-        data = self.llcas_loaded_object_get_data(cas, loaded)
-        refs = self.llcas_loaded_object_get_refs(cas, loaded)
-        count = self.llcas_object_refs_get_count(cas, refs)
-        if data.size > MAX_OBJECT_BYTES or count > MAX_REFERENCES or (data.size and not data.data):
+        shape = self.shape(cas, loaded, budget)
+        if shape is None:
             result["reason"] = "bounds"
             return result
+        data, refs, count = shape
         result.update(available=True, reason="available", dataBytes=data.size, referenceCount=count)
         if target["wireReferencesComplete"]:
             result["wireReferenceCountMatches"] = count == target["wireReferenceCount"]
         if target["wireDataBytes"] is not None:
             result["wireDataBytesMatches"] = data.size == target["wireDataBytes"]
+        expected = target.get("wireInlineChunks")
+        if expected is None:
+            return result
+        result["inlineReferenceCountMatches"] = count == len(expected)
+        if count != len(expected):
+            result["inlineReferencesMatch"] = False
+            return result
+        matches, leaves, observed = True, True, Counter()
+        for index, chunk in enumerate(expected):
+            if budget["children"] >= MAX_CHILD_LOADS:
+                result.update(available=False, reason="bounds")
+                return result
+            budget["children"] += 1
+            child_id = self.llcas_object_refs_get_id(cas, refs, index)
+            child, reason = self.load(cas, child_id)
+            if child is None:
+                result.update(available=False, reason=reason)
+                return result
+            shape = self.shape(cas, child, budget)
+            if shape is None:
+                result.update(available=False, reason="bounds")
+                return result
+            child_data, _, child_count = shape
+            if child_data.size > MAX_INLINE_BYTES:
+                result.update(available=False, reason="bounds")
+                return result
+            result["referenceObjectsChecked"] += 1
+            result["referenceDataBytes"] += child_data.size
+            leaves = leaves and child_count == 0
+            digest = None
+            if child_data.size <= MAX_INLINE_BYTES:
+                # Copy at most one bounded inline leaf into temporary memory.
+                # Neither its bytes nor this private comparison hash is output.
+                digest = hashlib.sha256(c.string_at(child_data.data, child_data.size)).hexdigest()
+                observed[(child_data.size, digest)] += 1
+            matches = matches and child_data.size == chunk["dataBytes"] and digest == chunk["sha256"]
+        expected_counts = Counter((chunk["dataBytes"], chunk["sha256"]) for chunk in expected)
+        result.update(comparisonComplete=True, inlineReferencesMatch=matches,
+                      inlineReferenceMultisetMatches=observed == expected_counts, referencedObjectsAreLeaves=leaves)
         return result
 
 
@@ -191,13 +261,10 @@ def worker(plugin, cas_path, targets):
         cas = api.llcas_cas_create(options, c.byref(error))
         if api.clear_error(error) or not cas:
             return unavailable("nativeError", api.abi)
-        objects, total_bytes = [], 0
+        objects, budget = [], {"bytes": 0, "children": 0}
         for target in targets:
-            item = api.inspect(cas, target)
+            item = api.inspect(cas, target, budget)
             if item["reason"] == "bounds":
-                return unavailable("bounds", api.abi)
-            total_bytes += item["dataBytes"] or 0
-            if total_bytes > MAX_OBJECT_BYTES:
                 return unavailable("bounds", api.abi)
             objects.append(item)
         return {"version": 1, "available": True, "reason": "available", "abi": api.abi, "objects": objects, "workerStopped": False}
@@ -216,14 +283,16 @@ def valid_report(result):
     if type(result["objects"]) is not list or len(result["objects"]) > MAX_TARGETS:
         return False
     for item in result["objects"]:
-        if type(item) is not dict or set(item) != {"ordinal", "available", "reason", "dataBytes", "referenceCount", "wireReferenceCountMatches", "wireDataBytesMatches"}:
+        if type(item) is not dict or set(item) != {"ordinal", "available", "reason", "dataBytes", "referenceCount", "wireReferenceCountMatches", "wireDataBytesMatches", "comparisonComplete", "referenceObjectsChecked", "referenceDataBytes", "inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves"}:
             return False
         if not integer(item["ordinal"], 1, MAX_TARGETS) or type(item["available"]) is not bool or item["reason"] not in REASONS:
+            return False
+        if type(item["comparisonComplete"]) is not bool or not integer(item["referenceObjectsChecked"], 0, MAX_CHILD_LOADS) or not integer(item["referenceDataBytes"], 0, MAX_OBJECT_BYTES):
             return False
         for key, maximum in (("dataBytes", MAX_OBJECT_BYTES), ("referenceCount", MAX_REFERENCES)):
             if item[key] is not None and not integer(item[key], 0, maximum):
                 return False
-        for key in ("wireReferenceCountMatches", "wireDataBytesMatches"):
+        for key in ("wireReferenceCountMatches", "wireDataBytesMatches", "inlineReferenceCountMatches", "inlineReferencesMatch", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves"):
             if item[key] is not None and type(item[key]) is not bool:
                 return False
     return True

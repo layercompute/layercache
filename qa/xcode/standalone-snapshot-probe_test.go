@@ -368,8 +368,12 @@ func TestSemanticManifestIsPrivateBoundedAndAbsentFromPublicShape(t *testing.T) 
 	if item.Ordinal != 1 || item.NativeDigestHex != strings.Repeat("0", 130) || item.WireReferenceCount != 0 || !item.WireReferencesComplete || item.WireDataBytes != nil {
 		t.Fatalf("unexpected private semantic target: %+v", item)
 	}
+	inlineSum := sha256.Sum256([]byte("private semantic data"))
+	if len(item.WireInlineChunks) != 1 || item.WireInlineChunks[0].SHA256 != hex.EncodeToString(inlineSum[:]) || item.WireInlineChunks[0].DataBytes != len("private semantic data") {
+		t.Fatal("private inline manifest hashes/sizes differ from exact literal bytes")
+	}
 	public, err := encodeReport(value)
-	if err != nil || bytes.Contains(public, []byte(item.NativeDigestHex)) || bytes.Contains(public, []byte("private semantic data")) {
+	if err != nil || bytes.Contains(public, []byte(item.NativeDigestHex)) || bytes.Contains(public, []byte("private semantic data")) || bytes.Contains(public, []byte(item.WireInlineChunks[0].SHA256)) {
 		t.Fatal("private digest/SDK bytes escaped public report")
 	}
 	if err := writeSemanticManifest(path, value); err == nil {
@@ -390,6 +394,48 @@ func TestSemanticManifestIsPrivateBoundedAndAbsentFromPublicShape(t *testing.T) 
 	}
 	if err := writeSemanticManifest(filepath.Join(parent, "not-private.json"), value); err == nil {
 		t.Fatal("manifest accepted a shared parent")
+	}
+}
+
+func TestCanonicalIndexPredicatesNeverPublishValuesOrWidenGrammar(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		data      []byte
+		count     int
+		one, zero bool
+	}{
+		{"one based", []byte{1, 2, 3}, 3, true, false},
+		{"zero based", []byte{0, 1, 2}, 3, false, true},
+		{"reordered", []byte{1, 3, 2}, 3, false, false},
+		{"repeated", []byte{1, 1, 1}, 3, false, false},
+		{"overlong", []byte{0x81, 0}, 0, false, false},
+		{"truncated", []byte{0x80}, 0, false, false},
+		{"empty", nil, 0, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			count, one, zero := canonicalIndexSequence(test.data)
+			if count != test.count || one != test.one || zero != test.zero {
+				t.Fatalf("unexpected private index predicates: %d %t %t", count, one, zero)
+			}
+		})
+	}
+	var indexes []byte
+	for index := uint64(1); index <= 130; index++ {
+		indexes = protowire.AppendVarint(indexes, index)
+	}
+	node := wireBytes(1, wireBytes(2, indexes))
+	for index := 0; index < 130; index++ {
+		node = append(node, wireBytes(1, wireBytes(1, []byte("private inline SDK literal")))...)
+	}
+	shape := describeNode(node)
+	marker := shape.Chunks[0]
+	if shape.StrictAccepted || !shape.SequenceComplete || !marker.CanonicalOneBased || marker.CanonicalZeroBased || marker.DecodedIndexCount != 130 || !marker.IndexCountMatchesLiterals || marker.VectorCardinalityMatches {
+		t.Fatal("canonical multi-byte indices were confused with byte-count cardinality or accepted by production parser")
+	}
+	output, err := encodeReport(report{Objects: []objectShape{{Kind: "cas", Node: shape}}})
+	literalSum := sha256.Sum256([]byte("private inline SDK literal"))
+	if err != nil || bytes.Contains(output, []byte("private inline SDK literal")) || bytes.Contains(output, []byte(hex.EncodeToString(literalSum[:]))) {
+		t.Fatal("private literal data/hash escaped index predicates")
 	}
 }
 

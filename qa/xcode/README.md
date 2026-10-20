@@ -157,3 +157,19 @@ provides an OSS example of using that interface under its
 The probe reads semantic sizes and reference counts rather than guessing an
 encoding from opaque SDK bytes. Its fake-C ABI, privacy and timeout controls run
 in the existing Linux build job; only the Mac job can qualify Apple's library.
+
+A further bounded semantic comparison can load each declared native object's
+children and privately compare its data size and SHA256 with the corresponding
+inline literal chunk. The private manifest contains those hashes in wire order;
+public output contains only counts and match/leaf booleans. A missing child,
+non-leaf child, count mismatch or incomplete manifest is explicit. The comparison
+is limited to 256 children per target, 1,024 overall, 64 KiB per child and a shared
+64 MiB byte budget. Canonical one-based index-sequence predicates are separate
+from the parser verdict. Equal vector byte lengths alone do not establish an
+index format or semantic mapping.
+
+The older `wireReferenceCountMatches` compares outer wire references with the
+compiler API's semantic child count. A difference can reflect inline children;
+it does not establish that a remote object is missing. Inspect the separate
+complete inline mapping and leaf results before interpreting graph coverage.
+These fixture observations do not widen the production parser by themselves.
