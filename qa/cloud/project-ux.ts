@@ -1,5 +1,6 @@
 // Exercise page hierarchy, browser navigation and in-place updates against the
 // shipped portal bundle. The synthetic metrics qualify presentation only.
+// QA_PROJECT_NATIVE_FAILURE_ONLY=1 selects the mixed-report and outage controls.
 import {chromium, firefox, webkit, expect} from '@playwright/test';
 import assert from 'node:assert/strict';
 import {createServer, type ServerResponse} from 'node:http';
@@ -35,7 +36,7 @@ const xcode:NativeIntegrationReport={...nativeReport('xcode'),counters:{rpc:{act
 assert.ok(baseSnapshot.cache.report);baseSnapshot.cache.report.nativeReports=[gradle,xcode];
 let origin='';
 const snapshots:{project:string;period:string;method:string}[]=[],held:{response:ServerResponse;period:string}[]=[];
-let hold=false,capacityBytes=5*1024**3,failNextCapacityWrite=false,capacityCanChange=true,largeInfrastructure=false,signedIn=true,alternateAccount=false,completeCompiler=false;
+let hold=false,capacityBytes=5*1024**3,failNextCapacityWrite=false,capacityCanChange=true,largeInfrastructure=false,signedIn=true,alternateAccount=false,completeCompiler=false,mixedTimedTurbo=false,nativeReportsUnavailable=false;
 const capacityChanges:unknown[]=[],mutations:{method:string;path:string}[]=[];
 function capacity(){return {state:'connected',maxBytes:capacityBytes,usedBytes:512*1024**2,reservedBytes:0,retainedBytes:0,retainedStagingBytes:0,softTargetBytes:1024**3,minimumBytes:1024**3,ceilingBytes:5*1024**3,canChange:capacityCanChange,limitSource:'operator',...(capacityCanChange?{}:{reason:'An administrator can adjust this limit.'})};}
 function json(response:ServerResponse,value:unknown,status=200){if(response.destroyed)return;response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(value));}
@@ -55,6 +56,8 @@ function snapshot(period:string){
   report.activity=[{from:'2026-10-13T12:00:00Z',to:observedAt,runs:4,eligible:10,hits:8,misses:2}];
   if(largeInfrastructure){assert.ok(data.executions);data.executions.jobs=Array.from({length:45},(_,index)=>entry(`large-job-${index}`,`github-actions:123:${1000+index}:1:${2000+index}`,'githubActions'));}
  }
+ if(mixedTimedTurbo){report.eligible=4;report.hits=2;report.misses=2;report.runs=1;report.integrations=[{integration:'turbo',eligible:4,hits:2,grossAvoidedTaskTime:{milliseconds:180000,known:2,total:2,confidence:'high'}}];report.grossAvoidedTaskTime={milliseconds:180000,known:2,total:2,confidence:'high'};report.netEstimatedBuildTimeSaved={milliseconds:120000,known:1,total:1,confidence:'high'};report.nativeReports=[structuredClone(xcode)];}
+ if(nativeReportsUnavailable){report.nativeReportsUnavailable=true;delete report.nativeReports;}
  return data;
 }
 const server=createServer(async(request,response)=>{
@@ -86,13 +89,15 @@ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const add
 const browser=await {chromium,firefox,webkit}[engine].launch({headless:true,...(engine==='chromium'?{executablePath:process.env.CHROMIUM_PATH||undefined,args:['--no-sandbox']}:{})});
 const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
 const errors:string[]=[],results:{name:string;passed:boolean;error?:string}[]=[];
+const nativeFailureOnly=process.env.QA_PROJECT_NATIVE_FAILURE_ONLY==='1',focusedChecks=new Set(['mixed timed Turbo and Xcode evidence preserves the scoped generic build estimate','native reporting outage preserves generic metrics without claiming absent native use','no browser exceptions']);
 page.on('pageerror',error=>errors.push(error.message));
 await page.addInitScript(()=>{window.uxDocument=crypto.randomUUID();});
-async function check(name:string,run:()=>Promise<void>){try{await run();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error instanceof Error?error.message:String(error)});await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true});throw error;}}
+async function check(name:string,run:()=>Promise<void>){if(nativeFailureOnly&&!focusedChecks.has(name))return;try{await run();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error instanceof Error?error.message:String(error)});await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true});throw error;}}
 const summary=()=>page.getByRole('region',{name:'Project overview',exact:true});
 const metric=(name:string)=>summary().locator(`[data-metric="${name}"] .stat-value`);
 async function navigate(name:'Overview'|'Activity'|'Infrastructure'|'Storage'|'Settings'){await page.getByRole('navigation',{name:'Project pages'}).getByRole('link',{name,exact:true}).click();await page.waitForURL(url=>url.pathname.endsWith('/'+name.toLowerCase()));}
 try{
+ if(nativeFailureOnly){await page.goto(origin+'/projects/phone/overview?period=7d');await summary().waitFor();}
  await check('entry opens its default project with cache metrics above setup and inventory',async()=>{
   await page.goto(origin);await summary().waitFor();await expect(metric('hit-rate')).toHaveText('70%');
   assert.equal(new URL(page.url()).pathname,'/projects/phone/overview');
@@ -236,6 +241,24 @@ try{
   const savings=page.getByRole('region',{name:'Savings evidence',exact:true});assert.match(await savings.innerText(),/CPU-hours saved[\s\S]*Not measured/);assert.match(await savings.innerText(),/Compute cost saved[\s\S]*Not measured/);
   await navigate('Overview');await expect(metric('hit-rate')).toHaveText('80%');completeCompiler=false;
  });
+ await check('mixed timed Turbo and Xcode evidence preserves the scoped generic build estimate',async()=>{
+  mixedTimedTurbo=true;await navigate('Overview');await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(metric('time-saved')).toHaveText('2.0 min');await expect(metric('hit-rate')).toHaveText('50%');
+  assert.match(await summary().locator('[data-metric="time-saved"] .stat-detail').innerText(),/1 of 1 outcomes timed[\s\S]*Turbo, Actions and BuildKit reported graphs/);
+  await navigate('Activity');const savings=page.getByRole('region',{name:'Savings evidence',exact:true});assert.match(await savings.innerText(),/Estimated build time saved[\s\S]*Turbo, Actions and BuildKit reported graphs[\s\S]*2\.0 min/);
+  const xcode=page.getByRole('table',{name:'Xcode protocol activity',exact:true});assert.deepEqual(await xcode.locator('tbody tr').first().locator('td').allTextContents(),['12','9','2']);
+  assert.match(await savings.innerText(),/Native Gradle and Xcode reports are shown separately/);assert.match(await savings.innerText(),/CPU-hours saved[\s\S]*Not measured/);
+ });
+ await check('native reporting outage preserves generic metrics without claiming absent native use',async()=>{
+  nativeReportsUnavailable=true;await navigate('Overview');await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(metric('time-saved')).toHaveText('2.0 min');await expect(metric('hit-rate')).toHaveText('50%');
+  const types=page.getByRole('region',{name:'Cache by type',exact:true});await expect(types.getByText('Native reporting is unavailable. Turbo, Actions and BuildKit data is still shown.',{exact:true})).toBeVisible();
+  const details=types.locator('details.integration-coverage');await details.locator(':scope > summary').click();
+  for(const id of ['gradle','xcode']){const row=details.getByRole('table',{name:'Reporting coverage',exact:true}).locator(`tr[data-integration="${id}"]`);assert.match(await row.innerText(),/Reporting unavailable[\s\S]*could not be read[\s\S]*Refresh project activity/);assert.doesNotMatch(await row.innerText(),/No reports this period/);}
+  await navigate('Activity');const table=page.getByRole('table',{name:'Cache by type',exact:true});
+  for(const id of ['gradle','xcode']){const row=table.locator(`tr[data-integration="${id}"]`);assert.match(await row.innerText(),/Reporting unavailable[\s\S]*Not measured/);assert.equal(await row.getByRole('progressbar').count(),0);}
+  assert.match(await table.locator('tr[data-integration="turbo"]').innerText(),/50%[\s\S]*2 \/ 4/);assert.equal(await page.getByRole('region',{name:'Native outcome evidence',exact:true}).count(),0);assert.equal(await page.getByRole('region',{name:'Xcode protocol and compiler evidence',exact:true}).count(),0);
+  const savings=page.getByRole('region',{name:'Savings evidence',exact:true});assert.match(await savings.innerText(),/Estimated build time saved[\s\S]*Turbo, Actions and BuildKit reported graphs[\s\S]*2\.0 min/);
+  mixedTimedTurbo=false;nativeReportsUnavailable=false;await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.getByRole('region',{name:'Team Cache',exact:true}).getByText('80%',{exact:true})).toBeVisible();
+ });
  await check('a shorter report at the top removes the previous full-page height',async()=>{
   largeInfrastructure=true;await navigate('Infrastructure');await page.locator('.page-content:not([aria-busy="true"])').waitFor();
   assert.equal(await page.locator('.infra-run').count(),45);await page.evaluate(()=>scrollTo(0,0));
@@ -323,4 +346,4 @@ try{
  });
  await check('no browser exceptions',async()=>assert.deepEqual(errors,[]));
 }catch(error){console.error(error);process.exitCode=1;}
-finally{writeFileSync(path.join(output,'results.json'),JSON.stringify({browser:engine,results,pageErrors:errors,syntheticAPIs:true},null,2)+'\n');console.log(JSON.stringify({browser:engine,projectUXPassed:results.filter(result=>result.passed).length,projectUXTotal:results.length,output}));await context.close();await browser.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+finally{if(nativeFailureOnly&&results.length!==focusedChecks.size){results.push({name:'focused native failure checks completed',passed:false,error:'Unexpected focused check count'});process.exitCode=1;}writeFileSync(path.join(output,'results.json'),JSON.stringify({browser:engine,results,pageErrors:errors,syntheticAPIs:true},null,2)+'\n');console.log(JSON.stringify({browser:engine,projectUXPassed:results.filter(result=>result.passed).length,projectUXTotal:results.length,output}));await context.close();await browser.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}

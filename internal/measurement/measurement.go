@@ -201,6 +201,7 @@ type PeriodReport struct {
 	TopArtifactsTruncated      bool                      `json:"topArtifactsTruncated"`
 	Activity                   []ActivityBucket          `json:"activity"`
 	NativeReports              []NativeIntegrationReport `json:"nativeReports,omitempty"`
+	NativeReportsUnavailable   bool                      `json:"nativeReportsUnavailable,omitempty"`
 }
 
 type HistoricalWork struct {

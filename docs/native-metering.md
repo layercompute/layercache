@@ -88,6 +88,13 @@ negative. These sums can overlap across parallel tasks: they are neither
 critical-path savings nor measured CPU consumption. Native graph coverage is
 currently unavailable, so native build-time savings remain unknown.
 
+Archives published before native instrumentation do not acquire historical
+producer timings retroactively. A later duplicate upload cannot replace that
+missing origin. Manual report imports have their own observation authority;
+they do not impersonate a different producing run to recover its transport
+provenance. Native outcome counts can still be useful when those joins are
+unavailable.
+
 When available, the first publication freezes the original execution's recent
 resource sample. The lookup requires exact primary execution authority, not an
 alias, a physical-host guess or the latest inventory row. A later reader cannot
@@ -161,11 +168,20 @@ admits at most 4,096 receipts, 65,536 task rows and 32 MiB of canonical report
 documents. Optional transport provenance separately admits 65,536 rows and
 32 MiB of documents. Capacity refusals affect reporting coverage, not cache
 publication or native execution. Reports must describe a completed
-invocation within the preceding 24 hours. History outside retention and known quota-related admission gaps are marked
-incomplete. Cache transport provenance uses an optional 100 ms recording budget
+invocation within the preceding 24 hours. History outside retention and known
+quota-related admission gaps are marked incomplete. Loss markers use bounded
+daily ranges for the affected workload timestamps; gaps within one marked day's
+range remain conservative. A later refusal does not mark an earlier unrelated
+period incomplete. Cache transport provenance uses an optional 100 ms recording budget
 and indexed quota counters; missing evidence leaves source or timing unknown.
 Optional reporting never promises artifact retention or future
 availability. Required transfers continue to use the retained-artifact contract.
+
+If native reporting cannot be read, the endpoint preserves available generic
+outcomes and graph estimates and sets `nativeReportsUnavailable: true`.
+Gradle/Xcode coverage then says reporting is unavailable rather than implying
+zero work. Generic Turbo, Actions and BuildKit estimates retain their own scope;
+native evidence neither erases them nor qualifies whole-project savings.
 
 ## Coverage audit
 

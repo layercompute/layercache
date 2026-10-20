@@ -43,6 +43,7 @@ export type Report = {
   sources?: {source: string; hits: number; downloadedBytes: number; uploadedBytes: number}[] | null;
   integrations: IntegrationReport[] | null;
   nativeReports?: NativeIntegrationReport[];
+  nativeReportsUnavailable?: boolean;
   topArtifacts?: ArtifactReport[]; topArtifactsTruncated?: boolean; activity?: ActivityBucket[];
 };
 export type Cache = {
@@ -120,17 +121,19 @@ function sourceTable(report: Report, scope: Scope): HTMLElement {
 }
 
 function nativeResults(cache: Cache, scope: Scope): HTMLElement | null {
-  const insights = projectInsights(cache).integrations.filter(item => item.nativeReport);
+  const unavailable = cache.report?.nativeReportsUnavailable === true;
+  const insights = projectInsights(cache).integrations.filter(item => item.nativeReport || unavailable && (item.id === 'gradle' || item.id === 'xcode'));
   if (!insights.length) return null;
   const details = el('details', 'native-results integration-coverage execution-details'); details.setAttribute('aria-label', 'Native cache results');
-  details.append(el('summary', '', `Native cache results · ${insights.length} integrations`));
+  details.append(el('summary', '', unavailable ? 'Native reporting unavailable' : `Native cache results · ${insights.length} integrations`));
   const number = (value: number | null) => value === null ? 'Unknown' : value.toLocaleString();
   const rate = (value: number | null) => value === null ? 'Not measured' : `${Math.round(value * 100)}%`;
   for (const item of insights) {
-    const report = item.nativeReport; if (!report) continue;
+    const report = item.nativeReport;
     const section = el('section', 'source-usage'); section.dataset.integration = item.id;
     section.setAttribute('aria-label', `${integrationLabel(item.id)} native results`);
-    section.append(el('h4', '', `${item.name} · ${item.coverage.label}`), el('p', 'coverage-note', `${number(report.reportedInvocations)} reported invocations. ${item.coverage.reason}`));
+    section.append(el('h4', '', `${item.name} · ${item.coverage.label}`), el('p', 'coverage-note', `${report ? `${number(report.reportedInvocations)} reported invocations. ` : ''}${item.coverage.reason}`));
+    if (!report) {section.append(el('p', 'coverage-note', item.coverage.action));details.append(section);continue;}
     if (item.id === 'gradle') {
       section.append(el('p', 'coverage-note', `${number(report.outcomes.fromCache)} native task cache hits · ${rate(report.hitRate)} eligible-task hit rate · ${number(report.knownEligible)} known eligible tasks · ${number(report.eligibilityUnknown)} outcomes with unknown eligibility.`));
       section.append(el('p', 'coverage-note', `Executed ${number(report.outcomes.executed)} · FROM-CACHE ${number(report.outcomes.fromCache)} · Up to date ${number(report.outcomes.upToDate)} · No source ${number(report.outcomes.noSource)} · Skipped ${number(report.outcomes.skipped)} · Failed ${number(report.outcomes.failed)} · Unknown ${number(report.outcomes.unknown)}.`));
@@ -198,7 +201,7 @@ export function renderCache(name: string, cache: Cache, options: CacheOptions = 
   stats.append(storage, metric('Reported cache hit rate', report && report.eligible > 0 ? `${Math.round(report.hits / report.eligible * 100)}%` : 'Unknown', report ? (report.eligible > 0 ? `${report.hits.toLocaleString()} hits / ${report.eligible.toLocaleString()} eligible · ${report.misses.toLocaleString()} misses` : 'No eligible outcomes in this period') + ' · Turbo, Actions and BuildKit coverage' : cache.reportState === 'authentication-required' ? 'Sign in again to read reports' : 'Report unavailable'));
   node.append(stats);
   const metrics = el('div', 'metrics'), estimate = report?.netEstimatedBuildTimeSaved;
-  metrics.append(metric('Stored artifacts', status.artifacts.toLocaleString(), `${status.evictionPolicy || 'Unknown'} eviction policy`), metric('Net estimated time saved', estimate && estimate.total > 0 ? duration(estimate.milliseconds) : 'Unknown', estimate && estimate.total > 0 ? `${estimate.known}/${estimate.total} known · ${estimate.confidence} confidence` : 'Timing evidence unavailable')); node.append(metrics);
+  metrics.append(metric('Stored artifacts', status.artifacts.toLocaleString(), `${status.evictionPolicy || 'Unknown'} eviction policy`), metric('Net estimated time saved', estimate && estimate.total > 0 ? duration(estimate.milliseconds) : 'Unknown', (estimate && estimate.total > 0 ? `${estimate.known}/${estimate.total} known · ${estimate.confidence} confidence` : 'Timing evidence unavailable') + ' · Turbo, Actions and BuildKit reported graphs')); node.append(metrics);
   const storageDetail: string[] = [];
   if (status.entries !== undefined) storageDetail.push(`${status.entries.toLocaleString()} entries`);
   if (status.metadataBytes !== undefined) storageDetail.push(`${bytes(status.metadataBytes)} logical metadata`);

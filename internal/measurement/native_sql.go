@@ -89,7 +89,11 @@ func newNativeSQLRepository(ctx context.Context, db *sql.DB, dialect, project st
 	}
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS layercache_native_locks_v1 (project_id TEXT PRIMARY KEY, revision BIGINT NOT NULL DEFAULT 0)`,
-		`CREATE TABLE IF NOT EXISTS layercache_native_coverage_v1 (project_id TEXT PRIMARY KEY, lost_at BIGINT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS layercache_native_coverage_days_v1 (
+			project_id TEXT NOT NULL,
+			integration TEXT NOT NULL CHECK(integration IN ('gradle','xcode')),
+			day_start BIGINT NOT NULL, first_lost_at BIGINT NOT NULL, last_lost_at BIGINT NOT NULL,
+			PRIMARY KEY(project_id,integration,day_start), CHECK(first_lost_at<=last_lost_at))`,
 		`CREATE TABLE IF NOT EXISTS layercache_native_reports_v1 (
 			project_id TEXT NOT NULL, receipt_id TEXT NOT NULL,
 			run_id TEXT NOT NULL, workspace_id TEXT NOT NULL, integration TEXT NOT NULL,
@@ -248,6 +252,7 @@ func (r *nativeSQLRepository) expire(ctx context.Context, tx *sql.Tx, now time.T
 	}{
 		{`DELETE FROM layercache_native_tasks_v1 WHERE project_id=? AND receipt_id IN (SELECT receipt_id FROM layercache_native_reports_v1 WHERE project_id=? AND received_at<?)`, []any{r.project, r.project, cutoff}},
 		{`DELETE FROM layercache_native_reports_v1 WHERE project_id=? AND received_at<?`, []any{r.project, cutoff}},
+		{`DELETE FROM layercache_native_coverage_days_v1 WHERE project_id=? AND day_start<?`, []any{r.project, nativeCoverageDay(now).AddDate(0, 0, -NativeRetentionDays).UnixNano()}},
 	} {
 		if _, err := tx.ExecContext(ctx, r.query(item.query), item.args...); err != nil {
 			return nativeSQLError()
@@ -280,11 +285,18 @@ func (r *nativeSQLRepository) expire(ctx context.Context, tx *sql.Tx, now time.T
 	return nil
 }
 
-// Admission loss must remain visible even though the rejected report is not
-// stored. One timestamp per project bounds this diagnostic independently of
-// report/transport capacity; exact replays and invalid payloads never set it.
-func (r *nativeSQLRepository) refuseQuota(ctx context.Context, tx *sql.Tx, now time.Time) error {
-	if _, err := tx.ExecContext(ctx, r.query(`INSERT INTO layercache_native_coverage_v1(project_id,lost_at) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET lost_at=CASE WHEN excluded.lost_at>layercache_native_coverage_v1.lost_at THEN excluded.lost_at ELSE layercache_native_coverage_v1.lost_at END`), r.project, now.UnixNano()); err != nil {
+func nativeCoverageDay(at time.Time) time.Time { return at.UTC().Truncate(24 * time.Hour) }
+
+// Loss is scoped to the workload time and integration, not the report's upload
+// time. Each UTC day retains a min/max range; gaps inside that range remain
+// conservatively incomplete. At most 31 days per fixed integration are kept.
+// Exact replays, conflicts and invalid payloads never create loss evidence.
+func (r *nativeSQLRepository) refuseQuota(ctx context.Context, tx *sql.Tx, integration Integration, workloadAt time.Time) error {
+	at := workloadAt.UnixNano()
+	if _, err := tx.ExecContext(ctx, r.query(`INSERT INTO layercache_native_coverage_days_v1(project_id,integration,day_start,first_lost_at,last_lost_at) VALUES(?,?,?,?,?) ON CONFLICT(project_id,integration,day_start) DO UPDATE SET first_lost_at=CASE WHEN excluded.first_lost_at<layercache_native_coverage_days_v1.first_lost_at THEN excluded.first_lost_at ELSE layercache_native_coverage_days_v1.first_lost_at END,last_lost_at=CASE WHEN excluded.last_lost_at>layercache_native_coverage_days_v1.last_lost_at THEN excluded.last_lost_at ELSE layercache_native_coverage_days_v1.last_lost_at END`), r.project, string(integration), nativeCoverageDay(workloadAt).UnixNano(), at, at); err != nil {
+		return nativeSQLError()
+	}
+	if _, err := tx.ExecContext(ctx, r.query(`DELETE FROM layercache_native_coverage_days_v1 WHERE project_id=? AND integration=? AND day_start NOT IN (SELECT day_start FROM layercache_native_coverage_days_v1 WHERE project_id=? AND integration=? ORDER BY day_start DESC LIMIT ?)`), r.project, string(integration), r.project, string(integration), NativeRetentionDays+1); err != nil {
 		return nativeSQLError()
 	}
 	if err := tx.Commit(); err != nil {
@@ -336,7 +348,7 @@ func (r *nativeSQLRepository) RecordTransport(ctx context.Context, evidence Nati
 		return nativeSQLError()
 	}
 	if count >= nativeMaximumTransport || int64(len(document)) > nativeMaximumDocuments-documentBytes {
-		return r.refuseQuota(ctx, tx, now)
+		return r.refuseQuota(ctx, tx, evidence.Authority.Integration, evidence.FinishedAt)
 	}
 	if _, err = tx.ExecContext(ctx, r.query(`INSERT INTO layercache_native_transport_v1(project_id,transport_id,received_at,document_json) VALUES(?,?,?,?)`), r.project, id, now.UnixNano(), string(document)); err != nil {
 		return nativeSQLError()
@@ -432,7 +444,7 @@ func (r *nativeSQLRepository) RecordReport(ctx context.Context, authority Native
 		return NativeReceipt{}, nativeSQLError()
 	}
 	if reports >= nativeMaximumReports || tasks+int64(len(report.Tasks)) > nativeMaximumStoredTasks || int64(len(canonical)) > nativeMaximumDocuments-documents || invocations >= NativeMaximumInvocations {
-		return NativeReceipt{}, r.refuseQuota(ctx, tx, now)
+		return NativeReceipt{}, r.refuseQuota(ctx, tx, authority.Integration, report.StartedAt)
 	}
 	if _, err = tx.ExecContext(ctx, r.query(`INSERT INTO layercache_native_reports_v1(project_id,receipt_id,run_id,workspace_id,integration,invocation_id,authority_json,report_sha256,document_json,started_at,received_at,charged_bytes,task_count) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`), r.project, id, authority.RunID, authority.WorkspaceID, string(authority.Integration), report.InvocationID, string(authorityDocument), sha, string(document), report.StartedAt.UnixNano(), now.UnixNano(), len(canonical), len(stored.Tasks)); err != nil {
 		return NativeReceipt{}, nativeSQLError()
@@ -465,17 +477,32 @@ func (r *nativeSQLRepository) PeriodReport(ctx context.Context, from, to time.Ti
 	if err != nil {
 		return nil, err
 	}
-	var lostAt int64
-	err = tx.QueryRowContext(ctx, r.query(`SELECT lost_at FROM layercache_native_coverage_v1 WHERE project_id=?`), r.project).Scan(&lostAt)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	losses := map[Integration]bool{}
+	rows, err := tx.QueryContext(ctx, r.query(`SELECT DISTINCT integration FROM layercache_native_coverage_days_v1 WHERE project_id=? AND first_lost_at<? AND last_lost_at>=? AND day_start>=?`), r.project, to.UnixNano(), from.UnixNano(), nativeCoverageDay(time.Now().UTC()).AddDate(0, 0, -NativeRetentionDays).UnixNano())
+	if err != nil {
+		return nil, nativeSQLError()
+	}
+	for rows.Next() {
+		var integration Integration
+		if err = rows.Scan(&integration); err != nil {
+			rows.Close()
+			return nil, nativeSQLError()
+		}
+		losses[integration] = true
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, nativeSQLError()
+	}
+	if err = rows.Close(); err != nil {
 		return nil, nativeSQLError()
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, nativeSQLError()
 	}
 	result := projectNativeReports(reports, transports, from, to)
-	if lostAt >= time.Now().UTC().Add(-NativeRetentionDays*24*time.Hour).UnixNano() {
-		for index := range result {
+	for index := range result {
+		if losses[result[index].Integration] {
 			result[index].HistoryTruncated = true
 		}
 	}

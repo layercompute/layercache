@@ -43,6 +43,7 @@ export type ProjectInsights = {
   partial: boolean;
   integrations: IntegrationInsight[];
   nativeReports: NativeIntegrationReport[];
+  nativeReportsUnavailable: boolean;
   topArtifacts: ArtifactReport[];
   topArtifactsTruncated: boolean;
   activity: ActivityBucket[];
@@ -65,8 +66,9 @@ const integrationGuides: Record<string, IntegrationGuide> = {
   nx: {support: 'unsupported', units: 'tasks', missingReason: 'The native Nx cache is supported, but completed task outcome reporting is not implemented yet.', action: 'Native Nx run results can distinguish task execution and cache reuse. Cache archive requests alone cannot supply those outcomes.', documentation: docs + 'docs/nx-cache.md'},
   expo: {support: 'unsupported', units: 'app artifacts', missingReason: 'The Expo provider can reuse development apps, but app-restore reporting is not uploaded yet.', action: 'Use the Expo cache provider and retain its restore result. App restores must stay separate from compiler or task hits.', documentation: docs + 'native/README.md'},
 };
-function coverageFor(id: string, reported: boolean, eligible: number | null, available: boolean, native?: NativeIntegrationReport): IntegrationCoverage {
+function coverageFor(id: string, reported: boolean, eligible: number | null, available: boolean, native?: NativeIntegrationReport, nativeUnavailable = false): IntegrationCoverage {
   const guide = integrationGuides[id] ?? {support: 'unsupported' as const, units: 'reported units', missingReason: 'This integration has no declared outcome reporting contract.', action: 'Check the integration documentation before interpreting its cache activity.', documentation: docs + 'README.md'};
+  if (nativeUnavailable && (id === 'gradle' || id === 'xcode')) return {support: guide.support, state: 'unavailable', label: 'Reporting unavailable', reason: 'Native outcome reports could not be read. Turbo, Actions and BuildKit reports remain available.', action: 'Refresh project activity. If this continues, ask your operator to restore native reporting.', documentation: docs + 'docs/native-metering.md#reporting-contract-and-limits'};
   const compiler = native?.counters?.compiler;
   const compilerReported = compiler !== undefined && [compiler.hits, compiler.misses, compiler.skipped, compiler.unknown].some(count => count !== null);
   const protocolOnly = native?.integration === 'xcode' && native.reportedTasks === 0 && Boolean(native.counters?.rpc) && !compilerReported;
@@ -100,10 +102,11 @@ export function formatDuration(value: number | null): string {
 // CPU and financial savings need producer allocation and billing evidence; a
 // recent host sample or a hit percentage cannot supply those facts.
 export function projectInsights(cache: Cache): ProjectInsights {
-  const report = cache.report, known = report?.integrations ?? [], nativeReports = report?.nativeReports ?? [];
+  const report = cache.report, known = report?.integrations ?? [], nativeReportsUnavailable = report?.nativeReportsUnavailable === true;
+  const nativeReports = nativeReportsUnavailable ? [] : report?.nativeReports ?? [];
   const ids = [...new Set([...Object.keys(integrationNames), ...known.map(item => item.integration), ...nativeReports.map(item => item.integration)])];
   const integrations = ids.map(id => {
-    const entry = known.find(item => item.integration === id), native = nativeReports.find(item => item.integration === id);
+    const entry = nativeReportsUnavailable && (id === 'gradle' || id === 'xcode') ? undefined : known.find(item => item.integration === id), native = nativeReports.find(item => item.integration === id);
     // Xcode protocol requests have no compiler denominator. Keep them separate
     // from task outcomes, including when the lifecycle itself completed.
     const nativeTasks = native?.integration === 'gradle';
@@ -119,7 +122,7 @@ export function projectInsights(cache: Cache): ProjectInsights {
       uploadedBytes: entry?.bytes?.uploaded ?? null,
       avoidedTaskTime: nativeTasks ? native.grossAvoidedTaskTime : entry?.grossAvoidedTaskTime ?? null,
       units: integrationGuides[id]?.units ?? 'reported units',
-      coverage: coverageFor(id, reported, eligible, Boolean(report), native),
+      coverage: coverageFor(id, reported, eligible, Boolean(report), native, nativeReportsUnavailable),
       ...(native ? {nativeReport: native} : {}),
     };
   }).sort((a, b) => Number(b.state === 'reported') - Number(a.state === 'reported') || (b.hits ?? -1) - (a.hits ?? -1) || a.name.localeCompare(b.name));
@@ -130,14 +133,14 @@ export function projectInsights(cache: Cache): ProjectInsights {
     artifacts: cache.status?.artifacts ?? null,
     hitRate: report && report.eligible > 0 ? report.hits / report.eligible : null,
     hits: report?.hits ?? null, eligible: report?.eligible ?? null, misses: report?.misses ?? null, runs: report?.runs ?? null,
-    reportAvailable: Boolean(report), partial: report?.degraded ?? false, integrations, nativeReports,
+    reportAvailable: Boolean(report), partial: report?.degraded ?? false, integrations, nativeReports, nativeReportsUnavailable,
     topArtifacts: report?.topArtifacts ?? [], topArtifactsTruncated: report?.topArtifactsTruncated ?? false,
     activity: report?.activity ?? [],
     savings: {
       avoidedTaskTime: gross && gross.total > 0 ? gross : null,
       estimatedBuildTime: net && net.total > 0 ? net : null,
       cpuHoursSaved: null, moneySaved: null,
-      explanation: 'Original execution timings estimate reused task work. Tasks can overlap. Build-time estimates use complete timed graphs. Native Gradle and Xcode reports are shown separately. CPU-hours need matched producer duration and allocation; measured CPU use and bill savings need further usage and price evidence.',
+      explanation: 'Original execution timings estimate reused task work. Tasks can overlap. Build-time estimates cover only complete timed Turbo, Actions and BuildKit graphs. Native Gradle and Xcode reports are shown separately. CPU-hours need matched producer duration and allocation; measured CPU use and bill savings need further usage and price evidence.',
     },
   };
 }

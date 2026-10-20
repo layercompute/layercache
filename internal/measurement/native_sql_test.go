@@ -614,6 +614,68 @@ func runNativeSQLContract(t *testing.T, open func(*testing.T) measurement.Native
 			t.Fatalf("job capacity leaked across matrix jobs or rejected report persisted: %+v", projection)
 		}
 	})
+
+	t.Run("coverage loss follows integration and half-open workload intervals", func(t *testing.T) {
+		repository := open(t)
+		firstAt := time.Now().UTC().Truncate(24 * time.Hour).Add(-72*time.Hour + 23*time.Hour + 59*time.Minute + 30*time.Second)
+		authority := nativeSQLAuthority("coverage-limited-workflow", "job-one")
+		// The refused report starts before midnight and is submitted after it.
+		nativeSQLRefuseCappedInvocation(t, repository, authority, firstAt, firstAt.Add(2*time.Minute), true)
+		probeNumber := 0
+		probe := func(integration measurement.Integration, at time.Time) {
+			t.Helper()
+			probeNumber++
+			a := nativeSQLAuthority("coverage-probes", "job-one")
+			a.Integration = integration
+			r := nativeSQLCounterReport(fmt.Sprintf("run-coverage-probe-%04d", probeNumber), at)
+			nativeSQLRecordAt(t, repository, a, r, at.Add(time.Minute))
+		}
+		check := func(integration measurement.Integration, from, to time.Time, want bool) {
+			t.Helper()
+			reports, err := repository.PeriodReport(context.Background(), from, to)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, report := range reports {
+				if report.Integration == integration {
+					if report.HistoryTruncated != want {
+						t.Fatalf("%s loss in [%s,%s): truncated=%v want=%v", integration, from, to, report.HistoryTruncated, want)
+					}
+					return
+				}
+			}
+			t.Fatalf("missing %s probe in [%s,%s): %+v", integration, from, to, reports)
+		}
+		before, after := firstAt.Add(-time.Nanosecond), firstAt.Add(time.Nanosecond)
+		probe(measurement.IntegrationGradle, before)
+		probe(measurement.IntegrationGradle, after)
+		probe(measurement.IntegrationXcode, firstAt)
+		check(measurement.IntegrationGradle, before, firstAt, false)
+		check(measurement.IntegrationGradle, firstAt, after, true)
+		check(measurement.IntegrationGradle, after, after.Add(time.Nanosecond), false)
+		check(measurement.IntegrationXcode, firstAt, after, false)
+		earlierSameDay := firstAt.Add(-12 * time.Hour)
+		probe(measurement.IntegrationGradle, earlierSameDay)
+		check(measurement.IntegrationGradle, earlierSameDay, earlierSameDay.Add(time.Nanosecond), false)
+		laterAt := firstAt.Truncate(24 * time.Hour).Add(24 * time.Hour)
+		nativeSQLRefuseCappedInvocation(t, repository, authority, laterAt, laterAt.Add(3*time.Minute), false)
+		probe(measurement.IntegrationGradle, laterAt.Add(-time.Nanosecond))
+		check(measurement.IntegrationGradle, laterAt.Add(-time.Nanosecond), laterAt, false)
+		probe(measurement.IntegrationGradle, laterAt)
+		check(measurement.IntegrationGradle, laterAt, laterAt.Add(time.Nanosecond), true)
+		// A later day's loss must not replace the first day's evidence.
+		check(measurement.IntegrationGradle, firstAt, after, true)
+		lastAt := laterAt.Add(4 * time.Hour)
+		nativeSQLRefuseCappedInvocation(t, repository, authority, lastAt, lastAt.Add(time.Minute), false)
+		gap := laterAt.Add(2 * time.Hour)
+		probe(measurement.IntegrationGradle, gap)
+		check(measurement.IntegrationGradle, gap, gap.Add(time.Nanosecond), true)
+		probe(measurement.IntegrationGradle, lastAt.Add(time.Nanosecond))
+		check(measurement.IntegrationGradle, lastAt.Add(time.Nanosecond), lastAt.Add(2*time.Nanosecond), false)
+		unrelatedDay := firstAt.Add(48 * time.Hour)
+		probe(measurement.IntegrationGradle, unrelatedDay)
+		check(measurement.IntegrationGradle, unrelatedDay, unrelatedDay.Add(time.Nanosecond), false)
+	})
 }
 
 func TestNativeSQLiteReopenKeepsReceiptsAndDoesNotPersistNativeKeys(t *testing.T) {
@@ -817,8 +879,9 @@ func TestNativeSQLiteTransportByteBudgetRejectsGrowthButAllowsExactReplay(t *tes
 		seed(document)
 	}
 	newEvent := existing
-	newEvent.StartedAt = nativeSQLBase.Add(time.Second)
-	newEvent.FinishedAt = newEvent.StartedAt.Add(100 * time.Millisecond)
+	boundary := time.Now().UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
+	newEvent.StartedAt = boundary.Add(-100 * time.Millisecond)
+	newEvent.FinishedAt = boundary.Add(100 * time.Millisecond)
 	newDocument := encode(newEvent)
 	for sequence := int64(2); remaining >= int64(len(newDocument)); sequence++ {
 		// Smaller valid documents fill the remaining gap below one new event.
@@ -863,9 +926,102 @@ func TestNativeSQLiteTransportByteBudgetRejectsGrowthButAllowsExactReplay(t *tes
 	if afterCount != count || afterBytes != total {
 		t.Fatalf("rejected growth or exact replay changed transport storage: rows %d to %d, bytes %d to %d", count, afterCount, total, afterBytes)
 	}
-	var losses int
-	if err := database.QueryRow(`SELECT COUNT(*) FROM layercache_native_coverage_v1 WHERE project_id='project' AND lost_at>0`).Scan(&losses); err != nil || losses != 1 {
-		t.Fatalf("refused transport admission did not persist project coverage loss: rows=%d error=%v", losses, err)
+	var day, firstLoss, lastLoss int64
+	if err := database.QueryRow(`SELECT day_start,first_lost_at,last_lost_at FROM layercache_native_coverage_days_v1 WHERE project_id='project' AND integration='gradle'`).Scan(&day, &firstLoss, &lastLoss); err != nil {
+		t.Fatal(err)
+	}
+	if day != boundary.UnixNano() || firstLoss != newEvent.FinishedAt.UnixNano() || lastLoss != newEvent.FinishedAt.UnixNano() {
+		t.Fatalf("transport refusal used submission/start time instead of its completed workload interval: day=%d first=%d last=%d", day, firstLoss, lastLoss)
+	}
+}
+
+func TestNativeSQLiteCoverageLossDaysSurviveRestart(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "measurement.sqlite")
+	repository, err := measurement.OpenSQLiteRepository(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, err := repository.NativeRepository(context.Background(), "project")
+	if err != nil {
+		_ = repository.Close()
+		t.Fatal(err)
+	}
+	firstAt := time.Now().UTC().Truncate(24 * time.Hour).Add(-72*time.Hour + 23*time.Hour + 59*time.Minute + 30*time.Second)
+	authority := nativeSQLAuthority("coverage-limited-workflow", "job-one")
+	nativeSQLRefuseCappedInvocation(t, native, authority, firstAt, firstAt.Add(2*time.Minute), true)
+	secondAt := firstAt.Truncate(24 * time.Hour).Add(24 * time.Hour)
+	nativeSQLRefuseCappedInvocation(t, native, authority, secondAt, secondAt.Add(3*time.Minute), false)
+	probe := nativeSQLCounterReport("run-restart-loss-probe-0001", secondAt)
+	nativeSQLRecordAt(t, native, nativeSQLAuthority("coverage-probes", "job-one"), probe, secondAt.Add(time.Minute))
+	if err := repository.Close(); err != nil {
+		t.Fatal(err)
+	}
+	repository, err = measurement.OpenSQLiteRepository(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	native, err = repository.NativeRepository(context.Background(), "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, at := range []time.Time{firstAt, secondAt} {
+		reports, err := native.PeriodReport(context.Background(), at, at.Add(time.Nanosecond))
+		if err != nil || len(reports) != 1 || !reports[0].HistoryTruncated {
+			t.Fatalf("restart lost retained loss day at %s: reports=%+v error=%v", at, reports, err)
+		}
+	}
+}
+
+func TestNativeSQLiteCoverageLossDaysStayBoundedPerIntegration(t *testing.T) {
+	t.Parallel()
+	native, database := nativeSQLSQLiteDatabase(t)
+	newestDay := time.Now().UTC().Truncate(24 * time.Hour)
+	newestEvent := newestDay.Add(time.Minute)
+	for _, integration := range []measurement.Integration{measurement.IntegrationGradle, measurement.IntegrationXcode} {
+		authority := nativeSQLAuthority("coverage-limited-workflow", "job-one")
+		authority.Integration = integration
+		// Moving the trusted test clock backwards retains the same saturated
+		// job. Only coverage rows grow, rather than 32 new reports per day.
+		for day := range 36 {
+			at := newestEvent.Add(-time.Duration(day) * 24 * time.Hour)
+			nativeSQLRefuseCappedInvocation(t, native, authority, at, at.Add(time.Minute), day == 0)
+		}
+	}
+	rows, err := database.Query(`SELECT integration,COUNT(*),MIN(day_start),MAX(day_start)
+		FROM layercache_native_coverage_days_v1 WHERE project_id='project' GROUP BY integration ORDER BY integration`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	integrations := 0
+	for rows.Next() {
+		var integration string
+		var count, oldest, newest int64
+		if err := rows.Scan(&integration, &count, &oldest, &newest); err != nil {
+			t.Fatal(err)
+		}
+		if count != 31 || oldest != newestDay.Add(-30*24*time.Hour).UnixNano() || newest != newestDay.UnixNano() {
+			t.Fatalf("%s loss-day bound changed: count=%d oldest=%d newest=%d", integration, count, oldest, newest)
+		}
+		integrations++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if integrations != 2 {
+		t.Fatalf("loss-day limits leaked between Gradle and Xcode: integration rows=%d", integrations)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var reports int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM layercache_native_reports_v1 WHERE project_id='project'`).Scan(&reports); err != nil {
+		t.Fatal(err)
+	}
+	if reports != 2*measurement.NativeMaximumInvocations {
+		t.Fatalf("loss-day fixture grew or expired saturated jobs: retained reports=%d", reports)
 	}
 }
 
@@ -1063,12 +1219,37 @@ func nativeSQLNumber(value int64) *int64 { return &value }
 
 func nativeSQLRecord(t *testing.T, repository measurement.NativeRepository, authority measurement.NativeAuthority, report measurement.NativeReport) {
 	t.Helper()
-	receipt, err := repository.RecordReport(context.Background(), authority, report, nativeSQLBase.Add(time.Hour))
+	nativeSQLRecordAt(t, repository, authority, report, nativeSQLBase.Add(time.Hour))
+}
+
+func nativeSQLRecordAt(t *testing.T, repository measurement.NativeRepository, authority measurement.NativeAuthority, report measurement.NativeReport, now time.Time) {
+	t.Helper()
+	receipt, err := repository.RecordReport(context.Background(), authority, report, now)
 	if err != nil {
 		t.Fatalf("record %s: %v", report.InvocationID, err)
 	}
 	if !receipt.Recorded || receipt.Repeated || receipt.InvocationID != report.InvocationID || receipt.Tasks != len(report.Tasks) {
 		t.Fatalf("new native report returned unexpected receipt: %+v", receipt)
+	}
+}
+
+func nativeSQLCounterReport(invocation string, at time.Time) measurement.NativeReport {
+	report := nativeSQLReport(invocation, at)
+	report.TimingMS = &measurement.NativePhaseTiming{Operation: nativeSQLNumber(1)}
+	return report
+}
+
+func nativeSQLRefuseCappedInvocation(t *testing.T, repository measurement.NativeRepository, authority measurement.NativeAuthority, at, submitted time.Time, seed bool) {
+	t.Helper()
+	if seed {
+		for invocation := range measurement.NativeMaximumInvocations {
+			report := nativeSQLCounterReport(fmt.Sprintf("run-coverage-seed-%04d", invocation), at)
+			nativeSQLRecordAt(t, repository, authority, report, submitted)
+		}
+	}
+	report := nativeSQLCounterReport(fmt.Sprintf("run-coverage-refused-%d", at.UnixNano()), at)
+	if _, err := repository.RecordReport(context.Background(), authority, report, submitted); !errors.Is(err, measurement.ErrNativeQuota) {
+		t.Fatalf("coverage fixture did not reach invocation quota: %v", err)
 	}
 }
 

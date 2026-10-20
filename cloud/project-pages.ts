@@ -70,6 +70,7 @@ function integrations(snapshot: Snapshot, compact = false): HTMLElement {
   else section.append(empty('No cache outcomes reported', 'Expand reporting coverage for the evidence available from each integration and its setup steps.'));
   const coverage = compact ? insights.integrations.filter(item => item.state !== 'reported' || item.hitRate === null) : insights.integrations;
   if (coverage.length) section.append(coverageDetails(coverage));
+  if (insights.nativeReportsUnavailable) section.append(el('p', 'Native reporting is unavailable. Turbo, Actions and BuildKit data is still shown.', 'callout'));
   section.append(el('p', 'Tasks, compiler actions, build vertices and archive outcomes have different units. Missing reports do not mean zero use. Protocol requests and snapshot transfers do not establish native cache hits.', 'coverage-note'));
   return section;
 }
@@ -172,7 +173,7 @@ function savings(snapshot: Snapshot, compact = false): HTMLElement {
   const list = el('dl', '', 'savings-breakdown');
   const rows = [
     ['Avoided task time', formatDuration(savings.avoidedTaskTime?.milliseconds ?? null), estimateDetail(savings.avoidedTaskTime)],
-    ['Estimated build time saved', formatDuration(savings.estimatedBuildTime?.milliseconds ?? null), estimateDetail(savings.estimatedBuildTime)],
+    ['Estimated build time saved', formatDuration(savings.estimatedBuildTime?.milliseconds ?? null), `Turbo, Actions and BuildKit reported graphs. ${estimateDetail(savings.estimatedBuildTime)}`],
     ['CPU-hours saved', 'Not measured', 'Needs matched original producer duration and allocation. Current host capacity is not saved CPU usage.'],
     ['Compute cost saved', 'Not measured', 'Needs matched producer resources, provider prices and billing rules. Cache hits alone cannot establish a bill reduction.'],
   ];
@@ -210,7 +211,7 @@ function overview(snapshot: Snapshot, actions: Actions): HTMLElement {
   stats.append(
     stat('storage', 'Cached data', insights.storageUsedBytes === null ? 'Unknown' : bytes(insights.storageUsedBytes), insights.storageLimitBytes === null ? 'Capacity unavailable' : `${bytes(insights.storageLimitBytes)} capacity · ${formatNumber(insights.artifacts)} artifacts`),
     stat('hit-rate', 'Reported cache hit rate', percent(insights.hitRate), insights.hits === null ? 'No cache report available' : `${formatNumber(insights.hits)} hits / ${formatNumber(insights.eligible)} eligible · Turbo, Actions and BuildKit coverage`),
-    stat('time-saved', 'Est. build time saved', formatDuration(insights.savings.estimatedBuildTime?.milliseconds ?? null), estimateDetail(insights.savings.estimatedBuildTime)),
+    stat('time-saved', 'Est. build time saved', formatDuration(insights.savings.estimatedBuildTime?.milliseconds ?? null), `${estimateDetail(insights.savings.estimatedBuildTime)} · Turbo, Actions and BuildKit reported graphs`),
     stat('runs', 'Reported runs', formatNumber(insights.runs), `${formatNumber(insights.misses)} misses · Turbo, Actions and BuildKit coverage`),
   );
   node.append(stats);

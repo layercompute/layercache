@@ -167,7 +167,11 @@ import type {NativeIntegrationReport} from '../../dashboard/cache-view.js';
     const cache=page.locator('.cache').first(),details=cache.locator('details.native-results');await details.locator(':scope > summary').click();const xcode=details.getByRole('region',{name:'Xcode native results',exact:true});
     assert.match(await xcode.innerText(),/Clang \/ PCH[\s\S]*complete compiler verdict coverage[\s\S]*Scoped compiler-verdict hit rate 80%/);assert.match(await xcode.innerText(),/no native task denominator/);assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');
     mocked.projects[0].local.report.nativeReports=[{...report,counters:{compiler:{...compiler,reason:'truncated'}}}];await refresh();const partial=cache.locator('details.native-results');await partial.locator(':scope > summary').click();assert.match(await partial.innerText(),/Scoped compiler-verdict hit rate Not measured/);
-    delete mocked.projects[0].local.report.nativeReports;await refresh();assert.equal(await cache.locator('details.native-results').count(),0);
+    delete mocked.projects[0].local.report.nativeReports;mocked.projects[0].local.report.nativeReportsUnavailable=true;mocked.projects[0].local.report.netEstimatedBuildTimeSaved={milliseconds:9000,known:1,total:1,confidence:'high'};await refresh();
+    const unavailable=cache.locator('details.native-results');assert.equal(await unavailable.locator(':scope > summary').innerText(),'Native reporting unavailable');await unavailable.locator(':scope > summary').click();
+    for(const integration of ['Gradle','Xcode']){const native=unavailable.getByRole('region',{name:`${integration} native results`,exact:true});assert.match(await native.innerText(),/Reporting unavailable[\s\S]*could not be read[\s\S]*Refresh project activity/);assert.doesNotMatch(await native.innerText(),/No reports this period/);}
+    assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');assert.equal(await cache.locator('.metrics .value').nth(1).innerText(),'9.0 s');assert.match(await cache.locator('.metrics .detail').nth(1).innerText(),/Turbo, Actions and BuildKit reported graphs/);
+    delete mocked.projects[0].local.report.nativeReportsUnavailable;await refresh();assert.equal(await cache.locator('details.native-results').count(),0);
   });
   if(nativeOnly){assert.equal(results.length,nativeChecks.size);assert.deepEqual(errors,[]);await finish();return;}
   await check('unavailable source evidence and missing cost stay unknown',async()=>{

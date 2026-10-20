@@ -418,6 +418,116 @@ test('native counters and projected savings cannot alter legacy project totals o
   assert.deepEqual(legacy.nativeReports, []);
 });
 
+test('Xcode counters preserve complete timed generic estimates with either savings sign', () => {
+  const xcode = nativeReport({
+    integration: 'xcode',
+    counters: {
+      compiler: {scope: 'clang-pch', coverage: 'complete', hits: 8, misses: 2, skipped: null, unknown: 0},
+      rpc: {actionReads: 50, actionHits: 40, actionWrites: 4, casReads: 100, casHits: 80, casWrites: 8, cacheErrors: 0},
+    },
+    timingMs: {operation: 5000, compile: 4000, load: 100, restore: 200, close: 100, snapshot: 600},
+  });
+  for (const milliseconds of [-2000, 12000]) {
+    const fixture = cache({
+      grossAvoidedTaskTime: {milliseconds: 20000, known: 7, total: 7, confidence: 'high'},
+      netEstimatedBuildTimeSaved: {milliseconds, known: 2, total: 2, confidence: 'high'},
+    });
+    const baseline = projectInsights(fixture);
+    assert.ok(fixture.report);
+    const result = projectInsights({...fixture, report: {...fixture.report, nativeReports: [xcode]}});
+    assert.equal(result.hits, 7);
+    assert.equal(result.eligible, 10);
+    assert.equal(result.hitRate, 0.7);
+    assert.deepEqual(result.savings, baseline.savings);
+    assert.equal(result.savings.estimatedBuildTime?.milliseconds, milliseconds);
+    assert.equal(result.savings.estimatedBuildTime?.confidence, 'high');
+    assert.deepEqual(result.integrations.find(item => item.id === 'turbo'), baseline.integrations.find(item => item.id === 'turbo'));
+    const row = result.integrations.find(item => item.id === 'xcode');
+    assert.equal(row?.hits, 8);
+    assert.equal(row?.eligible, null);
+    assert.equal(row?.hitRate, null);
+    assert.equal(row?.nativeReport?.counters?.rpc?.actionHits, 40);
+    assert.equal(row?.avoidedTaskTime, null);
+  }
+});
+
+test('native report failure preserves generic metrics and isolates unavailable coverage', () => {
+  const stale = [nativeReport({
+    reportedTasks: 2, knownEligible: 2, eligible: 2, hits: 2, hitRate: 1,
+    outcomes: {executed: 0, fromCache: 2, upToDate: 0, noSource: 0, skipped: 0, failed: 0, unknown: 0},
+  }), nativeReport({
+    integration: 'xcode',
+    counters: {
+      compiler: {scope: 'clang-pch', coverage: 'complete', hits: 10, misses: 0, skipped: null, unknown: 0},
+      rpc: {actionReads: 20, actionHits: 20, actionWrites: 0, casReads: 40, casHits: 40, casWrites: 0, cacheErrors: 0},
+    },
+  })];
+  for (const milliseconds of [-2000, 12000]) {
+    const fixture = cache({
+      integrations: [
+        {integration: 'turbo', eligible: 5, hits: 3, misses: 2},
+        {integration: 'actions', eligible: 2, hits: 1, misses: 1},
+        {integration: 'buildkit', eligible: 3, hits: 3, misses: 0},
+      ],
+      grossAvoidedTaskTime: {milliseconds: 20000, known: 7, total: 7, confidence: 'high'},
+      netEstimatedBuildTimeSaved: {milliseconds, known: 2, total: 2, confidence: 'high'},
+    });
+    const baseline = projectInsights(fixture);
+    assert.ok(fixture.report);
+    for (const nativeReports of [undefined, stale]) {
+      const result = projectInsights({...fixture, report: {...fixture.report, nativeReports, nativeReportsUnavailable: true}});
+      assert.equal(result.reportAvailable, true);
+      assert.equal(result.nativeReportsUnavailable, true);
+      assert.deepEqual(result.nativeReports, []);
+      assert.equal(result.hits, baseline.hits);
+      assert.equal(result.eligible, baseline.eligible);
+      assert.equal(result.misses, baseline.misses);
+      assert.equal(result.hitRate, baseline.hitRate);
+      assert.equal(result.runs, baseline.runs);
+      assert.deepEqual(result.savings, baseline.savings);
+      assert.equal(result.savings.estimatedBuildTime?.milliseconds, milliseconds);
+      assert.equal(result.savings.estimatedBuildTime?.known, 2);
+      assert.equal(result.savings.estimatedBuildTime?.total, 2);
+      for (const row of result.integrations) {
+        if (row.id !== 'gradle' && row.id !== 'xcode') {
+          assert.deepEqual(row, baseline.integrations.find(item => item.id === row.id), row.id);
+          continue;
+        }
+        assert.equal(row.state, 'not-reported', row.id);
+        assert.equal(row.coverage.state, 'unavailable', row.id);
+        assert.equal(row.coverage.label, 'Reporting unavailable', row.id);
+        assert.match(row.coverage.reason, /native.*(?:unavailable|could not)|(?:unavailable|could not).*native/i, row.id);
+        assert.match(row.coverage.reason + ' ' + row.coverage.action, /retry|reload|refresh/i, row.id);
+        assert.match(row.coverage.reason + ' ' + row.coverage.action, /operator/i, row.id);
+        assert.equal(row.hits, null, row.id);
+        assert.equal(row.eligible, null, row.id);
+        assert.equal(row.misses, null, row.id);
+        assert.equal(row.hitRate, null, row.id);
+        assert.equal(row.avoidedTaskTime, null, row.id);
+        assert.equal(row.nativeReport, undefined, row.id);
+      }
+    }
+  }
+});
+
+test('omitted and false native availability flags remain compatible with older reports', () => {
+  const old = projectInsights(cache());
+  assert.equal(old.nativeReportsUnavailable, false);
+  assert.deepEqual(old.nativeReports, []);
+  assert.equal(old.integrations.find(item => item.id === 'gradle')?.coverage.state, 'no-report');
+  assert.equal(old.integrations.find(item => item.id === 'xcode')?.coverage.state, 'unsupported');
+  const native = nativeReport({
+    reportedTasks: 1, knownEligible: 1, eligible: 1, hits: 1, hitRate: 1,
+    outcomes: {executed: 0, fromCache: 1, upToDate: 0, noSource: 0, skipped: 0, failed: 0, unknown: 0},
+  });
+  const omitted = projectInsights(cache({nativeReports: [native]}));
+  const explicit = projectInsights(cache({nativeReports: [native], nativeReportsUnavailable: false}));
+  assert.deepEqual(explicit, omitted);
+  assert.equal(explicit.nativeReportsUnavailable, false);
+  assert.equal(explicit.integrations.find(item => item.id === 'gradle')?.hits, 1);
+  assert.equal(explicit.integrations.find(item => item.id === 'gradle')?.coverage.state, 'reported');
+});
+
 test('native hit source labels retain known access scope and do not guess private ownership', () => {
   assert.equal(nativeSourceLabel('teamCache', 'personal'), 'Personal Cache');
   assert.equal(nativeSourceLabel('teamCache', 'team'), 'Team Cache');

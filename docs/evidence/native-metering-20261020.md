@@ -38,6 +38,16 @@ Source controls passed:
   corrected receipt validation, importer-observation coverage, uncertain 5xx
   reconciliation, scoped compiler ratios and compiler-limitation aggregation.
 
+Follow-up PR review added an actual mixed Turbo/Xcode endpoint regression:
+counter-only native evidence preserves the independent generic graph estimate,
+and a forced native-store error returns available generic data with explicit
+native unavailability. Bounded daily loss markers follow the affected workload
+period and integration, including delayed uploads, disjoint periods, multiple
+losses, restart and half-open boundaries. The follow-up passed 22 projection
+tests and 21 focused browser controls across all three engines. Generic graph
+scope is visible beside its estimates. The earlier 498 and 96 browser checks
+remain separate qualification records rather than additional distinct scenarios.
+
 The database controls include immutable source/report conflicts, separate
 matrix jobs, current membership removal, reader write denial, snapshot grant
 denial, report-only Xcode credentials, bounded admission, expiry, restart,

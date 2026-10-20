@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -266,4 +268,57 @@ func TestNativeGradlePartialHTTPDeliveryRemainsUnattributed(t *testing.T) {
 	if err != nil || len(rows) != 1 || len(rows[0].Sources) != 1 || rows[0].Sources[0].Source != measurement.SourceUnattributed || rows[0].ProducerTiming.Known != 0 {
 		t.Fatalf("partial HTTP response became accepted Team delivery: %+v %v", rows, err)
 	}
+}
+
+// Native observations do not extend the generic dependency graph. Keeping the
+// two planes separate must preserve the existing graph's useful estimate.
+func TestNativePeriodPreservesGenericEstimateAndReportsIndependentFailure(t *testing.T) {
+	instance, _ := gradleServer(t, "team")
+	repository := instance.measurements.(*measurement.SQLiteRepository)
+	end := time.Now().UTC().Add(-time.Second)
+	producer := 10 * time.Second
+	if err := repository.Record(measurement.FinalOutcome{RunID: "generic-graph", WorkspaceID: "generic-workspace", Integration: measurement.IntegrationTurbo, WorkID: "build", ArtifactID: "generic-artifact", CompatibilityID: "generic-profile", Result: measurement.ResultHit, Source: measurement.SourceTeamCache, StartedAt: end.Add(-time.Second), FinishedAt: end, ProducerDuration: &producer, Timing: measurement.Timing{Download: time.Second}}); err != nil {
+		t.Fatal(err)
+	}
+	from, to := end.Add(-time.Minute), end.Add(time.Minute)
+	baseline, err := repository.PeriodReport(from, to)
+	if err != nil || baseline.NetEstimatedBuildTimeSaved.Milliseconds == nil {
+		t.Fatalf("generic timed graph fixture unavailable: %v %+v", err, baseline)
+	}
+	claims := nativeClaims(t, instance, "xcode", "mixed-period")
+	zero := int64(0)
+	native := measurement.NativeReport{Version: 1, InvocationID: "run-native-mixed-period-0001", StartedAt: end.Add(-time.Second), FinishedAt: end, Status: "success", Tasks: []measurement.NativeTask{}, Counters: &measurement.NativeCounters{RPC: &measurement.NativeRPCCounters{ActionReads: &zero, ActionHits: &zero}}}
+	if response := postNative(t, instance, claims, native); response.Code != 200 {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	target := "/v1/reports?from=" + from.Format(time.RFC3339) + "&to=" + to.Format(time.RFC3339)
+	fetch := func() (*httptest.ResponseRecorder, measurement.PeriodReport) {
+		t.Helper()
+		response := nativeHTTP(instance, "GET", target, instance.config.LocalToken, nil)
+		var result measurement.PeriodReport
+		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &result) != nil {
+			t.Fatalf("period unavailable: %d %s", response.Code, response.Body.String())
+		}
+		return response, result
+	}
+	_, mixed := fetch()
+	if !reflect.DeepEqual(mixed.NetEstimatedBuildTimeSaved, baseline.NetEstimatedBuildTimeSaved) || len(mixed.NativeReports) != 1 || mixed.NativeReports[0].NetEstimatedBuildTimeSaved.Milliseconds != nil || mixed.NativeReportsUnavailable {
+		t.Fatalf("native plane erased or enlarged generic graph estimate: generic=%+v mixed=%+v", baseline.NetEstimatedBuildTimeSaved, mixed)
+	}
+	instance.nativeReports = nativePeriodFailure{NativeRepository: instance.nativeReports}
+	response, unavailable := fetch()
+	if !unavailable.NativeReportsUnavailable || len(unavailable.NativeReports) != 0 || !reflect.DeepEqual(unavailable.NetEstimatedBuildTimeSaved, baseline.NetEstimatedBuildTimeSaved) || unavailable.Hits != baseline.Hits || unavailable.Eligible != baseline.Eligible {
+		t.Fatalf("native outage damaged generic evidence: %+v", unavailable)
+	}
+	var body map[string]json.RawMessage
+	_ = json.Unmarshal(response.Body.Bytes(), &body)
+	if _, present := body["nativeReports"]; present || bytes.Contains(response.Body.Bytes(), []byte("private native persistence failure")) {
+		t.Fatal("native outage became empty healthy reports or leaked backend diagnostics")
+	}
+}
+
+type nativePeriodFailure struct{ measurement.NativeRepository }
+
+func (nativePeriodFailure) PeriodReport(context.Context, time.Time, time.Time) ([]measurement.NativeIntegrationReport, error) {
+	return nil, errors.New("private native persistence failure")
 }
