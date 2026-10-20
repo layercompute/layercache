@@ -28,8 +28,12 @@ adapter uses Unix domain sockets.
 
 The fixture creates its own protected configuration, random bootstrap grants,
 loopback Team service, short Unix socket paths and archive caches. It inherits no
-cloud, Actions or native-cache credentials. Separate reader and writer bootstrap
-files exchange authority through the real `/v1/auth/snapshot/exchange` endpoint;
+cloud, Actions or native-cache credentials. It preserves the caller's existing
+`HOME` unchanged because Go's macOS defaults require it; explicit configuration,
+data and archive paths remain inside the fixture. Failure output includes only
+fixed stderr classifications, never raw configuration or token output. Separate
+reader and writer bootstrap files exchange authority through the real
+`/v1/auth/snapshot/exchange` endpoint;
 the qualifier does not mint capabilities itself or replace authentication with a
 mock. An observing loopback proxy forwards authentication and archive requests to
 that server. It changes response bytes only for the named integrity controls.

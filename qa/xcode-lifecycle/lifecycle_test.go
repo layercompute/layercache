@@ -201,10 +201,39 @@ func newFixture(t *testing.T, binary, nativeCLI string) *fixture {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	t.Cleanup(cancel)
 	f := &fixture{t: t, ctx: ctx, root: root, sockets: sockets, binary: binary, nativeCLI: nativeCLI, node: node}
-	// No inherited cloud, Actions, native-cache or Node injection credentials.
-	f.env = []string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "GOMAXPROCS=2", "NODE_NO_WARNINGS=1", "TMPDIR=" + root,
-		"XDG_CONFIG_HOME=" + filepath.Join(root, "config"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "XDG_STATE_HOME=" + filepath.Join(root, "state")}
+	f.env = fixtureEnvironment(root)
 	return f
+}
+
+func fixtureEnvironment(root string) []string {
+	// No inherited cloud, Actions, native-cache or Node injection credentials.
+	environment := []string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "GOMAXPROCS=2", "NODE_NO_WARNINGS=1", "TMPDIR=" + root,
+		"XDG_CONFIG_HOME=" + filepath.Join(root, "config"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "XDG_STATE_HOME=" + filepath.Join(root, "state")}
+	// Darwin's Go defaults require HOME even when every CLI path is explicit;
+	// unlike Linux, UserCacheDir/UserConfigDir do not consult the XDG variables.
+	// Preserve the caller's value unchanged. Never redirect or write its home.
+	if home, exists := os.LookupEnv("HOME"); exists {
+		environment = append(environment, "HOME="+home)
+	}
+	return environment
+}
+
+func TestFixtureEnvironmentPreservesCallerHomeWithoutCredentials(t *testing.T) {
+	allowed := map[string]bool{"PATH": true, "LANG": true, "GOMAXPROCS": true, "NODE_NO_WARNINGS": true, "TMPDIR": true,
+		"XDG_CONFIG_HOME": true, "XDG_CACHE_HOME": true, "XDG_STATE_HOME": true, "HOME": true}
+	actual := make(map[string]string)
+	for _, entry := range fixtureEnvironment(t.TempDir()) {
+		key, value, found := strings.Cut(entry, "=")
+		if !found || !allowed[key] {
+			t.Fatal("fixture environment inherited an undeclared field")
+		}
+		actual[key] = value
+	}
+	expected, expectedPresent := os.LookupEnv("HOME")
+	home, present := actual["HOME"]
+	if present != expectedPresent || home != expected {
+		t.Fatal("fixture must preserve the caller's HOME presence and value unchanged")
+	}
 }
 
 func (f *fixture) require(ok bool, name string) {
@@ -239,9 +268,51 @@ func (f *fixture) run(program string, args ...string) ([]byte, error) {
 	command.Stdout, command.Stderr = &stdout, &stderr
 	err := command.Run()
 	if ctx.Err() != nil {
-		return stdout.value(), ctx.Err()
+		return stdout.value(), fmt.Errorf("%w; %s", ctx.Err(), safeCommandStderr(stderr.value()))
+	}
+	if err != nil {
+		return stdout.value(), fmt.Errorf("%w; %s", err, safeCommandStderr(stderr.value()))
 	}
 	return stdout.value(), err
+}
+
+// CLI setup can print configuration to stdout. Never attach stdout or raw
+// stderr to a public CI failure: emit only fixed diagnostic classifications.
+func safeCommandStderr(stderr []byte) string {
+	text := string(stderr)
+	for _, diagnostic := range []struct{ contains, classification string }{
+		{"find user cache directory: $HOME is not defined", "user cache defaults require HOME"},
+		{"find user config directory: $HOME is not defined", "user config defaults require HOME"},
+		{"neither $XDG_CACHE_HOME nor $HOME are defined", "user cache defaults require XDG_CACHE_HOME or HOME"},
+		{"neither $XDG_CONFIG_HOME nor $HOME are defined", "user config defaults require XDG_CONFIG_HOME or HOME"},
+		{"permission denied", "filesystem permission denied"},
+		{"no space left on device", "filesystem has no free space"},
+		{"insufficient free space", "filesystem free-space reservation rejected"},
+		{"path is not private", "private path validation rejected"},
+		{"symlink", "symbolic path validation rejected"},
+		{"invalid setup", "setup configuration validation rejected"},
+		{"Snapshot credential exchange returned HTTP", "snapshot credential exchange rejected"},
+		{"Snapshot archive operation failed", "snapshot archive operation rejected"},
+	} {
+		if strings.Contains(text, diagnostic.contains) {
+			return fmt.Sprintf("stderr classification: %s (%d bytes withheld)", diagnostic.classification, len(stderr))
+		}
+	}
+	return fmt.Sprintf("stderr classification: unknown (%d bytes withheld)", len(stderr))
+}
+
+func TestCommandDiagnosticsDoNotExposeCapturedOutput(t *testing.T) {
+	secret := "fixture-sensitive-output-that-must-not-appear"
+	for _, test := range []struct{ stderr, want string }{
+		{secret + "\nfind user cache directory: $HOME is not defined\n" + secret, "user cache defaults require HOME"},
+		{secret + "\npermission denied\n" + secret, "filesystem permission denied"},
+		{secret + ` {"localToken":"` + secret + `"}`, "classification: unknown"},
+	} {
+		actual := safeCommandStderr([]byte(test.stderr))
+		if strings.Contains(actual, secret) || !strings.Contains(actual, test.want) || len(actual) > 160 {
+			t.Fatal("command failure diagnostic disclosed captured bytes or lost its bounded classification")
+		}
+	}
 }
 func (f *fixture) command(label, program string, args ...string) []byte {
 	f.t.Helper()
