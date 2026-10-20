@@ -106,6 +106,14 @@ measure packing/transfer/unpacking and complete job time, and avoid duplicating
 the entire DerivedData tree. This transport does not snapshot, checkpoint or
 qualify Apple's own built-in CAS directory while another process owns it.
 
+The example budgets are local limits, not a hosted storage entitlement. Choose
+them against the backend's artifact limit, hard quota and garbage-collection
+target. An unpinned snapshot larger than that target can be accepted and later
+evicted during maintenance. Measure the closed store, expanded archive and
+transferred bytes separately, and leave room for metadata and other generations.
+An evicted generation must remain an ordinary cache miss with compilation as
+fallback.
+
 ## Compiler behavior and native qualification
 
 A miss or corrupt object triggers compilation. A cache directory or metadata startup failure runs the compiler once with caching disabled and reports `uncachedFallback`. Insecure socket directories, invalid configuration and an already-owned data directory are rejected. Once compilation starts, its result is preserved even if a cache backend error or statistics write also fails; a cache error alone cannot establish the cause of a compiler failure. Statistics and close warnings do not replace the compiler result. `uncachedRetry` remains false for compatibility with existing receipts. `cacheErrors` and real CAS/action request and hit counts report cache behavior. An action with a missing or corrupt indirect CAS output is returned as a miss; size checks include serialized object and response envelopes before accepting an object. The adapter opens no TCP listener and requires no account or external service deployment. It currently uses a local store; CI snapshot transport supplies reuse between runners.
