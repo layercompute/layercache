@@ -33,6 +33,9 @@ func syncTurboTeamResults(ctx context.Context, cfg config.Config, hashes []strin
 	if cfg.TeamURL == "" || cfg.TeamToken == "" {
 		return errors.New("this Local Cache has no authenticated Team Cache configured")
 	}
+	if cfg.RemoteOnly {
+		return syncRemoteTurboResults(ctx, cfg, hashes, timeout)
+	}
 	body, err := json.Marshal(struct {
 		Hashes    []string `json:"hashes"`
 		TimeoutMS int64    `json:"timeoutMs"`

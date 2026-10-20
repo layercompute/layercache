@@ -15,6 +15,31 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
+- [ ] **Move existing projects to hosted R2 and retire their Local stores.**
+  Owner: LayerCache cloud/operator. The October 20 user outcome is one hosted
+  customer dashboard for every currently configured project, remote artifact
+  storage, and ordinary local commands that work without a Local daemon.
+  Preserve native keys, project/signing identities, current membership and CI
+  repository/ref authority. Add a bounded operator adoption interface rather
+  than inserting portal records manually. Support the user's selected
+  operator-provisioned email/password sign-in for the private rollout, bound
+  to a verified existing project owner. Reuse portal sessions and standard
+  password hashing; keep native repository/CI authentication on GitHub.
+  OAuth and self-serve enrollment remain separate options and gates.
+  Provide opt-in cloud-only CLI operation that obtains scoped credentials from
+  the configured backend and never constructs a Local artifact store. Preserve
+  standalone defaults. Qualify actual remote restores and changed-input misses,
+  authentication/revocation, expiry and exact repository scope, reporting limits
+  and failure fallback. Migrate SQL metadata with verified complete R2 objects;
+  freeze writes and recheck retained obligations before cutover. Keep compatible
+  existing endpoints while clients move. Retire only the exact migrated cache
+  services, Local directories and legacy sparse filesystem after recovery and
+  fresh dependency checks; preserve source, credentials, shared stores and
+  evidence. Record physical allocation separately from logical/sparse capacity.
+  R2 stores artifact bytes; API, SQL and bounded verification staging still
+  require a host. Source qualification, client installation, live portal
+  adoption, remote compute hosting and storage retirement are separate outcomes.
+
 - [x] **Deliver the first customer dashboard locally and on the web.**
   Owner: LayerCache dashboard. User outcome: inspect effective cache reuse,
   source attribution, transfers, storage, maintenance and account costs through

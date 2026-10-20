@@ -66,10 +66,29 @@ func selectCloudProject(list cloudProjects, team, project string) (portal.Projec
 		return portal.Project{}, errors.New("multiple projects match; use --team and --project with IDs from --list")
 	}
 	p := matches[0]
-	if p.ID == "" || strings.ContainsAny(p.ID, "/\\. \r\n") || !validVMActionsRepository(p.Repository) || !strings.HasPrefix(p.DefaultRef, "refs/heads/") {
+	if !validCloudProjectID(p.ID, p.Repository) || !validCloudRepository(p.Repository) || !strings.HasPrefix(p.DefaultRef, "refs/heads/") {
 		return portal.Project{}, errors.New("cloud returned invalid project metadata")
 	}
 	return p, nil
+}
+
+func validCloudProjectID(id, repository string) bool {
+	if strings.HasPrefix(id, "github.com/") {
+		selected := strings.TrimPrefix(id, "github.com/")
+		return validCloudRepository(selected) && validCloudRepository(repository) && strings.EqualFold(selected, repository)
+	}
+	return id != "" && len(id) <= 128 && !strings.ContainsAny(id, "/\\. \t\r\n\x00")
+}
+
+// GitHub treats ASCII repository spelling case-insensitively. Validate only
+// its syntax projection; keep the imported ID and display spelling unchanged.
+func validCloudRepository(repository string) bool {
+	for index := 0; index < len(repository); index++ {
+		if repository[index] >= 128 {
+			return false
+		}
+	}
+	return validVMActionsRepository(strings.ToLower(repository))
 }
 
 func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -77,6 +96,7 @@ func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	flags.SetOutput(stderr)
 	origin := flags.String("cloud", "", "cloud dashboard origin (HTTPS, or HTTP loopback)")
 	gh := flags.Bool("github-cli", false, "use your existing gh login")
+	remoteOnly := flags.Bool("remote-only", false, "use hosted storage directly without a Local daemon or artifact store")
 	team := flags.String("team", "", "team ID or name")
 	project := flags.String("project", "", "project ID or name")
 	path := flags.String("config", "", "new configuration path (existing files are never replaced)")
@@ -115,6 +135,9 @@ func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		if err := cloudGET(ctx, *origin, "/api/public-config", "", &public); err != nil {
 			return err
 		}
+		if strings.TrimSpace(public.ClientID) == "" {
+			return errors.New("cloud GitHub device login is not configured; use --github-cli after gh auth login. A dashboard password is not a native GitHub credential")
+		}
 		client := githubauth.DeviceClient{ClientID: public.ClientID, DeviceEndpoint: githubauth.DefaultDeviceEndpoint, TokenEndpoint: githubauth.DefaultTokenEndpoint, HTTPClient: newCLIHTTPClient(controlRequestTimeout)}
 		device, err := client.Begin(ctx)
 		if err != nil {
@@ -143,6 +166,7 @@ func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return err
 	}
 	cfg.ProjectID = selected.ID
+	cfg.RemoteOnly = *remoteOnly
 	cfg.TeamURL = *origin
 	cfg.ActionsRepository = selected.Repository
 	cfg.ActionsRef = selected.DefaultRef
@@ -160,7 +184,8 @@ func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) er
 			return err
 		}
 		sum := sha256.Sum256([]byte(*origin))
-		*path = filepath.Join(filepath.Dir(base), "cloud", hex.EncodeToString(sum[:8]), selected.ID+".json")
+		projectSum := sha256.Sum256([]byte(selected.ID))
+		*path = filepath.Join(filepath.Dir(base), "cloud", hex.EncodeToString(sum[:8]), hex.EncodeToString(projectSum[:16])+".json")
 	}
 	*path, err = filepath.Abs(*path)
 	if err != nil {
@@ -177,23 +202,29 @@ func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if _, err = os.Lstat(*path); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("configuration already exists or cannot be inspected; choose a new --config path or use login to refresh")
 	}
-	// Every connection owns a new cache directory; never touch an existing runtime.
-	cfg.DataDir, err = os.MkdirTemp(filepath.Dir(*path), "cache-")
-	if err != nil {
-		return err
-	}
 	committed := false
-	defer func() {
-		if !committed {
-			_ = os.RemoveAll(cfg.DataDir)
+	if *remoteOnly {
+		// Reserved location hint only. Cloud-only paths never create this directory.
+		sum := sha256.Sum256([]byte(*path))
+		cfg.DataDir = filepath.Join(filepath.Dir(*path), "unused-"+hex.EncodeToString(sum[:8]))
+	} else {
+		// Every Local connection owns a new directory; never touch an existing runtime.
+		cfg.DataDir, err = os.MkdirTemp(filepath.Dir(*path), "cache-")
+		if err != nil {
+			return err
 		}
-	}()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return err
+		defer func() {
+			if !committed {
+				_ = os.RemoveAll(cfg.DataDir)
+			}
+		}()
+		listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+		if listenErr != nil {
+			return listenErr
+		}
+		cfg.Listen = listener.Addr().String()
+		_ = listener.Close()
 	}
-	cfg.Listen = listener.Addr().String()
-	_ = listener.Close()
 	if !*gh {
 		cfg.GitHubCredentialAccount, err = newGitHubCredentialAccount(cfg)
 		if err != nil {
@@ -215,8 +246,10 @@ func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err = cfg.Validate(); err != nil {
 		return err
 	}
-	if err = ensureOwnershipMarker(cfg, *path); err != nil {
-		return err
+	if !cfg.RemoteOnly {
+		if err = ensureOwnershipMarker(cfg, *path); err != nil {
+			return err
+		}
 	}
 	encoded, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -236,6 +269,9 @@ func runConnect(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return err
 	}
 	committed = true
+	if cfg.RemoteOnly {
+		return printResult(stdout, *jsonOutput, map[string]any{"connected": true, "remoteOnly": true, "config": *path, "project": selected.ID, "team": selected.TeamID}, fmt.Sprintf("Connected to %s using hosted storage. Run commands with layercache run --config %s -- COMMAND", selected.Name, shellQuote(*path)))
+	}
 	return printResult(stdout, *jsonOutput, map[string]any{"connected": true, "config": *path, "project": selected.ID, "team": selected.TeamID}, fmt.Sprintf("Connected to %s. Start Local Cache: layercache start --config %s\nOpen dashboard: layercache dashboard --config %s", selected.Name, shellQuote(*path), shellQuote(*path)))
 }
 

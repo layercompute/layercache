@@ -23,10 +23,13 @@ import (
 )
 
 type capabilityExchange struct {
-	Token             string    `json:"token"`
-	TeamToken         string    `json:"teamToken"`
-	PublicAccessToken string    `json:"publicAccessToken,omitempty"`
-	ExpiresAt         time.Time `json:"expiresAt"`
+	Token             string            `json:"token"`
+	TeamToken         string            `json:"teamToken"`
+	PublicAccessToken string            `json:"publicAccessToken,omitempty"`
+	ExpiresAt         time.Time         `json:"expiresAt"`
+	RunID             string            `json:"runId,omitempty"`
+	WorkspaceID       string            `json:"workspaceId,omitempty"`
+	NativeTokens      map[string]string `json:"nativeTokens,omitempty"`
 }
 
 func runLogin(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -195,10 +198,24 @@ func exchangeGitHubCapability(ctx context.Context, cfg config.Config, githubToke
 }
 
 func exchangeGitHubCapabilityAt(ctx context.Context, baseURL string, cfg config.Config, githubToken string) (capabilityExchange, error) {
-	body, err := json.Marshal(map[string]string{
+	return exchangeGitHubCapabilityWithContext(ctx, baseURL, cfg, githubToken, nil)
+}
+
+type localRunContext struct {
+	RunID        string
+	WorkspaceID  string
+	SourceCommit string
+}
+
+func exchangeGitHubCapabilityWithContext(ctx context.Context, baseURL string, cfg config.Config, githubToken string, runContext *localRunContext) (capabilityExchange, error) {
+	input := map[string]string{
 		"project": cfg.ProjectID, "compatibility": cfg.CompatibilityID, "githubToken": githubToken,
 		"repository": cfg.ActionsRepository, "ref": cfg.ActionsRef, "defaultRef": cfg.ActionsDefaultRef,
-	})
+	}
+	if runContext != nil {
+		input["runId"], input["workspaceId"], input["sourceCommit"] = runContext.RunID, runContext.WorkspaceID, runContext.SourceCommit
+	}
+	body, err := json.Marshal(input)
 	if err != nil {
 		return capabilityExchange{}, err
 	}
@@ -235,32 +252,11 @@ func refreshTeamCapability(ctx context.Context, cfg *config.Config) error {
 	if cfg.GitHubCLIPath != "" {
 		return refreshGitHubCLICapability(ctx, cfg)
 	}
-	encoded, err := (credentials.Store{}).Get(ctx, cfg.GitHubCredentialAccount)
+	token, err := githubTokenForCapability(ctx, *cfg)
 	if err != nil {
-		return fmt.Errorf("refresh Team Cache capability: %w", err)
+		return err
 	}
-	var session githubauth.Session
-	if err := json.Unmarshal([]byte(encoded), &session); err != nil || session.AccessToken == "" {
-		return errors.New("refresh Team Cache capability: stored GitHub session is invalid")
-	}
-	if session.AccessTokenNeedsRefresh(time.Now().UTC(), 2*time.Minute) {
-		refreshed, refreshErr := (githubauth.DeviceClient{
-			ClientID: session.ClientID, TokenEndpoint: session.TokenEndpoint,
-			HTTPClient: newCLIHTTPClient(controlRequestTimeout),
-		}).Refresh(ctx, session)
-		if refreshErr != nil {
-			return fmt.Errorf("refresh Team Cache capability: %w", refreshErr)
-		}
-		refreshedJSON, marshalErr := json.Marshal(refreshed)
-		if marshalErr != nil {
-			return fmt.Errorf("refresh Team Cache capability: encode rotated GitHub session: %w", marshalErr)
-		}
-		if putErr := (credentials.Store{}).Put(ctx, cfg.GitHubCredentialAccount, string(refreshedJSON)); putErr != nil {
-			return fmt.Errorf("refresh Team Cache capability: protect rotated GitHub session: %w", putErr)
-		}
-		session = refreshed
-	}
-	exchanged, err := exchangeGitHubCapability(ctx, *cfg, session.AccessToken)
+	exchanged, err := exchangeGitHubCapability(ctx, *cfg, token)
 	if err != nil {
 		return err
 	}
@@ -271,6 +267,41 @@ func refreshTeamCapability(ctx context.Context, cfg *config.Config) error {
 		cfg.PublicAccessTokenExpiresAt = exchanged.ExpiresAt
 	}
 	return nil
+}
+
+func githubTokenForCapability(ctx context.Context, cfg config.Config) (string, error) {
+	if cfg.GitHubCLIPath != "" {
+		return githubCLIToken(ctx, cfg.GitHubCLIPath)
+	}
+	if cfg.GitHubCredentialAccount == "" {
+		return "", errors.New("remoteOnly run requires a refreshable GitHub login; run layercache login")
+	}
+	encoded, err := (credentials.Store{}).Get(ctx, cfg.GitHubCredentialAccount)
+	if err != nil {
+		return "", fmt.Errorf("refresh Team Cache capability: %w", err)
+	}
+	var session githubauth.Session
+	if err := json.Unmarshal([]byte(encoded), &session); err != nil || session.AccessToken == "" {
+		return "", errors.New("refresh Team Cache capability: stored GitHub session is invalid")
+	}
+	if session.AccessTokenNeedsRefresh(time.Now().UTC(), 2*time.Minute) {
+		refreshed, refreshErr := (githubauth.DeviceClient{
+			ClientID: session.ClientID, TokenEndpoint: session.TokenEndpoint,
+			HTTPClient: newCLIHTTPClient(controlRequestTimeout),
+		}).Refresh(ctx, session)
+		if refreshErr != nil {
+			return "", fmt.Errorf("refresh Team Cache capability: %w", refreshErr)
+		}
+		refreshedJSON, marshalErr := json.Marshal(refreshed)
+		if marshalErr != nil {
+			return "", fmt.Errorf("refresh Team Cache capability: encode rotated GitHub session: %w", marshalErr)
+		}
+		if putErr := (credentials.Store{}).Put(ctx, cfg.GitHubCredentialAccount, string(refreshedJSON)); putErr != nil {
+			return "", fmt.Errorf("refresh Team Cache capability: protect rotated GitHub session: %w", putErr)
+		}
+		session = refreshed
+	}
+	return session.AccessToken, nil
 }
 
 func refreshAndPersistTeamCapability(ctx context.Context, configPath string, cfg *config.Config) error {

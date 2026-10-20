@@ -53,6 +53,9 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 		Repository    string `json:"repository"`
 		Ref           string `json:"ref"`
 		DefaultRef    string `json:"defaultRef"`
+		RunID         string `json:"runId,omitempty"`
+		WorkspaceID   string `json:"workspaceId,omitempty"`
+		SourceCommit  string `json:"sourceCommit,omitempty"`
 	}
 	if err := decoder.Decode(&input); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid capability exchange request"})
@@ -60,6 +63,11 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 	}
 	if err := rejectTrailingJSON(decoder); err != nil || input.Project != server.config.ProjectID || compatibility.Validate(input.Compatibility) != nil ||
 		!strings.EqualFold(input.Repository, server.config.ActionsRepository) || input.DefaultRef != server.config.ActionsDefaultRef || !validGitRef(input.Ref) {
+		server.writeCapabilityExchangeFailure(writer, request)
+		return
+	}
+	localRun := input.RunID != "" || input.WorkspaceID != "" || input.SourceCommit != ""
+	if localRun && (!validLocalRunNonce(input.RunID) || !validLocalWorkspace(input.WorkspaceID) || input.SourceCommit != "" && !immutableCommit(input.SourceCommit)) {
 		server.writeCapabilityExchangeFailure(writer, request)
 		return
 	}
@@ -93,15 +101,23 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 		server.writeCapabilityExchangeFailure(writer, request)
 		return
 	}
+	localRunID, workspaceID := "", ""
+	if localRun {
+		// The caller controls its local context, never another member's run ID.
+		localRunID = "github-local:" + subject + ":" + input.RunID
+		workspaceID = "github-local:" + subject + ":" + input.WorkspaceID
+	}
 	now := time.Now().UTC()
-	token, err := access.MintCapabilityToken(server.config.LocalToken, access.Claims{
-		Subject:       subject,
+	claims := access.Claims{
+		Subject: subject,
+		RunID:   localRunID, WorkspaceID: workspaceID, SourceCommit: input.SourceCommit,
 		Project:       server.config.ProjectID,
 		Compatibility: input.Compatibility,
 		Repository:    strings.ToLower(input.Repository), Ref: input.Ref, DefaultRef: input.DefaultRef,
 		Capabilities: capabilities,
 		ExpiresAt:    now.Add(projectCapabilityLifetime),
-	}, now)
+	}
+	token, err := access.MintCapabilityToken(server.config.LocalToken, claims, now)
 	if err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "issue project capability"})
 		return
@@ -109,6 +125,25 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 	result := map[string]any{
 		"token": token, "expiresAt": now.Add(projectCapabilityLifetime),
 		"capabilities": capabilities,
+		"runId":        localRunID, "workspaceId": workspaceID,
+	}
+	if localRun {
+		nativeTokens := make(map[string]string)
+		for _, integration := range []string{"turbo", "actions", "nx", "gradle", "buildkit", "bazel"} {
+			claims.Integration = integration
+			// Native run credentials authorize reads/writes, never maintenance,
+			// even when the human login has project administrator membership.
+			if claims.Allows(access.CapabilityAdmin) {
+				claims.Capabilities = []access.Capability{access.CapabilityWrite}
+			}
+			nativeToken, mintErr := access.MintCapabilityToken(server.config.LocalToken, claims, now)
+			if mintErr != nil {
+				writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "issue native run capability"})
+				return
+			}
+			nativeTokens[integration] = nativeToken
+		}
+		result["nativeTokens"] = nativeTokens
 	}
 	if server.config.Role == "team" {
 		result["teamToken"] = token
@@ -325,4 +360,28 @@ func rejectTrailingJSON(decoder *json.Decoder) error {
 		return errors.New("unexpected trailing JSON value")
 	}
 	return err
+}
+
+func validLocalRunNonce(value string) bool {
+	if !strings.HasPrefix(value, "run-") || len(value) < 16 || len(value) > 128 {
+		return false
+	}
+	for _, c := range value {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func validLocalWorkspace(value string) bool {
+	if len(value) != 71 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, c := range value[7:] {
+		if !(c >= 'a' && c <= 'f' || c >= '0' && c <= '9') {
+			return false
+		}
+	}
+	return true
 }

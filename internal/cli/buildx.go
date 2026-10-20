@@ -117,12 +117,20 @@ func runBuildx(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		preBuildDegraded = true
 		_, _ = fmt.Fprintln(stderr, "Layer Cache BuildKit:", warning)
 	}
-	localUsage, usageErr := buildkitLocalUsage(ctx, cfg)
-	if usageErr != nil {
-		localUsage = cfg.MaxBytes
-		_, _ = fmt.Fprintln(stderr, "Layer Cache BuildKit: could not read Local Cache usage; native BuildKit cache is limited to one byte:", usageErr)
-	}
+	var localBudget *buildkit.LocalCacheBudget
 	buildkitStateDir := filepath.Join(cfg.DataDir, "buildkit")
+	if cfg.RemoteOnly {
+		// Native Docker builder storage remains Docker-owned. Hosted registry
+		// reuse must not initialize a LayerCache artifact or measurement store.
+		buildkitStateDir = ""
+	} else {
+		localUsage, usageErr := buildkitLocalUsage(ctx, cfg)
+		if usageErr != nil {
+			localUsage = cfg.MaxBytes
+			_, _ = fmt.Fprintln(stderr, "Layer Cache BuildKit: could not read Local Cache usage; native BuildKit cache is limited to one byte:", usageErr)
+		}
+		localBudget = &buildkit.LocalCacheBudget{StateDir: buildkitStateDir, MaxBytes: cfg.MaxBytes, BuildkitMaxBytes: cfg.BuildkitGCBytes, UsedBytes: localUsage, MinFreeBytes: cfg.MinFreeBytes}
+	}
 	var promotionCoordinator buildkit.PromotionCoordinator
 	if cfg.TeamURL != "" {
 		promotionCoordinator, err = buildkit.NewHTTPPromotionCoordinator(cfg.TeamURL, cfg.TeamToken)
@@ -132,13 +140,14 @@ func runBuildx(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			promotionCoordinator = unavailablePromotionCoordinator{cause: err}
 		}
 	}
+	promotionLockDir := ""
+	if !cfg.RemoteOnly {
+		promotionLockDir = filepath.Join(buildkitStateDir, "promotion-locks")
+	}
 	adapter, err := buildkit.New(buildkit.Config{
 		BuilderName: cfg.BuildkitBuilder, TeamRepository: cfg.BuildkitTeamRepository,
-		PromotionLockDir: filepath.Join(buildkitStateDir, "promotion-locks"), PromotionCoordinator: promotionCoordinator,
-		LocalBudget: &buildkit.LocalCacheBudget{
-			StateDir: buildkitStateDir, MaxBytes: cfg.MaxBytes, BuildkitMaxBytes: cfg.BuildkitGCBytes,
-			UsedBytes: localUsage, MinFreeBytes: cfg.MinFreeBytes,
-		},
+		PromotionLockDir: promotionLockDir, PromotionCoordinator: promotionCoordinator,
+		LocalBudget: localBudget,
 	})
 	if err != nil {
 		return err
@@ -167,6 +176,9 @@ func runBuildx(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return err
 	}
 	measurementRunID, workspaceID, correlationErr := "", "", scopeErr
+	if cfg.RemoteOnly {
+		correlationErr = errors.New("hosted BuildKit outcome reporting is not yet supported; registry reuse remains enabled")
+	}
 	if correlationErr == nil {
 		measurementRunID, workspaceID, correlationErr = buildkitMeasurementCorrelation(ctx, cfg)
 	}

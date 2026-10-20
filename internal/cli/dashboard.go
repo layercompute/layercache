@@ -89,6 +89,9 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		if cfg.Role != "local" {
 			return errors.New("dashboard requires local CLI configurations; connect Team Cache with layercache login")
 		}
+		if *serve && cfg.RemoteOnly {
+			return errors.New("dashboard --serve cannot create Local backends for remoteOnly projects")
+		}
 		if seen[cfg.ProjectID] {
 			return fmt.Errorf("duplicate dashboard project %s", cfg.ProjectID)
 		}
@@ -175,7 +178,7 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 				if err != nil || !dashboardConfigurationMatches(sources[i], cfg, selectedBackend, *serve) {
 					return
 				}
-				if selectedBackend == "" {
+				if selectedBackend == "" && !cfg.RemoteOnly {
 					project.Local = readDashboardCache(ctx, newLocalCLIHTTPClient(5*time.Second), localRuntimeURL(cfg.Listen), cfg.LocalToken, cfg.ProjectID, result.From, result.To)
 					project.Local.PruneAllowed = *allowPrune && project.Local.Status != nil && project.Local.Status.CanPrune && project.Local.Status.Role != "public"
 				} else {
@@ -217,7 +220,7 @@ func runDashboard(ctx context.Context, args []string, stdout, stderr io.Writer) 
 					break
 				}
 			}
-			if index < 0 || selectedBackend != "" && request.Cache == "local" {
+			if index < 0 || (selectedBackend != "" || sources[index].RemoteOnly) && request.Cache == "local" {
 				return dashboard.PruneResult{}, dashboard.ErrPruneForbidden
 			}
 			cfg, err := config.Load(paths[index])
@@ -309,7 +312,7 @@ func readDashboardCache(ctx context.Context, client *http.Client, endpoint, toke
 // backend also keeps the identity and paths it opened until this process exits.
 // Default dashboards retain project-scoped live configuration reloads.
 func dashboardConfigurationMatches(original, current config.Config, selectedBackend string, owned bool) bool {
-	if current.Role != "local" || current.ProjectID != original.ProjectID {
+	if current.Role != "local" || current.RemoteOnly != original.RemoteOnly || current.ProjectID != original.ProjectID {
 		return false
 	}
 	if selectedBackend != "" {

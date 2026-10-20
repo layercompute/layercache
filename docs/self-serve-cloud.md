@@ -11,6 +11,62 @@ bounded operator cost records for teams and projects. Missing costs remain
 unknown; provider invoice reconciliation and full native metering are future
 work. This implementation does not activate public signup or billing.
 
+## Existing projects and operator password sign-in
+
+An operator can adopt existing PostgreSQL/S3 projects through protected
+`operatorProjects` configuration rather than creating replacement identities.
+Each entry supplies a protected `projectConfigFile`, display `name`, original
+numeric `repositoryId`, verified GitHub `owner` with `id` and `login`, and an
+explicit `teamId` and `teamName`. Set `alias` to retain an existing container
+registry namespace. Imported projects keep their signing keys, native cache
+keys, backend, quota and current SQL membership authority. Restart rejects
+missing projects or changed immutable bindings and does not restore revoked
+memberships. Operator-managed teams expose these management limits in the UI.
+
+For a private operator rollout, `passwordAccountsFile` enables email/password
+sign-in without a GitHub OAuth app. The protected file contains an `accounts`
+array with canonical `email`, verified owner `user` identity, a cost-12 bcrypt
+`passwordHash`, and `mustChangePassword`. It must be an owner-only regular file
+inside an owner-only directory, owned by the service account. Keep it outside
+Git on persistent storage writable by that single portal process. Accounts must
+match imported project owners. Initial credentials require password change
+before workspace access. Passwords are 12 to 72 UTF-8 bytes; the service never
+stores their plaintext.
+
+Password sign-in reuses encrypted, expiring portal sessions and same-origin
+CSRF protection. Rotation requires the current password and persists the new
+hash atomically; old sessions stop working. If a response is lost after the
+change, try signing in with the new password. Removing an account or replacing
+its hash revokes its sessions. Operator recovery updates the protected file;
+public signup, email delivery and password-reset emails are not provided.
+Bounded login limits use the immediate peer address and ignore forwarded IP
+headers. Size a broader public rollout separately from this private mode.
+
+Password sessions can list, read and prune only the exact configured imported
+projects owned by that account, intersected with current membership. Membership
+in ordinary, Personal or another owner's projects does not extend password
+access. These sessions cannot manage GitHub repositories or team enrollment.
+Native CLI and CI access still use real GitHub credentials and the cache's
+current authority. In password-only mode, connect using an
+existing GitHub CLI sign-in:
+
+```sh
+layercache connect --cloud https://cloud.example.com \
+  --project 'github.com/example/demo' --github-cli --remote-only
+```
+
+`--remote-only` writes a client configuration without creating a Local artifact
+store. Use that configuration with `layercache run`; a Local daemon is not
+needed. Ordinary standalone and managed connections retain Local operation
+unless this option is selected. Browser passwords do not become build-cache
+credentials. GitHub device login needs a configured OAuth app.
+
+OAuth remains available when its client ID and protected secret are configured
+together. Optional `registryUrl`, `registryUsername` and protected
+`registryPasswordFile` reuse the existing authenticated project gateway's OCI
+proxy. The native registry needs its own storage and retention qualification.
+See the [migration procedure](cloud-migration.md) before retiring old storage.
+
 ## Standalone and managed service
 
 The open-source CLI and daemon work without a Layer Cache account, with local

@@ -40,7 +40,15 @@ func runReport(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if err != nil {
 		return err
 	}
-	target := localRuntimeURL(cfg.Listen) + "/v1/reports/" + url.PathEscape(*runID)
+	endpoint, token := localRuntimeURL(cfg.Listen), cfg.LocalToken
+	client := newLocalCLIHTTPClient(5 * time.Second)
+	if cfg.RemoteOnly {
+		if err := refreshTeamCapability(ctx, &cfg); err != nil {
+			return errors.New("hosted report authentication unavailable; run layercache login")
+		}
+		endpoint, token, client = strings.TrimRight(cfg.TeamURL, "/"), cfg.TeamToken, newCLIHTTPClient(5*time.Second)
+	}
+	target := endpoint + "/v1/reports/" + url.PathEscape(*runID)
 	var from, to time.Time
 	if hasPeriod {
 		from, err = time.Parse(time.RFC3339, *fromValue)
@@ -57,14 +65,14 @@ func runReport(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		query := make(url.Values, 2)
 		query.Set("from", from.Format(time.RFC3339Nano))
 		query.Set("to", to.Format(time.RFC3339Nano))
-		target = localRuntimeURL(cfg.Listen) + "/v1/reports?" + query.Encode()
+		target = endpoint + "/v1/reports?" + query.Encode()
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Authorization", "Bearer "+cfg.LocalToken)
-	client := newLocalCLIHTTPClient(5 * time.Second)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-LayerCache-Project", cfg.ProjectID)
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("read Layer Cache run report: %w", err)

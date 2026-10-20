@@ -26,13 +26,14 @@ import (
 // from untrusted request fields. Each project retains its own signing secret,
 // persistence, quota and membership policy. Origin is the shared HTTPS origin.
 type ProjectGatewayConfig struct {
-	Authority        ProjectAuthority
-	StoragePool      StoragePoolConfig
-	Origin           string
-	Projects         map[string]config.Config
-	RegistryURL      string
-	RegistryUsername string
-	RegistryPassword string
+	PreserveExistingMemberships bool
+	Authority                   ProjectAuthority
+	StoragePool                 StoragePoolConfig
+	Origin                      string
+	Projects                    map[string]config.Config
+	RegistryURL                 string
+	RegistryUsername            string
+	RegistryPassword            string
 }
 
 type ProjectGateway struct {
@@ -49,6 +50,9 @@ type ProjectGateway struct {
 var projectAlias = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 func NewProjectGateway(ctx context.Context, cfg ProjectGatewayConfig) (_ *ProjectGateway, err error) {
+	if cfg.PreserveExistingMemberships && cfg.Authority != nil {
+		return nil, errors.New("existing membership preservation cannot override a managed authority")
+	}
 	if err := cfg.StoragePool.validate(); err != nil {
 		return nil, err
 	}
@@ -88,7 +92,13 @@ func NewProjectGateway(ctx context.Context, cfg ProjectGatewayConfig) (_ *Projec
 			}
 			bazelBackends[project.BazelRemote.URL] = true
 		}
-		instance, openErr := NewWithProjectAuthority(ctx, project, cfg.Authority)
+		var instance *Server
+		var openErr error
+		if cfg.PreserveExistingMemberships {
+			instance, openErr = NewWithExistingMembership(ctx, project)
+		} else {
+			instance, openErr = NewWithProjectAuthority(ctx, project, cfg.Authority)
+		}
 		if openErr != nil {
 			return nil, fmt.Errorf("open project %s: %w", alias, openErr)
 		}
@@ -167,6 +177,17 @@ func (gateway *ProjectGateway) Close() error {
 // AddProject publishes a provisioned project without replacing existing runtime
 // instances or configured membership. The caller owns durable project records.
 func (gateway *ProjectGateway) AddProject(ctx context.Context, alias string, cfg config.Config) error {
+	return gateway.addProject(ctx, alias, cfg, false)
+}
+
+// AddStandaloneProject adopts an existing private cloud runtime while retaining
+// its original SQL membership and revocation checks instead of the gateway's
+// managed membership authority.
+func (gateway *ProjectGateway) AddStandaloneProject(ctx context.Context, alias string, cfg config.Config) error {
+	return gateway.addProject(ctx, alias, cfg, true)
+}
+
+func (gateway *ProjectGateway) addProject(ctx context.Context, alias string, cfg config.Config, standalone bool) error {
 	gateway.mu.Lock()
 	defer gateway.mu.Unlock()
 	if gateway.closed || gateway.authority == nil {
@@ -193,7 +214,13 @@ func (gateway *ProjectGateway) AddProject(ctx context.Context, alias string, cfg
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	instance, err := NewWithProjectAuthority(ctx, cfg, gateway.authority)
+	var instance *Server
+	var err error
+	if standalone {
+		instance, err = NewWithExistingMembership(ctx, cfg)
+	} else {
+		instance, err = NewWithProjectAuthority(ctx, cfg, gateway.authority)
+	}
 	if err != nil {
 		return err
 	}

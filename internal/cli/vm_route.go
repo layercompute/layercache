@@ -94,6 +94,9 @@ func runVMRoute(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err != nil {
 		return fmt.Errorf("load Layer Cache configuration: %w", err)
 	}
+	if cfg.RemoteOnly {
+		return errors.New("remoteOnly VM routes require hosted credentials; Local route issuance is unavailable")
+	}
 	selectedCompatibility := *compatibilityID
 	if selectedCompatibility == "" {
 		selectedCompatibility = cfg.CompatibilityID

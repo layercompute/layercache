@@ -31,6 +31,8 @@ const recentDegradedWindow = 24 * time.Hour
 
 type operationalStatus struct {
 	Configured           bool                            `json:"configured"`
+	RemoteOnly           bool                            `json:"remoteOnly,omitempty"`
+	StorageState         string                          `json:"storageState,omitempty"`
 	Running              bool                            `json:"running"`
 	Role                 string                          `json:"role"`
 	ProjectID            string                          `json:"projectId"`
@@ -106,6 +108,7 @@ type publicBuildCondition struct {
 func inspectOperationalStatus(ctx context.Context, cfg config.Config) operationalStatus {
 	result := operationalStatus{
 		Configured: true,
+		RemoteOnly: cfg.RemoteOnly,
 		Role:       cfg.Role, ProjectID: cfg.ProjectID, DataDir: cfg.DataDir, Listen: cfg.Listen,
 		CompatibilityID: cfg.CompatibilityID, MaxBytes: cfg.MaxBytes,
 		EvictionPolicy:     string(cfg.EvictionPolicy),
@@ -121,7 +124,16 @@ func inspectOperationalStatus(ctx context.Context, cfg config.Config) operationa
 		result.EvictionPolicy = "lru"
 	}
 
-	live, liveErr := probeRuntime(cfg)
+	var live runtimeStatus
+	var liveErr error
+	if cfg.RemoteOnly {
+		if err := refreshTeamCapability(ctx, &cfg); err != nil {
+			result.addDegraded("team-authentication-unavailable")
+		}
+		liveErr = errors.New("Local Cache disabled")
+	} else {
+		live, liveErr = probeRuntime(cfg)
+	}
 	if liveErr == nil && live.Running {
 		result.Running = true
 		result.UsageBytes = live.UsageBytes
@@ -138,7 +150,7 @@ func inspectOperationalStatus(ctx context.Context, cfg config.Config) operationa
 		result.RuntimePID = live.RuntimePID
 		result.RuntimeInstanceID = live.RuntimeInstanceID
 		result.RuntimeStartedAt = live.StartedAt
-	} else {
+	} else if !cfg.RemoteOnly {
 		if stats, err := artifact.ReadStats(ctx, cfg.DataDir); err == nil {
 			result.UsageBytes = stats.UsageBytes
 			result.Artifacts = stats.Artifacts
@@ -164,9 +176,30 @@ func inspectOperationalStatus(ctx context.Context, cfg config.Config) operationa
 		}
 	}
 
-	result.inspectIntegrations(ctx, cfg)
+	if cfg.RemoteOnly {
+		result.DataDir, result.Listen = "", ""
+		result.MaxBytes = 0
+		result.StorageState = "unavailable"
+		result.DetectedIntegrations = project.DetectIntegrations(cfg.ProjectRoot)
+		for _, name := range result.DetectedIntegrations {
+			result.Integrations[name] = integrationCondition{Detected: true, Configured: true, Active: !isAdapterBypassed(cfg, name), Bypassed: isAdapterBypassed(cfg, name), State: "hosted-on-run"}
+		}
+	} else {
+		result.inspectIntegrations(ctx, cfg)
+	}
 	result.RemoteReachability["team"] = probeTeamRemote(ctx, cfg.TeamURL, cfg.TeamToken)
 	result.RemoteReachability["public"] = probeRemote(ctx, cfg.PublicURL)
+	if cfg.RemoteOnly {
+		now := time.Now().UTC()
+		remote := readDashboardCache(ctx, newCLIHTTPClient(5*time.Second), cfg.TeamURL, cfg.TeamToken, cfg.ProjectID, now.Add(-24*time.Hour), now)
+		if remote.Status != nil {
+			result.StorageState = "connected"
+			result.UsageBytes, result.Artifacts, result.Entries, result.EvictionPolicy = remote.Status.UsageBytes, remote.Status.Artifacts, remote.Status.Entries, remote.Status.EvictionPolicy
+			if remote.Status.MaxBytes != nil {
+				result.MaxBytes = *remote.Status.MaxBytes
+			}
+		}
+	}
 	result.Credentials["team"] = inspectCredential(cfg.TeamURL != "", cfg.TeamToken, cfg.TeamTokenExpiresAt)
 	publicBuildToken, publicBuildExpiry, publicBuildRequired := publicBuildStatusCredential(cfg)
 	result.Credentials["publicBuild"] = inspectCredential(publicBuildRequired, publicBuildToken, publicBuildExpiry)
@@ -180,7 +213,7 @@ func inspectOperationalStatus(ctx context.Context, cfg config.Config) operationa
 			result.addDegraded(name + "-credential-" + credential.State)
 		}
 	}
-	if result.Running {
+	if result.Running || cfg.RemoteOnly {
 		result.RecentDegraded = inspectRecentDegraded(ctx, cfg)
 		if result.RecentDegraded.Observed {
 			result.addDegraded("recent-cache-operation-failure")
@@ -561,12 +594,18 @@ func inspectRecentDegraded(ctx context.Context, cfg config.Config) degradedCondi
 	query := make(url.Values)
 	query.Set("from", now.Add(-recentDegradedWindow).Format(time.RFC3339Nano))
 	query.Set("to", now.Format(time.RFC3339Nano))
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, localRuntimeURL(cfg.Listen)+"/v1/reports?"+query.Encode(), nil)
+	endpoint, token := localRuntimeURL(cfg.Listen), cfg.LocalToken
+	client := newLocalCLIHTTPClient(2 * time.Second)
+	if cfg.RemoteOnly {
+		endpoint, token, client = strings.TrimRight(cfg.TeamURL, "/"), cfg.TeamToken, newCLIHTTPClient(2*time.Second)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/v1/reports?"+query.Encode(), nil)
 	if err != nil {
 		return result
 	}
-	request.Header.Set("Authorization", "Bearer "+cfg.LocalToken)
-	response, err := newLocalCLIHTTPClient(2 * time.Second).Do(request)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-LayerCache-Project", cfg.ProjectID)
+	response, err := client.Do(request)
 	if err != nil {
 		return result
 	}
@@ -574,14 +613,19 @@ func inspectRecentDegraded(ctx context.Context, cfg config.Config) degradedCondi
 	if response.StatusCode != http.StatusOK {
 		return result
 	}
-	var report measurement.PeriodReport
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&report); err != nil {
+	var report struct {
+		measurement.PeriodReport
+		Degraded *bool `json:"degraded"`
+	}
+	limited := &io.LimitedReader{R: response.Body, N: (1 << 20) + 1}
+	decoder := json.NewDecoder(limited)
+	if decoder.Decode(&report) != nil || report.SchemaVersion != measurement.SchemaVersion || report.Degraded == nil || report.Runs < 0 || decoder.Decode(&struct{}{}) != io.EOF || limited.N == 0 {
 		return result
 	}
 	result.Available = true
-	result.Observed = report.Degraded
+	result.Observed = *report.Degraded
 	result.Runs = report.Runs
-	if report.Degraded {
+	if *report.Degraded {
 		result.State = "degraded"
 	} else {
 		result.State = "healthy"
@@ -692,6 +736,17 @@ func formatByteCount(value int64) string {
 }
 
 func printOperationalStatus(output io.Writer, status operationalStatus) error {
+	if status.RemoteOnly {
+		if _, err := fmt.Fprintf(output, "Layer Cache hosted storage for %s; Local artifact storage disabled\n", status.ProjectID); err != nil {
+			return err
+		}
+		usage := "unavailable"
+		if status.StorageState == "connected" {
+			usage = fmt.Sprintf("%s of %s, %d entries", formatByteCount(status.UsageBytes), formatByteCount(status.MaxBytes), status.Entries)
+		}
+		_, err := fmt.Fprintf(output, "Hosted Cache remote: %s; usage: %s; credential: %s; degraded: %s\n", status.RemoteReachability["team"].State, usage, status.Credentials["team"].State, strings.Join(status.DegradedReasons, ", "))
+		return err
+	}
 	runtimeState := "stopped"
 	if status.Running {
 		runtimeState = "running"

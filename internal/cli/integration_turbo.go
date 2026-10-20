@@ -39,6 +39,9 @@ func runTurboIntegration(ctx context.Context, args []string, stdout, stderr io.W
 	if err != nil {
 		return fmt.Errorf("load Layer Cache configuration: %w", err)
 	}
+	if cfg.RemoteOnly {
+		return errors.New("remoteOnly uses per-command native credentials; use layercache run instead of a Local integration")
+	}
 	projectRoot, err := integrationProjectRoot(ctx, cfg, *root)
 	if err != nil {
 		return err

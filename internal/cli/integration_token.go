@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/layercache/layercache/internal/access"
@@ -11,6 +12,9 @@ import (
 const localIntegrationCapabilityLifetime = 12 * time.Hour
 
 func mintLocalIntegrationCapability(ctx context.Context, cfg config.Config, integration string) (string, time.Time, error) {
+	if cfg.RemoteOnly {
+		return "", time.Time{}, errors.New("remoteOnly cannot mint Local integration credentials")
+	}
 	discovered, err := discoverConfiguredProject(ctx, cfg, "", true)
 	if err != nil {
 		return "", time.Time{}, err

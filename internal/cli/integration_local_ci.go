@@ -35,6 +35,9 @@ func runLocalCIIntegration(ctx context.Context, args []string, stdout, stderr io
 	if err != nil {
 		return fmt.Errorf("load Layer Cache configuration: %w", err)
 	}
+	if cfg.RemoteOnly {
+		return errors.New("remoteOnly uses per-command native credentials; use layercache run instead of a Local integration")
+	}
 	envPath := *envPathFlag
 	if _, err := discoverConfiguredProject(ctx, cfg, "", flagWasSet(flags, "config") || cfg.ProjectRoot == ""); err != nil {
 		return err

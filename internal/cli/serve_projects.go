@@ -21,13 +21,14 @@ import (
 )
 
 type projectGatewayFile struct {
-	StoragePool          server.StoragePoolConfig `json:"storagePool,omitempty"`
-	Listen               string                   `json:"listen"`
-	Origin               string                   `json:"origin"`
-	Projects             map[string]string        `json:"projects"`
-	RegistryURL          string                   `json:"registryUrl,omitempty"`
-	RegistryUsername     string                   `json:"registryUsername,omitempty"`
-	RegistryPasswordFile string                   `json:"registryPasswordFile,omitempty"`
+	PreserveExistingMemberships bool                     `json:"preserveExistingMemberships,omitempty"`
+	StoragePool                 server.StoragePoolConfig `json:"storagePool,omitempty"`
+	Listen                      string                   `json:"listen"`
+	Origin                      string                   `json:"origin"`
+	Projects                    map[string]string        `json:"projects"`
+	RegistryURL                 string                   `json:"registryUrl,omitempty"`
+	RegistryUsername            string                   `json:"registryUsername,omitempty"`
+	RegistryPasswordFile        string                   `json:"registryPasswordFile,omitempty"`
 }
 
 func loadProjectGateway(path string) (projectGatewayFile, server.ProjectGatewayConfig, error) {
@@ -51,6 +52,7 @@ func loadProjectGateway(path string) (projectGatewayFile, server.ProjectGatewayC
 	}
 	cfg.Origin = file.Origin
 	cfg.StoragePool = file.StoragePool
+	cfg.PreserveExistingMemberships = file.PreserveExistingMemberships
 	cfg.Projects = map[string]config.Config{}
 	for alias, configPath := range file.Projects {
 		if !filepath.IsAbs(configPath) {

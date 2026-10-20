@@ -136,9 +136,32 @@ func (Store) Delete(ctx context.Context, account string) error {
 		return fmt.Errorf("%w on %s", ErrUnavailable, runtime.GOOS)
 	}
 	if output, err := cmd.CombinedOutput(); err != nil {
+		if credentialAlreadyAbsent(runtime.GOOS, err, output) {
+			return nil
+		}
 		return fmt.Errorf("delete Layer Cache credential %q: %w: %s", account, err, cleanOutput(output))
 	}
 	return nil
+}
+
+// Missing entries are successful deletion, including retries after a previous
+// delete committed but its acknowledgement was lost. Native service failures
+// remain errors; in particular, secret-tool prints its GError on stderr.
+func credentialAlreadyAbsent(system string, err error, output []byte) bool {
+	var status *exec.ExitError
+	if !errors.As(err, &status) {
+		return false
+	}
+	switch system {
+	case "linux":
+		return status.ExitCode() == 1 && len(bytes.TrimSpace(output)) == 0
+	case "darwin":
+		// security can append this status after a preceding search failure.
+		// Accept only its single missing-item diagnostic, never extra errors.
+		return status.ExitCode() == 44 && strings.TrimSpace(string(output)) == "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." // errSecItemNotFound (-25300) modulo 256.
+	default:
+		return false
+	}
 }
 
 func protectedExecutable(path, name string) (string, error) {

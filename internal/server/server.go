@@ -104,6 +104,23 @@ type ProjectAuthority interface {
 }
 
 func NewWithProjectAuthority(ctx context.Context, cfg config.Config, authority ProjectAuthority) (*Server, error) {
+	return newWithProjectAuthority(ctx, cfg, authority, false)
+}
+
+// NewWithExistingMembership preserves the SQL authority of an existing private
+// project. It neither creates a missing cloud project nor reconciles configured
+// members, so adoption cannot resurrect a previously revoked identity.
+func NewWithExistingMembership(ctx context.Context, cfg config.Config) (*Server, error) {
+	if cfg.Role != "team" || cfg.CloudPostgresURL == "" {
+		return nil, errors.New("existing membership requires a private cloud project")
+	}
+	return newWithProjectAuthority(ctx, cfg, nil, true)
+}
+
+func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority ProjectAuthority, existing bool) (*Server, error) {
+	if cfg.RemoteOnly {
+		return nil, errors.New("remoteOnly is a client-only configuration")
+	}
 	if err := cfg.ValidateBazelRemote(); err != nil {
 		return nil, err
 	}
@@ -152,14 +169,18 @@ func NewWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 		server.telemetryDegraded = true
 	}
 	if cfg.CloudPostgresURL != "" {
-		server.cloudStore, err = cloud.Open(ctx, cloudStoreConfig(cfg))
+		if existing {
+			server.cloudStore, err = cloud.OpenExisting(ctx, cloudStoreConfig(cfg))
+		} else {
+			server.cloudStore, err = cloud.Open(ctx, cloudStoreConfig(cfg))
+		}
 		if err != nil {
 			_ = server.Close()
 			return nil, fmt.Errorf("open cloud cache persistence: %w", err)
 		}
 		server.store = server.cloudStore
 		server.retainedStore = server.cloudStore
-		if authority == nil && (cfg.Role == "team" || cfg.Role == "public") {
+		if !existing && authority == nil && (cfg.Role == "team" || cfg.Role == "public") {
 			if err := server.applyConfiguredCloudMemberships(ctx, server.cloudStore); err != nil {
 				_ = server.Close()
 				return nil, err

@@ -7,9 +7,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -256,5 +258,51 @@ func TestCloudDeviceDiagnosticsNeverIncludeProviderBody(t *testing.T) {
 	cancel()
 	if !errors.Is(cloudDeviceError(ctx, "complete", errors.New("provider-body")), context.Canceled) {
 		t.Fatal("lost cancellation")
+	}
+}
+
+func TestConnectWithoutOAuthClientExplainsGitHubCLIWithoutDeviceRequest(t *testing.T) {
+	var deviceAttempts atomic.Int64
+	originalTransport := http.DefaultTransport
+	transport := originalTransport.(*http.Transport).Clone()
+	transport.Proxy = func(request *http.Request) (*url.URL, error) {
+		if request.URL.Hostname() == "github.com" {
+			deviceAttempts.Add(1)
+			return nil, errors.New("fixture rejects outbound GitHub device requests")
+		}
+		return nil, nil
+	}
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport; transport.CloseIdleConnections() })
+	for _, clientID := range []string{"", "  "} {
+		t.Run("client-"+clientID, func(t *testing.T) {
+			root := t.TempDir()
+			cachePath := filepath.Join(root, "no-local-cache")
+			t.Setenv("XDG_CACHE_HOME", cachePath)
+			var publicRequests atomic.Int64
+			service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/public-config" {
+					t.Errorf("unexpected cloud request %s", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				publicRequests.Add(1)
+				_ = json.NewEncoder(w).Encode(map[string]string{"githubClientId": clientID})
+			}))
+			defer service.Close()
+			configPath := filepath.Join(root, "new-client", "config.json")
+			_, _, err := callCLI("connect", "--cloud", service.URL, "--remote-only", "--config", configPath)
+			if err == nil || !strings.Contains(err.Error(), "use --github-cli after gh auth login") || !strings.Contains(err.Error(), "dashboard password is not a native GitHub credential") {
+				t.Fatalf("missing GitHub CLI guidance: %v", err)
+			}
+			if publicRequests.Load() != 1 || deviceAttempts.Load() != 0 {
+				t.Fatal("connect attempted device login without an OAuth client")
+			}
+			for _, path := range []string{filepath.Dir(configPath), cachePath} {
+				if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+					t.Fatalf("failed connect created client/storage files: %v", statErr)
+				}
+			}
+		})
 	}
 }
