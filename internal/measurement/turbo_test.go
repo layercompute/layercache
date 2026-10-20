@@ -206,23 +206,24 @@ func TestTurboRunSummaryPreservesOmittedTransitDependencies(t *testing.T) {
 type turboMeasurementRepository interface {
 	ReconcileTurboSummaries(string, measurement.TurboReconcileOptions, [][]byte) (int, error)
 	RunReport(string) (measurement.RunReport, error)
+	PeriodReport(time.Time, time.Time) (measurement.PeriodReport, error)
 }
 
 func testTurboOmittedTransitDependencies(t *testing.T, repository turboMeasurementRepository) measurement.RunReport {
 	t.Helper()
-	base := time.Date(2026, time.October, 20, 10, 0, 0, 0, time.UTC)
+	base := time.Date(2026, time.October, 20, 0, 0, 0, 0, time.UTC)
 	document := turboSummaryDocument(t, map[string]any{
 		"id": "summary-transit", "version": "1",
-		"execution": map[string]any{"startTime": base.UnixMilli(), "endTime": base.Add(time.Second).UnixMilli()},
+		"execution": map[string]any{"startTime": base.Add(-2 * time.Second).UnixMilli(), "endTime": base.Add(4 * time.Second).UnixMilli()},
 		"tasks": []any{
 			turboTask("pkg#build", "hash-build", nil, true, "MISS", false, false, "", 0,
-				base.Add(10*time.Millisecond), base.Add(110*time.Millisecond), 0),
+				base.Add(3*time.Second), base.Add(3100*time.Millisecond), 0),
 			turboTask("pkg#uncached", "hash-uncached", []string{"pkg#build", "pkg#transit"}, false,
-				"MISS", false, false, "", 0, base.Add(110*time.Millisecond), base.Add(200*time.Millisecond), 0),
+				"MISS", false, false, "", 0, base.Add(3100*time.Millisecond), base.Add(3200*time.Millisecond), 0),
 			turboTask("pkg#test", "hash-test", []string{"pkg#uncached", "pkg#transit", "pkg#transit"}, true,
-				"HIT", false, true, "REMOTE", 500, base.Add(200*time.Millisecond), base.Add(220*time.Millisecond), 0),
+				"HIT", false, true, "REMOTE", 500, base.Add(3200*time.Millisecond), base.Add(3220*time.Millisecond), 0),
 			turboTask("other#uncached", "hash-other", []string{"other#unreachable-transit"}, false,
-				"MISS", false, false, "", 0, base.Add(300*time.Millisecond), base.Add(400*time.Millisecond), 0),
+				"MISS", false, false, "", 0, base.Add(3300*time.Millisecond), base.Add(3400*time.Millisecond), 0),
 		},
 	})
 	options := measurement.TurboReconcileOptions{Project: "github.com/acme/widget", CompatibilityID: "linux-amd64-schema1"}
@@ -236,6 +237,19 @@ func testTurboOmittedTransitDependencies(t *testing.T, repository turboMeasureme
 	}
 	if report.Eligible != 2 || report.Hits != 1 || report.Misses != 1 || report.Groups != 3 || report.HitRate != 0.5 {
 		t.Fatalf("transit dependencies changed actual task counts: %#v", report)
+	}
+	// The summary began before midnight, but its actual eligible tasks began
+	// after it. Unknown graph bookkeeping must not move the run to yesterday.
+	period, err := repository.PeriodReport(base, base.Add(24*time.Hour))
+	if err != nil || period.Runs != 1 || period.Eligible != 2 || period.Hits != 1 || period.Misses != 1 || period.HitRate != 0.5 {
+		t.Fatalf("omitted graph boundary excluded actual tasks from their period: %#v, %v", period, err)
+	}
+	previousPeriod, err := repository.PeriodReport(base.Add(-24*time.Hour), base)
+	if err != nil || previousPeriod.Runs != 0 || previousPeriod.Eligible != 0 || previousPeriod.Hits != 0 {
+		t.Fatalf("omitted graph boundary added actual tasks to an earlier period: %#v, %v", previousPeriod, err)
+	}
+	if !report.StartedAt.Equal(base.Add(3*time.Second)) || !report.FinishedAt.Equal(base.Add(3220*time.Millisecond)) {
+		t.Fatalf("unknown graph boundary changed actual run bounds: %s to %s", report.StartedAt, report.FinishedAt)
 	}
 	if report.GrossAvoidedTaskTime.Milliseconds == nil || *report.GrossAvoidedTaskTime.Milliseconds != 500 {
 		t.Fatalf("known gross avoided task time = %#v", report.GrossAvoidedTaskTime)

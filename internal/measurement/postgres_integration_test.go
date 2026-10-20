@@ -303,4 +303,10 @@ func TestPostgresRepositoryAgainstPostgres(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(reopenedTransit, transitReport) {
 		t.Fatalf("reopened PostgreSQL incomplete graph report = %#v, %v", reopenedTransit, err)
 	}
+	transitPeriodStart := time.Date(2026, time.October, 20, 0, 0, 0, 0, time.UTC)
+	reopenedTransitPeriod, err := repository.PeriodReport(transitPeriodStart, transitPeriodStart.Add(24*time.Hour))
+	if err != nil || reopenedTransitPeriod.Runs != 1 || reopenedTransitPeriod.Eligible != 2 || reopenedTransitPeriod.Hits != 1 ||
+		reopenedTransitPeriod.NetEstimatedBuildTimeSaved.Milliseconds != nil {
+		t.Fatalf("reopened PostgreSQL incomplete graph period = %#v, %v", reopenedTransitPeriod, err)
+	}
 }

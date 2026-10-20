@@ -555,9 +555,10 @@ func reconcileTurboOutcomes(
 						"omitted-task", options.Project, options.CompatibilityID, summary.ID, dependency,
 					)
 					// This is an unknown graph boundary, not an executed task.
-					// Anchor its required timestamps to the known summary start,
-					// without assigning execution, restore or producer duration.
-					anchor := time.UnixMilli(summary.Execution.StartTime).UTC()
+					// Use the referring outcome's observed start so bookkeeping
+					// cannot move real work into an earlier reporting period.
+					// Assign no execution, restore or producer duration.
+					anchor := outcome.StartedAt
 					outcomes = append(outcomes, FinalOutcome{
 						RunID: runID, WorkspaceID: options.WorkspaceID, Integration: IntegrationTurbo,
 						WorkID: workIDs[dependency], CompatibilityID: options.CompatibilityID,

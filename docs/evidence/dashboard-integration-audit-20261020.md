@@ -35,7 +35,10 @@ numeric provider costs nor independent cross-tier authorization.
   its task list. The reconciler rejected the whole summary. Reachable omitted
   dependencies now become private unknown graph boundaries. Actual eligible
   task outcomes remain reportable; incomplete critical-path savings stay
-  unknown. No execution duration or hit is invented for an omitted task.
+  unknown. No execution duration or hit is invented for an omitted task. Their
+  bookkeeping timestamps must not precede the first observed task and move its
+  run outside the selected reporting window. Cross-window controls cover this
+  external-review finding in SQLite and PostgreSQL.
 - The Actions cache chain called its selected hosted Team backend Local Cache.
   The reporting callback now attributes new Team restores to Team Cache.
   Historical reports and the chain's Public trust and warming policy remain
