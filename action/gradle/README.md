@@ -13,21 +13,24 @@ permissions:
 steps:
   - uses: actions/checkout@v7
   - id: gradle-cache
-    uses: ziahamza/layercache/action/gradle@53ec27443a406a508b7e8faeab3f46292e0ba07b
+    uses: ziahamza/layercache/action/gradle@9c071a6e94aa7a173a810165020c6f3eaedda01e
     with:
       team-url: https://cache.example.com
       project: private-project
       compatibility: linux-x64-jdk17-gradle931-android36-ndk271-schema1
+      native-info-log: ${{ runner.temp }}/gradle-native-info.log
       push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
   - name: Build with native Gradle keys
     env:
       CACHE_INIT_SCRIPT: ${{ steps.gradle-cache.outputs.init-script }}
     run: |
+      set -o pipefail
       cache_args=()
       if [[ -n "$CACHE_INIT_SCRIPT" ]]; then
         cache_args+=(--init-script "$CACHE_INIT_SCRIPT")
       fi
-      ./gradlew --build-cache "${cache_args[@]}" build
+      ./gradlew --build-cache --info --console=plain "${cache_args[@]}" build 2>&1 |
+        tee "$RUNNER_TEMP/gradle-native-info.log"
 ```
 
 The compatibility above illustrates the required input; it does not establish
@@ -64,10 +67,9 @@ fails explicitly. Required release handoffs still use retained artifacts.
 
 ## Native task reporting
 
-Action revisions containing the metering client enable optional task reporting
-when the server advertises `nativeReports` version 1. The earlier HTTP-only
-revision pinned in the example above does not include this collector. The
-collector uses Gradle's public task completion events and a configuration-cache
+The reviewed action pinned above enables optional task reporting when the server
+advertises `nativeReports` version 1. Older HTTP-only revisions do not contain
+this collector. It uses Gradle's public task completion events and a configuration-cache
 compatible build service. One root listener covers subprojects, included builds
 and `buildSrc`; it does not add tasks or change their native keys.
 
@@ -83,15 +85,19 @@ to one completed Gradle 9.3.1 `--info` log. Keep the caller's existing command a
 preserve its exit status, for example:
 
 ```yaml
-# Add to a reviewed action revision containing native metering:
+# Keep one completed native info log per action instance:
 with:
   native-info-log: ${{ runner.temp }}/gradle-native-info.log
 
 # In the following build step, pass the init-script output as usual:
 run: |
   set -o pipefail
+  cache_args=()
+  if [[ -n "$CACHE_INIT_SCRIPT" ]]; then
+    cache_args+=(--init-script "$CACHE_INIT_SCRIPT")
+  fi
   ./gradlew --build-cache --info --console=plain \
-    --init-script "$CACHE_INIT_SCRIPT" build 2>&1 |
+    "${cache_args[@]}" build 2>&1 |
     tee "$RUNNER_TEMP/gradle-native-info.log"
 ```
 

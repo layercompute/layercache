@@ -89,6 +89,12 @@ build, `buildSrc`, parallel execution, configuration-cache storage and reuse,
 accepted cache restores, up-to-date/no-source/skipped/failed outcomes, explicit
 cache disabling and equivalent tasks sharing one native key. Comparing the
 original init script with the metered script checks unchanged native keys.
+The immutable baseline is vendored in
+`fixtures/pre-metering-init.gradle` from
+`f49b92adf365b0a877f588f884d7e3b885b1fdfd:native/gradle/init.gradle`, with
+SHA256 `b45b47190b38f9f439d2324a49fbc5bbfdb8bf3a8671b63900c11d64ef32eaf5`.
+The runner verifies those exact bytes before comparison, so qualification works
+in shallow checkouts and exported source trees without Git history.
 These filesystem-cache controls qualify native outcomes and projection; the
 HTTP runner separately qualifies private source and producer correlation.
 Neither fixture establishes application or billing savings.

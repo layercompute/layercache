@@ -2,6 +2,7 @@
 // optional info-log projection. No Android or hosted application jobs run here.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
@@ -99,9 +100,9 @@ function task(result, path) {
 try {
   const version = spawnSync(gradle, ['--version'], {env: environment, encoding: 'utf8', timeout: 30000});
   assert.equal(version.status, 0);assert.match(version.stdout, /Gradle 9\.3\.1(?:\s|$)/);
-  const original = spawnSync('git', ['show', 'f49b92a:native/gradle/init.gradle'], {cwd: repository, encoding: 'utf8'});
-  assert.equal(original.status, 0);
-  const oldInit = join(root, 'original-init.gradle');writeFileSync(oldInit, original.stdout, {mode: 0o600});
+  const original = readFileSync(join(repository, 'qa/gradle-native/fixtures/pre-metering-init.gradle'));
+  assert.equal(createHash('sha256').update(original).digest('hex'), 'b45b47190b38f9f439d2324a49fbc5bbfdb8bf3a8671b63900c11d64ef32eaf5', 'Pre-metering baseline bytes must remain unchanged');
+  const oldInit = join(root, 'original-init.gradle');writeFileSync(oldInit, original, {mode: 0o600});
   const baseline = execute('original-init-native-keys', ['--no-configuration-cache', '--build-cache', ...selected], {metered: false, oldInit, home: join(root, 'original-gradle-home')});
   const originalKeys = parseGradleInfo(baseline.text).keys;
   clearOutputs({configuration: true});
