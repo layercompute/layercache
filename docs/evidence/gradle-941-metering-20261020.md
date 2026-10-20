@@ -5,6 +5,8 @@ On October 20, 2026 UTC, the seven public-listener controls passed with both Gra
 source export without `.git`, using separate generated workspaces and Gradle
 User Homes. This qualifies completed task observations and exact local log
 correlation. Application adoption and compute or billing savings remain open.
+The qualified client source is
+[`466b0f2`](https://github.com/ziahamza/layercache/commit/466b0f21d4485709405bac9093ded0de6de0f221).
 
 The parser now accepts exactly `9.3.1` and `9.4.1`. Its grammar, byte/path bounds,
 malformed-input refusal and handling of conflicting or shared native keys remain
