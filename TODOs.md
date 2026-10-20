@@ -857,6 +857,16 @@ workspaces and filesystem migration are outside the current product scope.
   deployed authorization, restored snapshots and language-specific replay
   separately before marking this complete.
 
+  [PR #76](https://github.com/ziahamza/layercache/pull/76) implements standalone
+  readiness/closure, revocable scoped grants and the existing native immutable
+  archive client. The actual server/CLI fixture passes 24 synthetic-CAS controls
+  locally and in the [hosted macOS job](https://github.com/ziahamza/layercache/actions/runs/39456825681/job/118745782258).
+  This is lifecycle, authorization and transfer evidence. The strict Xcode 27
+  main-source/PCH replay gate remains open while archive restore and native
+  graph validation are diagnosed. Deployment, installed pins and
+  managed Xcode Cloud producer/consumer acceptance remain separate unfinished
+  steps; external Swift replay is still unqualified.
+
 ## P1: complete supported private protocols
 
 - [ ] **Complete Nx Local-to-private reuse and confirmed durable publication.**
