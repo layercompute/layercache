@@ -34,7 +34,11 @@ workspaces and filesystem migration are outside the current product scope.
   freeze writes and recheck retained obligations before cutover. Keep compatible
   existing endpoints while clients move.
   [PR #68](https://github.com/ziahamza/layercache/pull/68) merged with all
-  seventeen checks green. The October 20 operator rollout now provides
+  seventeen checks green. The exact
+  [deployed backend](https://github.com/ziahamza/layercache/commit/95c418b92e2f41076d97c975972b71bc706cc206)
+  and [installed CLI](https://github.com/ziahamza/layercache/commit/3da910fc6d9486517230b63bd96e63db81dec2dc)
+  are recorded with the [sanitized rollout results](docs/evidence/operator-cloud-migration-20261020.md).
+  The October 20 operator rollout now provides
   authenticated hosted project views, R2-backed artifacts and cloud-only
   clients while preserving existing project identities and native authority.
   All five cohort projects authenticated through real GitHub CLI credentials;
@@ -58,7 +62,10 @@ workspaces and filesystem migration are outside the current product scope.
   Source, credentials, shared stores and evidence remain protected. Physical
   allocation was recorded separately from logical/sparse capacity. The
   [migration guide](docs/cloud-migration.md) keeps these retirement gates
-  explicit for future moves.
+  explicit for future moves. The
+  [deployed source](https://github.com/ziahamza/layercache/commit/95c418b92e2f41076d97c975972b71bc706cc206)
+  and [retirement results](docs/evidence/operator-cloud-migration-20261020.md#recovery-and-retirement)
+  record the completed scope and its recovery limits.
 
 - [ ] **Move API and SQL hosting off this machine and qualify ongoing recovery.**
   Owner: LayerCache cloud/operator. R2 stores artifact bytes; API, PostgreSQL
