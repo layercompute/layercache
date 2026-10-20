@@ -28,6 +28,27 @@ complete destination bytes and metadata before changing clients. Reconcile an
 unknown upload by reading its destination rather than publishing it blindly
 again.
 
+## Preserve PostgreSQL identity and authentication
+
+Check the source PostgreSQL major version before choosing a copy method.
+A physical data-directory copy needs a matching server major and compatible
+recovery tools. A container image with another major is not a qualified reader
+of that directory. Keep the original stopped copy until the replacement starts
+with the intended version and complete metadata fingerprints agree.
+
+Verify the original schema before making `search_path` explicit in each project
+connection. Check the effective schema with the actual project role, then
+compare tables, contents, ownership and privileges in that namespace. Do not
+assume that `public` is correct merely because it satisfies configuration
+validation or a database connection succeeds.
+
+Test the copied role through TCP with the correct password, then require a
+server authentication failure with an incorrect password at the same endpoint.
+A successful local socket connection can use peer or trust authentication and
+does not prove the password works. Prevent password-file or environment fallback
+from replacing the incorrect password during this control. Keep credentials
+and raw authentication diagnostics in protected operator records.
+
 ## Cut over and qualify
 
 1. Copy existing immutable objects while the old service remains available.
@@ -66,6 +87,29 @@ Preserve useful measurement records and a supported recovery copy. A retired
 sparse pool must be unmounted and its exact startup wiring disabled before
 removing its backing file. Do not run a broad Docker volume prune or remove a
 shared parent directory.
+
+Inspect image-declared `VOLUME` entries, the container's actual mounts and its
+effective database data directory together. A bind mount at one path does not
+replace an inherited volume at another path. Unexpected anonymous volumes can
+leave the database using a different directory than the one being verified.
+
+An ancestor bind mount can also carry an old child filesystem into a running
+container, even through a read-only capacity-check mount. Avoid binding a broad
+storage parent merely to check free space; use an isolated directory on the
+same host filesystem. Record the old filesystem's device identity before
+unmounting. After a normal host unmount, inspect every active mount namespace
+for that device, including container mount namespaces. An empty process file
+reference scan or an absent host mount alone does not prove the filesystem has
+been released. Refuse backing-file retirement while any namespace retains it.
+
+Recovery acceptance requires a full remote download, authenticated decryption
+and complete archive verification against the frozen manifest. Preserve file
+bytes, paths, ownership, permissions and timestamps. Bind the exact recovery
+tools to the receipt, and reconcile an unknown upload at its original object
+key. Keep the recovery prefix outside native cache and registry collection,
+and check the bucket's independent lifecycle policy. The archive does not
+preserve later writes to the replacement database. Independent key recovery
+and ongoing off-host SQL backups need their own qualification.
 
 Record logical bytes migrated, destination verification, allocated bytes
 removed and the observed filesystem-availability change separately. Concurrent
