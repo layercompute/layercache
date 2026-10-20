@@ -2,8 +2,8 @@
 
 Date: 2026-10-20 UTC. Implementation source:
 [`52944c0`](https://github.com/ziahamza/layercache/commit/52944c0).
-This receipt qualifies source behavior. Hosted deployment and authenticated
-application acceptance are separate checks.
+Source behavior and the subsequent authenticated hosted rollout are recorded
+separately below.
 
 The hosted portal now has focused project pages and stable direct links.
 Overview places cache bytes, hit rate, timing coverage and measurement runs
@@ -50,3 +50,41 @@ only twenty heap candidates; exact frequency aggregation still scales with
 unique artifacts and artifact/run pairs. A persistent SQLite covering index
 replaces repeated automatic digest-index construction. Query-plan controls and
 synthetic metadata-only benchmarks qualify that lookup, not application speedup.
+
+## Hosted rollout
+
+[PR #79](https://github.com/ziahamza/layercache/pull/79) merged on October 20 UTC
+after all eighteen PR checks passed. The merged source
+[`c6d120db672fc81b5d5a81faa6cb6c539c075962`](https://github.com/ziahamza/layercache/commit/c6d120db672fc81b5d5a81faa6cb6c539c075962)
+has the same tree as the qualified PR head and is deployed. The served dashboard
+bundle matches that image's build output.
+
+All 39 authenticated live checks passed, thirteen each in Chromium, Firefox and
+WebKit. These checks used normal sign-in and the active project's actual API
+responses. They covered the direct project URL and reload, top summary/API
+agreement, period changes with retained navigation, focus and scroll, CI run
+rollups, recurring client selection, stored-byte category totals, capacity bounds,
+project and account settings, and mobile navigation. There were no browser
+exceptions. Each browser signed out its own session.
+
+The rollout changed only the cloud service container. Before/after controls
+verified that existing account and project authority, session state, snapshot
+grants, protected configuration and other containers were preserved. Live QA
+read capacity without changing limits or pruning data. It did not rotate a
+password, dispatch application CI or start native/provider builds. Mutation,
+quota-pressure and restart behavior remain qualified by the source controls above.
+
+A post-merge Chromium check exposed an asynchronous membership assertion. The
+test searched rendered page text for a lowercase role before member rows loaded;
+the visible heading uses uppercase styling. A controlled held membership response
+reproduced the failure. The corrected check waits for the actual member row and
+its exact reader role before checking that administrator controls are absent.
+Existing API permission-denial checks remain in place.
+All 201 hosted-fixture checks passed again across Chromium, Firefox and WebKit
+with that controlled-response regression.
+
+Live UI/API agreement does not establish complete native measurement. Reported
+Turbo outcomes do not cover all Gradle or Xcode reuse, and a shared archive
+transport does not identify its native purpose. Those reporting gaps and matched
+producer resource/pricing data remain separate TODOs. This rollout makes no
+compute, invoice or application speedup claim.

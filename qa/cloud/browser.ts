@@ -104,7 +104,28 @@ try{
  await check('CLI connection command contains selected cloud and project',async()=>{await view(alice,'Settings');const command=await alice.locator('pre').innerText();assert.ok(command.includes(`--cloud '${origin}'`));assert.ok(command.includes('--github-cli'));project=command.match(/--project '([^']+)'/)![1]!;assert.ok(project);});
  await check('CLI connect exchanges GitHub credentials and uploads real cache bytes',async()=>{const cliRoot=fs.mkdtempSync('/tmp/layercache-cloud-cli-');fs.writeFileSync(path.join(cliRoot,'gh'),'#!/bin/sh\nprintf \'fixture-github-alice\\n\'\n',{mode:0o700});const configPath=path.join(cliRoot,'project.json');const connected=spawnSync(process.env.LAYERCACHE_BIN!,['connect','--cloud',origin,'--project',project,'--github-cli','--config',configPath,'--json'],{encoding:'utf8',timeout:20000,env:{...process.env,PATH:cliRoot+path.delimiter+process.env.PATH,XDG_CACHE_HOME:path.join(cliRoot,'cache'),XDG_CONFIG_HOME:path.join(cliRoot,'config')}});assert.equal(connected.status,0,connected.stderr);const config: {teamToken:string;compatibilityId:string;projectId:string;teamUrl:string}=JSON.parse(fs.readFileSync(configPath,'utf8'));assert.equal(config.projectId,project);assert.equal(config.teamUrl,origin);const token=config.teamToken;const put=await alice.request.put(origin+'/v8/artifacts/qa-ui-artifact',{headers:{Authorization:'Bearer '+token,'X-LayerCache-Compatibility':config.compatibilityId},data:'cache-data'.repeat(1024)});assert.equal(put.status(),200);await view(alice,'Overview');await refreshView(alice);await alice.getByText('10.0 KiB',{exact:true}).first().waitFor();});
  await check('invite reader and accept as intended account',async()=>{await view(alice,'Account & team');const f=form(alice,'Invite teammate');await f.getByLabel('GitHub username').fill('bob');await f.getByRole('combobox').selectOption('reader');await f.getByRole('button',{name:'Send invitation'}).click();await alice.getByText('Invitation ready.',{exact:false}).waitFor();await refreshView(bob);await bob.getByRole('heading',{name:'Join Acme engineering'}).waitFor();await bob.getByRole('button',{name:'Accept invitation'}).click();await bob.getByText('Invitation accepted.',{exact:true}).waitFor();await bob.getByText('10.0 KiB',{exact:true}).first().waitFor();});
- await check('reader can see cache and cannot administer or create teams',async()=>{await view(bob,'Account & team');assert.equal(await bob.getByRole('button',{name:'Create team',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Create project',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Send invitation',exact:true}).count(),0);assert.equal(await bob.getByRole('button',{name:'Save role',exact:true}).count(),0);assert.match(await bob.locator('main').innerText(),/reader/);});
+ await check('reader can see cache and cannot administer or create teams',async()=>{
+  const pattern='**/api/teams/*/members';
+  let releaseMembers!:()=>void,finishMembers!:()=>void,requestIntercepted=false;
+  const gate=new Promise<void>(resolve=>{releaseMembers=resolve;}),handled=new Promise<void>(resolve=>{finishMembers=resolve;});
+  await bob.route(pattern,async route=>{
+   requestIntercepted=true;await gate;
+   try{await route.continue();}finally{finishMembers();}
+  });
+  try{
+   const requested=bob.waitForRequest(request=>/\/api\/teams\/[^/]+\/members$/.test(new URL(request.url()).pathname));
+   await view(bob,'Account & team');await requested;
+   const members=bob.getByRole('region',{name:'Team access',exact:true});
+   const member=members.locator('.member').filter({has:bob.getByText('@bob',{exact:true})});
+   // An empty loading panel cannot establish that administrator controls are absent.
+   await expect(member).toHaveCount(0);releaseMembers();
+   await expect(member).toBeVisible();await expect(member.locator('span')).toHaveText('reader');
+   assert.equal(await bob.getByRole('button',{name:'Create team',exact:true}).count(),0);
+   assert.equal(await bob.getByRole('button',{name:'Create project',exact:true}).count(),0);
+   assert.equal(await bob.getByRole('button',{name:'Send invitation',exact:true}).count(),0);
+   assert.equal(await bob.getByRole('button',{name:'Save role',exact:true}).count(),0);
+  }finally{releaseMembers();if(requestIntercepted)await handled;await bob.unroute(pattern);}
+ });
  await check('reader cannot prune at either UI or API',async()=>{
   await view(bob,'Storage');
   assert.equal(await bob.getByRole('button',{name:/^Prune /}).count(),0);
