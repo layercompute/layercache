@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -50,12 +51,7 @@ func loadIdentitySeed(ctx context.Context, configurationDirectory string) ([32]b
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	lock := -1
-	err = identityLockSyscall(ctx, "openat", func() error {
-		var openErr error
-		lock, openErr = unix.Openat(directory, "identity.lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
-		return openErr
-	})
+	lock, err := openIdentityLock(ctx, directory, runtime.GOOS, unix.Openat)
 	if err != nil {
 		return empty, err
 	}
@@ -126,6 +122,34 @@ func loadIdentitySeed(ctx context.Context, configurationDirectory string) ([32]b
 		return empty, errors.New("client identity could not be synced")
 	}
 	return seed, nil
+}
+
+func openIdentityLock(ctx context.Context, directory int, platform string, openat func(int, string, int, uint32) (int, error)) (int, error) {
+	for attempt := 1; ; attempt++ {
+		lock := -1
+		err := identityLockSyscall(ctx, "openat", func() error {
+			var openErr error
+			lock, openErr = openat(directory, "identity.lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+			return openErr
+		})
+		if err == nil {
+			return lock, nil
+		}
+		// Darwin can return ENOENT during concurrent first creation of this
+		// leaf. Retry only that operation against the same validated parent;
+		// persistent missing paths and every other error still fail promptly.
+		// This also matches https://github.com/Gentleman-Programming/gentle-ai/pull/4277.
+		if platform != "darwin" || !errors.Is(err, unix.ENOENT) || attempt >= 3 {
+			return -1, err
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return -1, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func identityLockSyscall(ctx context.Context, operation string, call func() error) error {

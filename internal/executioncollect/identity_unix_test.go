@@ -124,6 +124,100 @@ func TestIdentityLockRetriesInterruptedSyscalls(t *testing.T) {
 	}
 }
 
+func TestIdentityLockDarwinRetriesTransientLeafCreation(t *testing.T) {
+	directory, err := unix.Open(t.TempDir(), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(directory)
+	calls := 0
+	lock, err := openIdentityLock(context.Background(), directory, "darwin", func(fd int, name string, flags int, mode uint32) (int, error) {
+		calls++
+		if fd != directory || name != "identity.lock" || flags != unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC || mode != 0o600 {
+			t.Fatal("retry changed the validated parent, lock leaf or security flags")
+		}
+		if calls < 3 {
+			return -1, unix.ENOENT
+		}
+		return unix.Openat(fd, name, flags, mode)
+	})
+	if err != nil {
+		t.Fatalf("transient Darwin leaf creation failed after %d calls: %v", calls, err)
+	}
+	defer unix.Close(lock)
+	if calls != 3 {
+		t.Fatalf("unexpected lock creation attempts: %d", calls)
+	}
+	if err := privateIdentityFile(lock, -1); err != nil {
+		t.Fatal("retried lock is not private", err)
+	}
+}
+
+func TestIdentityLockMissingParentTerminatesAndPreservesError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "removed-parent")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(directory)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for _, platform := range []string{"darwin", "linux"} {
+		calls := 0
+		lock, err := openIdentityLock(ctx, directory, platform, func(fd int, name string, flags int, mode uint32) (int, error) {
+			calls++
+			return unix.Openat(fd, name, flags, mode)
+		})
+		expected := 1
+		if platform == "darwin" {
+			expected = 3
+		}
+		if lock != -1 || !errors.Is(err, unix.ENOENT) || calls != expected || err.Error() != "client identity lock openat: "+unix.ENOENT.Error() {
+			t.Fatalf("%s persistent missing parent lost errno or retry bound: lock=%d calls=%d err=%v", platform, lock, calls, err)
+		}
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("lock retry recreated its missing parent", err)
+	}
+}
+
+func TestIdentityLockLeafRetriesHonorCancellationAndOtherErrors(t *testing.T) {
+	for _, failure := range []error{unix.EACCES, unix.ELOOP, unix.EBADF, unix.EIO} {
+		calls := 0
+		_, err := openIdentityLock(context.Background(), -1, "darwin", func(int, string, int, uint32) (int, error) {
+			calls++
+			return -1, failure
+		})
+		if !errors.Is(err, failure) || calls != 1 {
+			t.Fatalf("non-transient failure was retried or lost: calls=%d err=%v", calls, err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	_, err := openIdentityLock(ctx, -1, "darwin", func(int, string, int, uint32) (int, error) {
+		calls++
+		cancel()
+		return -1, unix.ENOENT
+	})
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("leaf retry ignored cancellation: calls=%d err=%v", calls, err)
+	}
+	_, err = openIdentityLock(ctx, -1, "darwin", func(int, string, int, uint32) (int, error) {
+		t.Fatal("canceled context reached the lock leaf")
+		return -1, nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal("leaf open lost prior cancellation", err)
+	}
+}
+
 func TestIdentityLockInterruptedRetryHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
