@@ -361,6 +361,10 @@ jobs:
         if: steps.scope.outputs.mode != 'docs'
         run: go test ./... -count=1
 
+      - name: Repeat concurrent installation creation
+        if: steps.scope.outputs.mode != 'docs'
+        run: go test ./internal/executioncollect -run '^TestInstallationSeedConcurrentCreationAndPermissions$' -count=20
+
       - name: Vet
         if: steps.scope.outputs.mode != 'docs'
         run: go vet ./...
