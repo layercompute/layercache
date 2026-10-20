@@ -25,8 +25,8 @@ scope; TODOs.md owns future work.
   may be unknown. Public means trusted-publisher Public Cache. Local source
   storage attribution is unavailable and must not be invented.
 - Show logical artifact storage, limit, count, entries, eviction policy and
-  backend. These values exclude host disk, registry storage and unmanaged native
-  stores. Current reports cover reconciled Turbo, Actions and BuildKit outcomes;
+  backend. These values exclude host disk, registry storage and separate native
+  engine stores, including configured Bazel engines. Current reports cover reconciled Turbo, Actions and BuildKit outcomes;
   other native protocols need separate metering.
 - Local maintenance is opt-in with `--allow-prune`; sharing a default read-only
   dashboard link must not confer administration. Hosted pruning requires current

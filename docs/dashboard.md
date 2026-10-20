@@ -117,7 +117,8 @@ not offered through customer views.
 Removed logical cache bytes are not measured filesystem savings or an immediate
 R2 invoice reduction. Cloud object deletion follows its grace period and read
 leases. The dashboard cannot delete source, arbitrary workspace directories or
-an unregistered native store.
+a separate native engine store. In particular, configured Bazel engine storage
+is not part of the artifact store's usage or pruning totals.
 
 ## Costs
 

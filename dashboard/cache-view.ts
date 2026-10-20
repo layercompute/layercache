@@ -131,7 +131,7 @@ export function renderCache(name: string, cache: Cache, options: CacheOptions = 
   if (status.entries !== undefined) storageDetail.push(`${status.entries.toLocaleString()} entries`);
   if (status.metadataBytes !== undefined) storageDetail.push(`${bytes(status.metadataBytes)} logical metadata`);
   if (storageDetail.length) node.append(el('p', 'coverage-note storage-detail', storageDetail.join(' · ')));
-  node.append(el('p', 'coverage-note', 'Logical artifact usage excludes host disk, registry storage and unmanaged native caches.'));
+  node.append(el('p', 'coverage-note', 'Logical artifact usage excludes host disk, registry storage and separate native engine stores. Pruning below applies to this artifact store.'));
   if (report) {
     const transfer = el('div', 'transfer-metrics');
     transfer.append(metric('Downloaded', report.bytes ? bytes(report.bytes.downloaded) : 'Unknown', 'Reported transfer bytes'), metric('Uploaded', report.bytes ? bytes(report.bytes.uploaded) : 'Unknown', 'Reported transfer bytes')); node.append(transfer);
@@ -154,7 +154,17 @@ export function renderCache(name: string, cache: Cache, options: CacheOptions = 
 
 function money(amountMinor: number, currency?: string): string {
   if (!currency) return 'Unknown';
-  try {const format = new Intl.NumberFormat(undefined, {style: 'currency', currency}); const digits = format.resolvedOptions().maximumFractionDigits; return `${format.format(amountMinor / 10 ** (digits ?? 2))} ${currency}`;}
+  try {
+    const format = new Intl.NumberFormat(undefined, {style: 'currency', currency});
+    const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+    const amount = BigInt(amountMinor), scale = 10n ** BigInt(digits);
+    const parts = format.formatToParts(amount / scale);
+    if (digits > 0) {
+      const fraction = new Intl.NumberFormat(undefined, {useGrouping: false, minimumIntegerDigits: digits, maximumFractionDigits: 0}).format(amount % scale);
+      for (const part of parts) if (part.type === 'fraction') part.value = fraction;
+    }
+    return `${parts.map(part => part.value).join('')} ${currency}`;
+  }
   catch {return 'Unknown';}
 }
 export function renderCost(cost?: CostReport, title = 'Project cost'): HTMLElement {

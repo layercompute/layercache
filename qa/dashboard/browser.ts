@@ -139,6 +139,15 @@ import path from 'node:path';
     assert.equal(await page.locator('.cost-total').first().innerText(),'Unknown');
     assert.match(await page.getByRole('region',{name:'Project cost'}).innerText(),/No cost ledger configured/);
   });
+  await check('large minor-unit costs retain exact currency precision',async()=>{
+    for(const [currency,expected] of [['USD','90,071,992,547,409.91'],['JPY','9,007,199,254,740,991'],['BHD','9,007,199,254,740.991']]){
+      mocked=clone();mocked.projects=mocked.projects.slice(0,1);
+      mocked.projects[0].cost={state:'recorded',currency,periodStart:'2026-10-01T00:00:00Z',periodEnd:'2026-11-01T00:00:00Z',complete:true,items:[],knownSubtotalMinor:9007199254740991,totalMinor:9007199254740991};
+      await refresh();const displayed=await page.getByRole('region',{name:'Project cost',exact:true}).locator('.cost-total').innerText();
+      assert.ok(displayed.includes(expected),`${currency} lost minor-unit precision: ${displayed}`);assert.ok(displayed.endsWith(currency),displayed);
+    }
+    mocked=clone();await refresh();
+  });
   await check('public cache never renders customer maintenance',async()=>{
     mocked=clone();mocked.projects=mocked.projects.slice(0,1);mocked.projects[0].team.status.visibility='public';mocked.projects[0].team.status.canPrune=true;mocked.projects[0].team.pruneAllowed=true;
     await refresh();const remote=page.locator('.cache').nth(1);assert.match(await remote.innerText(),/Public Cache/);assert.equal(await remote.getByRole('button',{name:/^Prune /}).count(),0);
