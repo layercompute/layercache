@@ -101,8 +101,11 @@ each other's graphs. The submitted payload contains only task identities, graph,
 cache outcome and timing fields, not the summary's environment or command data.
 Team/Public source attribution requires server-observed artifact transfers.
 
-Reports are bounded to 32 new summaries, 4,096 total tasks, 8 MiB input, and a
-24-hour job window. Files must remain within the workspace and may not be
-symlinks. Failed report collection, expired OIDC access or an older server without
+Reports are bounded to 32 new summaries, 4,096 total tasks, 64 MiB of raw local
+summary data per batch and an 8 MiB projected request, within a 24-hour job
+window. Raw input maps and environment metadata stay on the runner. Missing
+transit tasks in a native summary leave critical-path savings unknown; they do
+not invalidate the observed task outcomes. Files must remain within the workspace
+and may not be symlinks. Failed report collection, expired OIDC access or an older server without
 the reporting endpoint produces a warning and does not change the build result.
 Deploy the server update before expecting reports from this action revision.

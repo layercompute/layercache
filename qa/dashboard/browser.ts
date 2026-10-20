@@ -139,6 +139,14 @@ import path from 'node:path';
     assert.equal(await page.locator('.cost-total').first().innerText(),'Unknown');
     assert.match(await page.getByRole('region',{name:'Project cost'}).innerText(),/No cost ledger configured/);
   });
+  await check('miss publication uploads are not reported as zero by source',async()=>{
+    mocked=clone();mocked.projects=mocked.projects.slice(0,1);
+    mocked.projects[0].local.report={eligible:1,hits:0,misses:1,runs:1,degraded:false,netEstimatedBuildTimeSaved:{milliseconds:-5,known:1,total:1,confidence:'medium'},bytes:{downloaded:0,uploaded:123},sources:[],integrations:[{integration:'turbo',hits:0,eligible:1}]};
+    await refresh();const cache=page.locator('.cache').first(),sources=cache.getByRole('table',{name:'Reported cache source activity'});
+    assert.match(await cache.locator('.transfer-metrics').innerText(),/Uploaded[\s\S]*123 B/);
+    assert.equal(await sources.getByRole('columnheader',{name:'Uploaded',exact:true}).count(),0);
+    assert.match(await cache.innerText(),/destination is not attributed by restore source/);
+  });
   await check('large minor-unit costs retain exact currency precision',async()=>{
     for(const [currency,expected] of [['USD','90,071,992,547,409.91'],['JPY','9,007,199,254,740,991'],['BHD','9,007,199,254,740.991']]){
       mocked=clone();mocked.projects=mocked.projects.slice(0,1);

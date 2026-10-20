@@ -286,6 +286,7 @@ func TestPostgresRepositoryAgainstPostgres(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(repeated, turboReport) {
 		t.Fatalf("repeat PostgreSQL report changed: %#v, %v", repeated, err)
 	}
+	transitReport := testTurboOmittedTransitDependencies(t, repository)
 
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)
@@ -297,5 +298,15 @@ func TestPostgresRepositoryAgainstPostgres(t *testing.T) {
 	reopened, err := repository.RunReport("run-persisted")
 	if err != nil || !reflect.DeepEqual(reopened, expectedReport) {
 		t.Fatalf("reopened PostgreSQL report = %#v, %v", reopened, err)
+	}
+	reopenedTransit, err := repository.RunReport("run-transit")
+	if err != nil || !reflect.DeepEqual(reopenedTransit, transitReport) {
+		t.Fatalf("reopened PostgreSQL incomplete graph report = %#v, %v", reopenedTransit, err)
+	}
+	transitPeriodStart := time.Date(2026, time.October, 20, 0, 0, 0, 0, time.UTC)
+	reopenedTransitPeriod, err := repository.PeriodReport(transitPeriodStart, transitPeriodStart.Add(24*time.Hour))
+	if err != nil || reopenedTransitPeriod.Runs != 1 || reopenedTransitPeriod.Eligible != 2 || reopenedTransitPeriod.Hits != 1 ||
+		reopenedTransitPeriod.NetEstimatedBuildTimeSaved.Milliseconds != nil {
+		t.Fatalf("reopened PostgreSQL incomplete graph period = %#v, %v", reopenedTransitPeriod, err)
 	}
 }

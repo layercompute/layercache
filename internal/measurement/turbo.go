@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+const (
+	maximumTurboSummaries    = 32
+	maximumTurboSummaryBytes = 64 << 20
+	maximumTurboSummaryTasks = 4096
+)
+
 // TurboReconcileOptions binds a summary to one Layer Cache namespace and the
 // command window that was allowed to produce it.
 type TurboReconcileOptions struct {
@@ -132,13 +138,18 @@ func parseTurboSummaries(
 	if strings.TrimSpace(options.CompatibilityID) == "" {
 		return nil, errors.New("Turbo reconciliation compatibility is required")
 	}
-	if len(documents) == 0 {
-		return nil, errors.New("at least one Turbo Run Summary is required")
+	if len(documents) == 0 || len(documents) > maximumTurboSummaries {
+		return nil, errors.New("bounded Turbo Run Summaries are required")
 	}
 
 	summaries := make([]turboRunSummary, 0, len(documents))
 	seenSummaryIDs := make(map[string]struct{}, len(documents))
+	bytes, tasks := 0, 0
 	for index, document := range documents {
+		bytes += len(document)
+		if bytes > maximumTurboSummaryBytes {
+			return nil, errors.New("Turbo summaries exceed the reconciliation limit")
+		}
 		summary, err := decodeTurboRunSummary(document)
 		if err != nil {
 			return nil, fmt.Errorf("decode Turbo Run Summary %d: %w", index+1, err)
@@ -148,6 +159,10 @@ func parseTurboSummaries(
 		}
 		if err := summary.withinRun(options.RunStartedAt, options.RunFinishedAt); err != nil {
 			return nil, err
+		}
+		tasks += len(summary.Tasks)
+		if tasks > maximumTurboSummaryTasks {
+			return nil, errors.New("too many Turbo summary tasks")
 		}
 		seenSummaryIDs[summary.ID] = struct{}{}
 		summaries = append(summaries, summary)
@@ -278,8 +293,8 @@ func decodeTurboRunSummary(document []byte) (turboRunSummary, error) {
 	if err := ensureJSONEOF(decoder); err != nil {
 		return turboRunSummary{}, err
 	}
-	if summary.ID == "" {
-		return turboRunSummary{}, errors.New("summary ID is required")
+	if err := validateBoundedText("summary ID", summary.ID, maximumIdentityBytes, false); err != nil {
+		return turboRunSummary{}, err
 	}
 	if summary.Version != "1" {
 		return turboRunSummary{}, fmt.Errorf("unsupported summary schema version %q", summary.Version)
@@ -287,10 +302,16 @@ func decodeTurboRunSummary(document []byte) (turboRunSummary, error) {
 	if summary.Execution.StartTime <= 0 || summary.Execution.EndTime < summary.Execution.StartTime {
 		return turboRunSummary{}, errors.New("summary has invalid execution timestamps")
 	}
+	if len(summary.Tasks) > maximumTurboSummaryTasks {
+		return turboRunSummary{}, errors.New("too many Turbo summary tasks")
+	}
 	seenTasks := make(map[string]struct{}, len(summary.Tasks))
 	for _, task := range summary.Tasks {
-		if task.TaskID == "" || task.Hash == "" {
-			return turboRunSummary{}, errors.New("summary task identity and hash are required")
+		if err := validateBoundedText("summary task identity", task.TaskID, maximumIdentityBytes, false); err != nil {
+			return turboRunSummary{}, err
+		}
+		if err := validateBoundedText("summary task hash", task.Hash, maximumIdentityBytes, false); err != nil {
+			return turboRunSummary{}, err
 		}
 		if _, exists := seenTasks[task.TaskID]; exists {
 			return turboRunSummary{}, fmt.Errorf("summary repeats task %q", task.TaskID)
@@ -299,17 +320,56 @@ func decodeTurboRunSummary(document []byte) (turboRunSummary, error) {
 		if task.Execution.StartTime < 0 || task.Execution.EndTime < task.Execution.StartTime {
 			return turboRunSummary{}, fmt.Errorf("summary task %q has invalid execution timestamps", task.TaskID)
 		}
+		if len(task.Dependencies) > maximumDependencies {
+			return turboRunSummary{}, errors.New("too many summary task dependencies")
+		}
 		for _, dependency := range task.Dependencies {
+			if err := validateBoundedText("summary dependency identity", dependency, maximumIdentityBytes, false); err != nil {
+				return turboRunSummary{}, err
+			}
 			if dependency == task.TaskID {
 				return turboRunSummary{}, fmt.Errorf("summary task %q depends on itself", task.TaskID)
 			}
 		}
 	}
+	dependencies := make(map[string][]string, len(summary.Tasks))
+	omitted := make(map[string]struct{})
 	for _, task := range summary.Tasks {
+		dependencies[task.TaskID] = task.Dependencies
 		for _, dependency := range task.Dependencies {
 			if _, exists := seenTasks[dependency]; !exists {
-				return turboRunSummary{}, fmt.Errorf("summary task %q names unknown dependency %q", task.TaskID, dependency)
+				// Turbo omits transit tasks whose packages have no matching
+				// script. Their identities still belong to the bounded graph.
+				omitted[dependency] = struct{}{}
+				if len(omitted) > maximumTurboSummaryTasks {
+					return turboRunSummary{}, errors.New("too many omitted Turbo dependencies")
+				}
 			}
+		}
+	}
+	// Check the reported graph before filtering ineligible tasks. Otherwise a
+	// cycle through only uncached tasks could disappear during reconciliation.
+	state := make(map[string]uint8, len(summary.Tasks))
+	var visit func(string) error
+	visit = func(taskID string) error {
+		if state[taskID] == 1 {
+			return errors.New("summary task graph contains a cycle")
+		}
+		if state[taskID] == 2 {
+			return nil
+		}
+		state[taskID] = 1
+		for _, dependency := range dependencies[taskID] {
+			if err := visit(dependency); err != nil {
+				return err
+			}
+		}
+		state[taskID] = 2
+		return nil
+	}
+	for taskID := range dependencies {
+		if err := visit(taskID); err != nil {
+			return turboRunSummary{}, err
 		}
 	}
 	return summary, nil
@@ -452,6 +512,7 @@ func reconcileTurboOutcomes(
 	observations []turboObservation,
 ) ([]FinalOutcome, error) {
 	outcomes := make([]FinalOutcome, 0)
+	omittedTasks := 0
 	for _, summary := range summaries {
 		eligible := make(map[string]bool, len(summary.Tasks))
 		tasks := make(map[string]turboSummaryTask, len(summary.Tasks))
@@ -481,7 +542,30 @@ func reconcileTurboOutcomes(
 			}
 			outcome.WorkID = workIDs[task.TaskID]
 			dependencyIDs := eligibleTurboDependencies(task.TaskID, tasks, eligible)
+			if len(dependencyIDs) > maximumDependencies {
+				return nil, errors.New("too many reconciled Turbo task dependencies")
+			}
 			for _, dependency := range dependencyIDs {
+				if _, exists := workIDs[dependency]; !exists {
+					omittedTasks++
+					if omittedTasks > maximumTurboSummaryTasks {
+						return nil, errors.New("too many reconciled omitted Turbo dependencies")
+					}
+					workIDs[dependency] = privateTurboIdentity(
+						"omitted-task", options.Project, options.CompatibilityID, summary.ID, dependency,
+					)
+					// This is an unknown graph boundary, not an executed task.
+					// Use the referring outcome's observed start so bookkeeping
+					// cannot move real work into an earlier reporting period.
+					// Assign no execution, restore or producer duration.
+					anchor := outcome.StartedAt
+					outcomes = append(outcomes, FinalOutcome{
+						RunID: runID, WorkspaceID: options.WorkspaceID, Integration: IntegrationTurbo,
+						WorkID: workIDs[dependency], CompatibilityID: options.CompatibilityID,
+						Result: ResultUnknown, Source: SourceUnattributed,
+						StartedAt: anchor, FinishedAt: anchor,
+					})
+				}
 				outcome.Dependencies = append(outcome.Dependencies, workIDs[dependency])
 			}
 			sort.Strings(outcome.Dependencies)
@@ -673,21 +757,21 @@ func combinedTurboMissObservation(
 
 func eligibleTurboDependencies(taskID string, tasks map[string]turboSummaryTask, eligible map[string]bool) []string {
 	result := make(map[string]struct{})
-	visiting := make(map[string]bool)
+	visited := make(map[string]bool)
 	var visit func(string)
 	visit = func(candidate string) {
-		if visiting[candidate] {
+		if visited[candidate] {
 			return
 		}
-		if eligible[candidate] {
+		visited[candidate] = true
+		task, exists := tasks[candidate]
+		if eligible[candidate] || !exists {
 			result[candidate] = struct{}{}
 			return
 		}
-		visiting[candidate] = true
-		for _, dependency := range tasks[candidate].Dependencies {
+		for _, dependency := range task.Dependencies {
 			visit(dependency)
 		}
-		delete(visiting, candidate)
 	}
 	for _, dependency := range tasks[taskID].Dependencies {
 		visit(dependency)

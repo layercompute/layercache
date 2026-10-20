@@ -284,7 +284,7 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 			MaxArtifactBytes:             cfg.MaxBytes,
 			ArtifactLimit:                server.cacheLimit,
 			ArchiveBaseURL:               cfg.ActionsArchiveBaseURL, ArchiveURLSigner: archiveSigner,
-			RecordOutcome:     server.measurements.Record,
+			RecordOutcome:     server.recordActionsOutcome,
 			EnrichActionsMiss: server.measurements.EnrichActionsMiss,
 		}, actionsIndex)
 		if err != nil {

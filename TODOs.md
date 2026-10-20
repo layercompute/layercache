@@ -15,6 +15,37 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
+- [ ] **Qualify the live customer dashboard and close confirmed integration gaps.**
+  Owner: LayerCache dashboard/integrations. The October 20 user outcome is a
+  dashboard tested with the actual operator account and cache use traced from
+  developer commands on the shared host through each project's CI and builds.
+  Complete the authorized first-login password change through the normal UI,
+  keep credentials in protected operator files, and verify project navigation,
+  snapshots, reports, storage, cost coverage, responsive layout and sign-out.
+  Compare displayed values with their backing data. Open and cancel maintenance
+  controls without pruning customer artifacts. Record which native clients
+  actually restore or publish, which commands bypass integration, and which
+  protocols lack usage metering. Coordinate application workflow changes with
+  their owners. Fix reproducible product gaps through existing native clients
+  and record exact source and bounded live evidence before completion. A
+  configured endpoint alone establishes neither cache reuse nor cost savings.
+  The live account's initial password change and protected handoff are complete.
+  Chromium and WebKit passed 43 checks each; Firefox passed 42 initially and
+  completed its remaining authentication control after natural rate-limit
+  expiry. Forty-five live UI/API projections across five projects match the
+  underlying SQL accounting. No live pruning or membership change was needed.
+  The audit reproduced missing Turbo reports from large raw summaries and
+  omitted transit tasks, plus incorrect hosted Actions source attribution and
+  misleading per-source upload zeros. Qualification and exact source for their
+  fixes must precede deployment acceptance.
+  Remaining adoption work includes explicit local launchers with actual pinned
+  toolchains, immutable CI action pins and eligible read-only PR consumers.
+  The Expo provider needs a native credential/cloud-only storage bridge; Go
+  `remoteOnly` does not control that client's local archives or extractions.
+  Coordinate application changes with their owners and qualify normal producer
+  and independent consumer runs. Existing compiler/provider snapshots remain
+  separate, and native metering and invoice reconciliation remain open below.
+
 - [x] **Move the existing operator cohort to hosted R2 and the cloud dashboard.**
   Owner: LayerCache cloud/operator. The October 20 user outcome is one hosted
   customer dashboard for every currently configured project, remote artifact

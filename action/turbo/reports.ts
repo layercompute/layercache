@@ -1,4 +1,11 @@
-import { lstat, readdir, realpath, open, constants } from 'node:fs/promises';
+import {
+  lstat,
+  readdir,
+  realpath,
+  open,
+  constants,
+  type FileHandle,
+} from 'node:fs/promises';
 import { resolve, relative, join, isAbsolute } from 'node:path';
 
 export interface ReportState {
@@ -9,6 +16,17 @@ export interface ReportState {
   directory: string;
   existing: string[];
   startedAt: number;
+}
+// Native summaries include complete input maps and environment metadata that
+// are discarded below. Match the CLI's raw document limit without increasing
+// the server's 8 MiB request limit or retaining those fields in the projection.
+const maximumRawSummaryBytes = 64 * 1024 ** 2;
+const maximumRawBatchBytes = 64 * 1024 ** 2;
+const maximumRequestBytes = 8 * 1024 ** 2;
+const maximumTasks = 4096;
+
+interface SummaryReader {
+  openSummary?: (path: string, flags: number) => Promise<FileHandle>;
 }
 export function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -50,6 +68,7 @@ export async function startReport(
 
 export async function completedSummaries(
   state: ReportState,
+  { openSummary = open }: SummaryReader = {},
 ): Promise<Record<string, unknown>[]> {
   const root = await realpath(state.workspace);
   const directory = await realpath(state.directory);
@@ -62,40 +81,60 @@ export async function completedSummaries(
     fresh = names.filter((name) => !old.has(name)).sort();
   if (fresh.length > 32) throw new Error('Too many new summaries');
   const summaries: Record<string, unknown>[] = [];
-  let bytes = 0;
+  let rawMetadataBytes = 0;
+  // Reject an oversized batch before parsing its first potentially large file.
   for (const name of fresh) {
     const path = join(runs, name),
       metadata = await lstat(path);
-    if (
-      !metadata.isFile() ||
-      metadata.isSymbolicLink() ||
-      metadata.size > 2 * 1024 ** 2
-    )
+    if (!metadata.isFile() || metadata.isSymbolicLink())
       throw new Error('Unsafe summary file');
-    bytes += metadata.size;
-    if (bytes > 8 * 1024 ** 2) throw new Error('Summary batch too large');
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    if (metadata.size > maximumRawSummaryBytes)
+      throw new Error('Raw summary byte limit exceeded');
+    rawMetadataBytes += metadata.size;
+    if (rawMetadataBytes > maximumRawBatchBytes)
+      throw new Error('Raw summary batch byte limit exceeded');
+  }
+  let rawBytes = 0;
+  let tasks = 0;
+  // Include the exact JSON envelope and commas used by post.ts.
+  let requestBytes = Buffer.byteLength('{"summaries":[]}');
+  for (const name of fresh) {
+    const file = await openSummary(
+      join(runs, name),
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
     let source: Record<string, unknown>;
     try {
       const actual = await file.stat();
-      if (!actual.isFile() || actual.size > 2 * 1024 ** 2)
-        throw new Error('Unsafe summary file');
-      const buffer = Buffer.alloc(2 * 1024 ** 2 + 1);
+      if (!actual.isFile()) throw new Error('Unsafe summary file');
+      if (actual.size > maximumRawSummaryBytes)
+        throw new Error('Raw summary byte limit exceeded');
+      if (rawBytes + actual.size > maximumRawBatchBytes)
+        throw new Error('Raw summary batch byte limit exceeded');
+      const chunks: Buffer[] = [];
       let length = 0;
-      while (length < buffer.length) {
-        const read = await file.read(
-          buffer,
-          length,
-          buffer.length - length,
-          null,
+      for (;;) {
+        // Read one extra byte at either limit to detect growth after stat.
+        const buffer = Buffer.alloc(
+          Math.min(
+            64 * 1024,
+            maximumRawSummaryBytes - length + 1,
+            maximumRawBatchBytes - rawBytes + 1,
+          ),
         );
+        const read = await file.read(buffer, 0, buffer.length, null);
         if (read.bytesRead === 0) break;
         length += read.bytesRead;
+        rawBytes += read.bytesRead;
+        if (length > maximumRawSummaryBytes)
+          throw new Error('Raw summary byte limit exceeded');
+        if (rawBytes > maximumRawBatchBytes)
+          throw new Error('Raw summary batch byte limit exceeded');
+        chunks.push(buffer.subarray(0, read.bytesRead));
       }
-      if (length > 2 * 1024 ** 2) throw new Error('Summary grew beyond limit');
-      bytes += Math.max(0, length - metadata.size);
-      if (bytes > 8 * 1024 ** 2) throw new Error('Summary batch too large');
-      source = object(JSON.parse(buffer.subarray(0, length).toString('utf8')));
+      source = object(
+        JSON.parse(Buffer.concat(chunks, length).toString('utf8')),
+      );
     } finally {
       await file.close();
     }
@@ -105,11 +144,12 @@ export async function completedSummaries(
       execution.startTime < state.startedAt - 5000
     )
       throw new Error('Summary predates setup');
-    if (!Array.isArray(source.tasks) || source.tasks.length > 4096)
-      throw new Error('Invalid tasks');
+    if (!Array.isArray(source.tasks)) throw new Error('Invalid tasks');
+    tasks += source.tasks.length;
+    if (tasks > maximumTasks) throw new Error('Summary task limit exceeded');
     // Turbo summaries can contain environment and command details. Send only
     // the fields required for measurement, never the full original document.
-    summaries.push({
+    const summary = {
       id: source.id,
       version: source.version,
       execution: { startTime: execution.startTime, endTime: execution.endTime },
@@ -137,7 +177,12 @@ export async function completedSummaries(
           resolvedTaskDefinition: { cache: definition.cache },
         };
       }),
-    });
+    };
+    requestBytes +=
+      Buffer.byteLength(JSON.stringify(summary)) + (summaries.length ? 1 : 0);
+    if (requestBytes > maximumRequestBytes)
+      throw new Error('Summary request byte limit exceeded');
+    summaries.push(summary);
   }
   return summaries;
 }
