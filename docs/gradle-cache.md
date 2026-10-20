@@ -109,6 +109,12 @@ into the init script; Gradle still owns its runtime and persisted state. The
 initial native qualification disables configuration caching and uses isolated
 private Gradle homes.
 
+## Native metering
+
+See [native measurement](native-metering.md) for completed task/compiler evidence,
+offline report export and import, hit-rate coverage, and the limits of elapsed,
+compute and cost estimates. Native cache transport alone is insufficient.
+
 ## Qualification and scope
 
 Reviewed runtime source `3b9ded989140abadedb476cfc29fc100163c9597` passes

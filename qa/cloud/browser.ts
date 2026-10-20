@@ -180,7 +180,7 @@ try{
   await view(alice,'Storage');await refreshView(alice);await alice.getByText('70%',{exact:true}).waitFor();
   const cache=alice.getByRole('region',{name:'Team Cache',exact:true});assert.match(await cache.innerText(),/Access · Team Cache/);
   assert.equal(await cache.locator('.source-row[data-source="teamCache"] th').innerText(),'Team Cache');assert.equal(await cache.locator('.source-row[data-source="publicCache"] td').first().innerText(),'1');
-  assert.match(await cache.innerText(),/Native Gradle, Nx, Bazel and Xcode usage is not yet fully metered/);
+  assert.match(await cache.innerText(),/Native task outcomes and protocol activity have separate coverage/);
   const projectCost=alice.getByRole('region',{name:'Project cost',exact:true});assert.equal(await projectCost.locator('.cost-total').innerText(),'Unknown');assert.match(await projectCost.innerText(),/Known subtotal[\s\S]*0\.80.*EUR/);
   await view(alice,'Account & team');const teamCost=alice.getByRole('region',{name:'Team cost',exact:true});assert.match(await teamCost.locator('.cost-total').innerText(),/1\.75.*USD/);assert.match(await teamCost.innerText(),/Operator-recorded/);
   await view(alice,'Storage');assert.match(await alice.locator('main').innerText(),/Project and account costs may overlap/);

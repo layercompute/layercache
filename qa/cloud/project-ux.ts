@@ -7,6 +7,7 @@ import {readFileSync, mkdirSync, mkdtempSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import type {ExecutionEntry, ExecutionInventory} from '../../dashboard/execution-view.js';
 import type {Snapshot} from '../../cloud/types.js';
+import type {NativeIntegrationReport} from '../../dashboard/cache-view.js';
 
 declare global {interface Window {uxDocument?: string; uxSidebar?: Element | null; uxPeriod?: Element | null;}}
 const engine=process.env.DASHBOARD_BROWSER||'chromium';
@@ -27,10 +28,14 @@ const executions:ExecutionInventory={version:1,from:new Date(Date.now()-24*60*60
  client('stale-client','client:stale','stale-installation',9,staleObservation),
  client('phase-start','client:same-execution','phase-installation',1,priorObservation,'start'),client('phase-finish','client:same-execution','phase-installation',1),
 ],jobs:[entry('job-1','github-actions:123:456:1:789','githubActions'),entry('job-2','github-actions:123:456:1:790','githubActions'),entry('job-3','github-actions:123:456:2:791','githubActions')]};
-const baseSnapshot:Snapshot={scope:'team',updatedAt:observedAt,cache:{state:'connected',reportState:'available',status:{usageBytes:512*1024**2,maxBytes:5*1024**3,artifacts:32,entries:32,role:'admin',visibility:'team',storageBackend:'s3',canPrune:false,storageByIntegration:[{integration:'turbo',usageBytes:256*1024**2,artifacts:16,entries:16},{integration:'actions',usageBytes:128*1024**2,artifacts:8,entries:8},{integration:'shared',usageBytes:128*1024**2,artifacts:8,entries:8}]},report:{eligible:10,hits:7,misses:3,runs:4,degraded:false,netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:4,confidence:'unknown'},bytes:{downloaded:7168,uploaded:2048},timing:{lookupMs:10,downloadMs:200,verificationMs:30,restoreMs:400,uploadMs:50},sources:[{source:'teamCache',hits:7,downloadedBytes:7168,uploadedBytes:2048}],integrations:[{integration:'buildkit',hits:5,eligible:6},{integration:'turbo',hits:2,eligible:4}]}},executions};
+const baseSnapshot:Snapshot={scope:'team',updatedAt:observedAt,cache:{state:'connected',reportState:'available',status:{usageBytes:512*1024**2,maxBytes:5*1024**3,artifacts:32,entries:32,role:'admin',visibility:'team',storageBackend:'s3',canPrune:false,storageByIntegration:[{integration:'turbo',usageBytes:256*1024**2,artifacts:16,entries:16},{integration:'actions',usageBytes:128*1024**2,artifacts:8,entries:8},{integration:'shared',usageBytes:128*1024**2,artifacts:8,entries:8}]},report:{eligible:10,hits:7,misses:3,runs:4,degraded:false,netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:4,confidence:'unknown'},bytes:{downloaded:7168,uploaded:2048},timing:{lookupMs:10,downloadMs:200,verificationMs:30,restoreMs:400,uploadMs:50},sources:[{source:'teamCache',hits:7,downloadedBytes:7168,uploadedBytes:2048}],integrations:[{integration:'buildkit',hits:5,eligible:6},{integration:'turbo',hits:2,eligible:4,grossAvoidedTaskTime:{milliseconds:null,known:0,total:2,confidence:'unknown'}}]}},executions};
+function nativeReport(integration:'gradle'|'xcode'):NativeIntegrationReport{return {integration,reportedInvocations:1,reportedTasks:0,outcomes:{executed:0,fromCache:0,upToDate:0,noSource:0,skipped:0,failed:0,unknown:0},knownEligible:0,eligibilityUnknown:0,eligible:null,hits:0,misses:0,hitRate:null,sources:[],producerTiming:{known:0,total:0},producerResources:{known:0,total:0},grossAvoidedTaskTime:{milliseconds:null,known:0,total:0,confidence:'unknown'},netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:0,confidence:'unknown'},allocatedCpuSecondsSaved:null,measuredCpuSecondsSaved:null,costSaved:null,historyTruncated:false};}
+const gradle:NativeIntegrationReport={...nativeReport('gradle'),reportedTasks:8,outcomes:{executed:2,fromCache:3,upToDate:1,noSource:1,skipped:1,failed:0,unknown:0},knownEligible:4,eligibilityUnknown:1,hits:3,misses:1,sources:[{source:'teamCache',hits:1},{source:'unattributed',hits:2}],producerTiming:{known:1,total:3},producerResources:{known:0,total:3},grossAvoidedTaskTime:{milliseconds:9000,known:1,total:3,confidence:'low'},netAvoidedTaskTime:{milliseconds:-500,known:1,total:3,confidence:'low'}};
+const xcode:NativeIntegrationReport={...nativeReport('xcode'),counters:{rpc:{actionReads:12,actionHits:9,actionWrites:2,casReads:30,casHits:24,casWrites:4,cacheErrors:0},compiler:{scope:'unknown',coverage:'unsupported',reason:'unsupported',hits:null,misses:null,skipped:null,unknown:null}},timingMs:{operation:5030,compile:5000,load:null,restore:0,close:20,snapshot:null}};
+assert.ok(baseSnapshot.cache.report);baseSnapshot.cache.report.nativeReports=[gradle,xcode];
 let origin='';
 const snapshots:{project:string;period:string;method:string}[]=[],held:{response:ServerResponse;period:string}[]=[];
-let hold=false,capacityBytes=5*1024**3,failNextCapacityWrite=false,capacityCanChange=true,largeInfrastructure=false,signedIn=true,alternateAccount=false;
+let hold=false,capacityBytes=5*1024**3,failNextCapacityWrite=false,capacityCanChange=true,largeInfrastructure=false,signedIn=true,alternateAccount=false,completeCompiler=false;
 const capacityChanges:unknown[]=[],mutations:{method:string;path:string}[]=[];
 function capacity(){return {state:'connected',maxBytes:capacityBytes,usedBytes:512*1024**2,reservedBytes:0,retainedBytes:0,retainedStagingBytes:0,softTargetBytes:1024**3,minimumBytes:1024**3,ceilingBytes:5*1024**3,canChange:capacityCanChange,limitSource:'operator',...(capacityCanChange?{}:{reason:'An administrator can adjust this limit.'})};}
 function json(response:ServerResponse,value:unknown,status=200){if(response.destroyed)return;response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(value));}
@@ -38,12 +43,14 @@ function snapshot(period:string){
  const data=structuredClone(baseSnapshot);const report=data.cache.report;assert.ok(report);
  if(period==='7d'){
   report.hits=8;report.misses=2;
+  report.nativeReports=[{...structuredClone(gradle),knownEligible:5,eligibilityUnknown:0,eligible:5,hits:3,misses:2,hitRate:0.6,sources:[{source:'teamCache',hits:2},{source:'localCache',hits:1}],producerTiming:{known:2,total:3},producerResources:{known:0,total:3},grossAvoidedTaskTime:{milliseconds:9000,known:2,total:3,confidence:'low'},netAvoidedTaskTime:{milliseconds:8500,known:2,total:3,confidence:'low'}},{...structuredClone(xcode),counters:{...xcode.counters,compiler:{scope:'clang-pch',coverage:'partial',reason:'ambiguous',hits:4,misses:2,skipped:null,unknown:1}}}];
   report.netEstimatedBuildTimeSaved={milliseconds:-500,known:1,total:2,confidence:'low'};
   report.grossAvoidedTaskTime={milliseconds:90000,known:1,total:2,confidence:'low'};
   report.topArtifacts=[
    {ref:'a'.repeat(64),integration:'buildkit',hits:5,restores:1,runs:1,downloadedBytes:5120,lastHitAt:observedAt,grossAvoidedTaskTime:{milliseconds:null,known:0,total:5,confidence:'unknown'}},
    {ref:'b'.repeat(64),integration:'turbo',hits:2,restores:2,runs:2,downloadedBytes:2048,lastHitAt:observedAt,grossAvoidedTaskTime:{milliseconds:90000,known:1,total:2,confidence:'low'}},
   ];
+  if(completeCompiler){const nativeXcode=report.nativeReports?.find(item=>item.integration==='xcode');assert.ok(nativeXcode?.counters);nativeXcode.counters.compiler={scope:'clang-pch',coverage:'complete',reason:'none',hits:4,misses:2,skipped:null,unknown:0};}
   report.topArtifactsTruncated=true;
   report.activity=[{from:'2026-10-13T12:00:00Z',to:observedAt,runs:4,eligible:10,hits:8,misses:2}];
   if(largeInfrastructure){assert.ok(data.executions);data.executions.jobs=Array.from({length:45},(_,index)=>entry(`large-job-${index}`,`github-actions:123:${1000+index}:1:${2000+index}`,'githubActions'));}
@@ -108,9 +115,32 @@ try{
   const table=page.getByRole('table',{name:'Cache by type',exact:true});await table.waitFor();
   assert.match(await table.innerText(),/Docker|BuildKit/i);
   const coverage=page.getByRole('region',{name:'Cache by type',exact:true}).locator('details.integration-coverage');
-  if(await coverage.count()){await coverage.locator('summary').click();assert.match(await coverage.innerText(),/Xcode/);assert.match(await coverage.innerText(),/not (?:yet )?metered|unknown/i);}
-  await navigate('Activity');const xcode=page.getByRole('table',{name:'Cache by type',exact:true}).getByRole('row').filter({hasText:/Xcode/i});assert.match(await xcode.innerText(),/unknown|not (?:yet )?(?:metered|reported)|no (?:reported|measured)/i);await navigate('Overview');
+  if(await coverage.count()){await coverage.locator('summary').click();assert.match(await coverage.innerText(),/Xcode/);assert.match(await coverage.innerText(),/protocol|compiler verdict|unavailable/i);await expect(coverage.getByRole('link',{name:'Xcode setup',exact:true})).toHaveAttribute('href','https://github.com/ziahamza/layercache/blob/main/docs/native-metering.md#xcode');}
+  await navigate('Activity');const xcode=page.getByRole('table',{name:'Cache by type',exact:true}).getByRole('row').filter({hasText:/Xcode/i});assert.match(await xcode.innerText(),/protocol activity only|unknown|not measured/i);await navigate('Overview');
   const popular=page.getByRole('region',{name:'Most reused artifacts',exact:true});await popular.waitFor();assert.match(await popular.innerText(),/unavailable|not (?:yet )?reported|no (?:artifact|per-artifact|key)/i);
+ });
+ await check('native task reuse remains visible when eligibility and savings evidence are incomplete',async()=>{
+  await navigate('Activity');
+  const row=page.getByRole('table',{name:'Cache by type',exact:true}).locator('tr[data-integration="gradle"]');
+  assert.match(await row.innerText(),/tasks[\s\S]*Not measured[\s\S]*3 \/ Unknown/);assert.equal(await row.getByRole('progressbar').count(),0,'Unknown eligibility must not draw a zero-percent meter');
+  assert.match(await row.locator('td').last().innerText(),/9\.0 s[\s\S]*1\/3 timed/);const untimed=page.getByRole('table',{name:'Cache by type',exact:true}).locator('tr[data-integration="turbo"]');assert.match(await untimed.locator('td').last().innerText(),/Unknown[\s\S]*0\/2 timed/);
+  const native=page.getByRole('region',{name:'Gradle task outcomes',exact:true});await native.waitFor();
+  assert.deepEqual(await native.getByRole('table',{name:'Gradle task outcomes',exact:true}).locator('tbody td').allTextContents(),['2','3','1','1','1','0','0']);
+  assert.match(await native.innerText(),/3 native cache hits[\s\S]*4 known eligible tasks[\s\S]*1 outcomes with unknown eligibility/);
+  assert.match(await native.innerText(),/Team Cache 1[\s\S]*Unattributed 2/);assert.match(await native.innerText(),/producer timing matched for 1 of 3[\s\S]*producer resources matched for 0 of 3/i);assert.match(await native.innerText(),/Net avoided task elapsed time: [−-]0\.5 s[\s\S]*1 of 3 outcomes timed/);
+  const savings=page.getByRole('region',{name:'Savings evidence',exact:true});assert.match(await savings.innerText(),/Current host capacity is not saved CPU usage/);assert.match(await savings.innerText(),/provider prices and billing rules/);
+  await navigate('Overview');await expect(metric('hit-rate')).toHaveText('70%');assert.match(await summary().locator('[data-metric="hit-rate"] .stat-label').innerText(),/Reported cache hit rate/);
+ });
+ await check('Xcode protocol requests never fabricate compiler replay and missing phase timings stay unknown',async()=>{
+  await navigate('Activity');
+  const protocol=page.getByRole('table',{name:'Xcode protocol activity',exact:true});await protocol.waitFor();
+  assert.deepEqual(await protocol.locator('tbody tr').nth(0).locator('td').allTextContents(),['12','9','2']);
+  assert.deepEqual(await protocol.locator('tbody tr').nth(1).locator('td').allTextContents(),['30','24','4']);
+  const row=page.getByRole('table',{name:'Cache by type',exact:true}).locator('tr[data-integration="xcode"]');assert.match(await row.innerText(),/Protocol activity only/);assert.equal(await row.getByRole('progressbar').count(),0);
+  const compiler=page.getByRole('table',{name:'Xcode compiler verdicts',exact:true});assert.deepEqual(await compiler.locator('tbody td').allTextContents(),['Unknown','Unknown','Unknown','Unknown']);
+  const phases=page.getByRole('table',{name:'Xcode lifecycle timings',exact:true});assert.match(await phases.getByRole('row').filter({hasText:'Cache load'}).innerText(),/Unknown/);assert.match(await phases.getByRole('row').filter({hasText:'Snapshot restore'}).innerText(),/0\.0 s/);
+  const evidence=page.getByRole('region',{name:'Xcode protocol and compiler evidence',exact:true});assert.match(await evidence.innerText(),/not compiler actions avoided or snapshot restores/);assert.match(await evidence.innerText(),/compiler result format is not supported/);
+  await navigate('Overview');await expect(metric('hit-rate')).toHaveText('70%');
  });
  await check('settings and account pages hide project reporting controls and ignore hidden filter events',async()=>{
   await navigate('Settings');await page.getByRole('heading',{name:'Connect your CLI',exact:true}).waitFor();
@@ -190,6 +220,21 @@ try{
   const evidence=page.getByRole('region',{name:'Savings evidence',exact:true});assert.match(await evidence.innerText(),/1 of 2 outcomes timed/);
   assert.match(await evidence.innerText(),/CPU-hours saved[\s\S]*Not measured/);assert.match(await evidence.innerText(),/Compute cost saved[\s\S]*Not measured/);
   assert.equal(await page.getByRole('region',{name:'Cache activity',exact:true}).getByRole('progressbar').count(),2);
+ });
+ await check('scoped compiler verdicts and complete native eligibility remain distinct from global archive totals',async()=>{
+  await navigate('Activity');const table=page.getByRole('table',{name:'Cache by type',exact:true});
+  const gradle=table.locator('tr[data-integration="gradle"]');assert.match(await gradle.innerText(),/60%[\s\S]*3 \/ 5/);await expect(gradle.getByRole('progressbar')).toHaveAttribute('value','0.6');
+  const xcode=table.locator('tr[data-integration="xcode"]');assert.match(await xcode.innerText(),/compiler verdicts[\s\S]*Not measured[\s\S]*4 \/ Unknown/);assert.equal(await xcode.getByRole('progressbar').count(),0);
+  const compiler=page.getByRole('region',{name:'Xcode compiler verdicts',exact:true});assert.match(await compiler.innerText(),/Clang \/ PCH[\s\S]*partial coverage/);assert.deepEqual(await compiler.getByRole('table',{name:'Xcode compiler verdicts',exact:true}).locator('tbody td').allTextContents(),['4','2','Unknown','1']);
+  const native=page.getByRole('region',{name:'Gradle task outcomes',exact:true});assert.match(await native.innerText(),/Team Cache 2[\s\S]*Local Cache 1/);
+  await navigate('Overview');await expect(metric('hit-rate')).toHaveText('80%');assert.equal(await page.getByRole('table',{name:'Most reused artifacts',exact:true}).locator('tbody tr').count(),2);
+ });
+ await check('complete compiler verdict ratios remain scoped and cannot change task hit rates or savings',async()=>{
+  completeCompiler=true;await navigate('Activity');await page.getByRole('button',{name:'Refresh',exact:true}).click();
+  const compiler=page.getByRole('region',{name:'Xcode compiler verdicts',exact:true});await expect(compiler.getByText(/Scoped compiler-verdict hit rate: 67%/)).toBeVisible();assert.match(await compiler.innerText(),/4 hits \/ 6 classified compiler verdicts/);
+  const xcode=page.getByRole('table',{name:'Cache by type',exact:true}).locator('tr[data-integration="xcode"]');assert.match(await xcode.innerText(),/Not measured[\s\S]*4 \/ Unknown/);assert.equal(await xcode.getByRole('progressbar').count(),0);
+  const savings=page.getByRole('region',{name:'Savings evidence',exact:true});assert.match(await savings.innerText(),/CPU-hours saved[\s\S]*Not measured/);assert.match(await savings.innerText(),/Compute cost saved[\s\S]*Not measured/);
+  await navigate('Overview');await expect(metric('hit-rate')).toHaveText('80%');completeCompiler=false;
  });
  await check('a shorter report at the top removes the previous full-page height',async()=>{
   largeInfrastructure=true;await navigate('Infrastructure');await page.locator('.page-content:not([aria-busy="true"])').waitFor();

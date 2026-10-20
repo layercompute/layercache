@@ -32,6 +32,8 @@ const (
 	IntegrationTurbo    Integration = "turbo"
 	IntegrationActions  Integration = "actions"
 	IntegrationBuildkit Integration = "buildkit"
+	IntegrationGradle   Integration = "gradle"
+	IntegrationXcode    Integration = "xcode"
 )
 
 type Source string
@@ -179,25 +181,26 @@ type RunReport struct {
 }
 
 type PeriodReport struct {
-	SchemaVersion              string              `json:"schemaVersion"`
-	From                       time.Time           `json:"from"`
-	To                         time.Time           `json:"to"`
-	Runs                       int                 `json:"runs"`
-	Groups                     int                 `json:"groups"`
-	Eligible                   int                 `json:"eligible"`
-	Hits                       int                 `json:"hits"`
-	Misses                     int                 `json:"misses"`
-	HitRate                    float64             `json:"hitRate"`
-	GrossAvoidedTaskTime       Estimate            `json:"grossAvoidedTaskTime"`
-	NetEstimatedBuildTimeSaved Estimate            `json:"netEstimatedBuildTimeSaved"`
-	Timing                     TimingReport        `json:"timing"`
-	Bytes                      Bytes               `json:"bytes"`
-	Sources                    []SourceReport      `json:"sources"`
-	Integrations               []IntegrationReport `json:"integrations,omitempty"`
-	Degraded                   bool                `json:"degraded"`
-	TopArtifacts               []ArtifactReport    `json:"topArtifacts"`
-	TopArtifactsTruncated      bool                `json:"topArtifactsTruncated"`
-	Activity                   []ActivityBucket    `json:"activity"`
+	SchemaVersion              string                    `json:"schemaVersion"`
+	From                       time.Time                 `json:"from"`
+	To                         time.Time                 `json:"to"`
+	Runs                       int                       `json:"runs"`
+	Groups                     int                       `json:"groups"`
+	Eligible                   int                       `json:"eligible"`
+	Hits                       int                       `json:"hits"`
+	Misses                     int                       `json:"misses"`
+	HitRate                    float64                   `json:"hitRate"`
+	GrossAvoidedTaskTime       Estimate                  `json:"grossAvoidedTaskTime"`
+	NetEstimatedBuildTimeSaved Estimate                  `json:"netEstimatedBuildTimeSaved"`
+	Timing                     TimingReport              `json:"timing"`
+	Bytes                      Bytes                     `json:"bytes"`
+	Sources                    []SourceReport            `json:"sources"`
+	Integrations               []IntegrationReport       `json:"integrations,omitempty"`
+	Degraded                   bool                      `json:"degraded"`
+	TopArtifacts               []ArtifactReport          `json:"topArtifacts"`
+	TopArtifactsTruncated      bool                      `json:"topArtifactsTruncated"`
+	Activity                   []ActivityBucket          `json:"activity"`
+	NativeReports              []NativeIntegrationReport `json:"nativeReports,omitempty"`
 }
 
 type HistoricalWork struct {

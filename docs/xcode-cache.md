@@ -1,5 +1,9 @@
 # Xcode compilation cache adapter
 
+
+[Native metering](native-metering.md) explains supported compiler-log export,
+separate protocol counters, private report import and remaining timing/resource
+coverage. Installed client and application adoption gates remain separate.
 `layercache xcode run` integrates with Xcode's native compilation cache. It
 enables Apple's bundled CAS plugin and serves LLVM's CAS and compilation
 action-index protocols on a private Unix socket for one build.

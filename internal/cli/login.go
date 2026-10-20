@@ -31,7 +31,13 @@ type capabilityExchange struct {
 	RunID                 string                `json:"runId,omitempty"`
 	WorkspaceID           string                `json:"workspaceId,omitempty"`
 	NativeTokens          map[string]string     `json:"nativeTokens,omitempty"`
+	NativeReports         *nativeReportFeature  `json:"nativeReports,omitempty"`
 	ExecutionObservations *execution.Capability `json:"executionObservations,omitempty"`
+}
+
+type nativeReportFeature struct {
+	Version int    `json:"version"`
+	Path    string `json:"path"`
 }
 
 func runLogin(ctx context.Context, args []string, stdout, stderr io.Writer) error {

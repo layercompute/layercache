@@ -1,5 +1,5 @@
-import {bytes, renderCache, renderCost, scopeName, type Estimate} from '../dashboard/cache-view.js';
-import {formatDuration, integrationLabel, projectInsights} from '../dashboard/insights.js';
+import {bytes, renderCache, renderCost, scopeName, type Estimate, type NativeIntegrationReport} from '../dashboard/cache-view.js';
+import {compilerScopeLabel, formatDuration, integrationLabel, nativeSourceLabel, projectInsights, scopedCompilerRate, type IntegrationInsight} from '../dashboard/insights.js';
 import {renderInfrastructure} from './infrastructure.js';
 import {el, empty, panel, table} from './ui.js';
 import type {API, Project, ProjectPage, Session, Snapshot, Team} from './types.js';
@@ -19,44 +19,58 @@ function pageLink(text: string, target: ProjectPage, actions: Actions): HTMLElem
   const button = el('button', text, 'text-link'); button.type = 'button'; button.onclick = () => actions.navigate(target); return button;
 }
 
+function coverageDetails(items: IntegrationInsight[]): HTMLElement {
+  const coverage = el('details', '', 'integration-coverage');
+  coverage.append(el('summary', `Reporting coverage · ${items.length} cache types`));
+  const {wrapper, body} = table('Reporting coverage', ['Type and units', 'Available evidence', 'Enable reporting']);
+  for (const item of items) {
+    const row = el('tr'); row.dataset.integration = item.id;
+    const title = el('th', item.name); title.scope = 'row'; title.append(el('p', item.units, 'muted'));
+    const evidence = el('td'); evidence.append(el('span', item.coverage.label, 'coverage-pill'), el('p', item.coverage.reason));
+    const action = el('td'); action.append(el('p', item.coverage.action));
+    const link = el('a', `${item.name} setup`, 'text-link'); link.href = item.coverage.documentation; action.append(link);
+    row.append(title, evidence, action); body.append(row);
+  }
+  coverage.append(wrapper); return coverage;
+}
+
 function integrations(snapshot: Snapshot, compact = false): HTMLElement {
   const insights = projectInsights(snapshot.cache);
-  const section = panel('Cache by type', 'Reported reuse in the selected period');
-  const {wrapper, body} = table('Cache by type', ['Type', 'Hit rate', 'Hits / eligible', 'Avoided task time']);
+  const section = panel('Cache by type', 'Reported outcomes, with each integration’s native units');
+  const {wrapper, body} = table('Cache by type', ['Type', 'Hit rate', 'Cached / eligible', 'Avoided task time']);
   for (const item of insights.integrations) {
     if (compact && item.state !== 'reported') continue;
     const row = el('tr'); row.dataset.integration = item.id;
     const title = el('th'); title.scope = 'row';
     const name = el('div', '', 'integration-name');
     const dot = el('span', '', `integration-dot integration-${item.id}`); dot.setAttribute('aria-hidden', 'true');
-    name.append(dot, el('span', item.name)); title.append(name);
+    name.append(dot, el('span', item.name)); title.append(name, el('p', item.units, 'muted'));
+    const compiler = item.nativeReport?.counters?.compiler;
+    if (compiler && item.state === 'reported') title.append(el('p', `${compilerScopeLabel(compiler.scope)} · ${compiler.coverage} coverage`, 'muted'));
     const rate = el('td');
     if (item.state === 'reported') {
       rate.append(el('span', percent(item.hitRate), 'rate-value'));
-      const meter = el('div', '', 'bar-track'), fill = el('div', '', 'bar-fill');
-      // Native progress avoids inline styles under the dashboard's strict CSP.
-      const progress = el('progress'); progress.max = 1; progress.value = item.hitRate ?? 0;
-      progress.setAttribute('aria-label', `${item.name} hit rate`); fill.append(progress); meter.append(fill); rate.append(meter);
-    } else rate.append(el('span', 'Not yet metered', 'coverage-pill'));
+      if (item.hitRate !== null) {
+        const meter = el('div', '', 'bar-track'), fill = el('div', '', 'bar-fill');
+        // Native progress avoids inline styles under the dashboard's strict CSP.
+        const progress = el('progress'); progress.max = 1; progress.value = item.hitRate;
+        progress.setAttribute('aria-label', `${item.name} hit rate`); fill.append(progress); meter.append(fill); rate.append(meter);
+      }
+    } else rate.append(el('span', item.coverage.label, 'coverage-pill'));
     const counts = item.state === 'reported' ? `${formatNumber(item.hits)} / ${formatNumber(item.eligible)}` : 'Not measured';
     const count = el('td', counts); count.title = item.units;
     const time = el('td', formatDuration(item.avoidedTaskTime?.milliseconds ?? null));
-    if (item.avoidedTaskTime) time.title = estimateDetail(item.avoidedTaskTime);
+    if (item.avoidedTaskTime) {
+      time.title = estimateDetail(item.avoidedTaskTime);
+      time.append(el('p', `${formatNumber(item.avoidedTaskTime.known)}/${formatNumber(item.avoidedTaskTime.total)} timed`, 'muted'));
+    }
     row.append(title, rate, count, time); body.append(row);
   }
   if (body.childElementCount) section.append(wrapper);
-  else section.append(empty('No cache outcomes reported', 'Reported native outcomes will appear here. Unmetered activity remains unknown.'));
-  if (compact) {
-    const missing = insights.integrations.filter(item => item.state !== 'reported');
-    if (missing.length) {
-      const coverage = el('details', '', 'integration-coverage');
-      coverage.append(el('summary', `${missing.length} cache types not yet metered`));
-      const types = el('div', '', 'coverage-types');
-      for (const item of missing) types.append(el('span', `${item.name} · Not yet metered`, 'coverage-pill'));
-      coverage.append(types); section.append(coverage);
-    }
-  }
-  section.append(el('p', 'Hit rates cover reported native work units. Unmetered usage stays unknown.', 'coverage-note'));
+  else section.append(empty('No cache outcomes reported', 'Expand reporting coverage for the evidence available from each integration and its setup steps.'));
+  const coverage = compact ? insights.integrations.filter(item => item.state !== 'reported' || item.hitRate === null) : insights.integrations;
+  if (coverage.length) section.append(coverageDetails(coverage));
+  section.append(el('p', 'Tasks, compiler actions, build vertices and archive outcomes have different units. Missing reports do not mean zero use. Protocol requests and snapshot transfers do not establish native cache hits.', 'coverage-note'));
   return section;
 }
 
@@ -74,6 +88,66 @@ function commonHits(snapshot: Snapshot): HTMLElement {
     body.append(row);
   }
   section.append(wrapper, el('p', `Artifact references keep cache keys and task paths private. Hit units follow each native integration.${insights.topArtifactsTruncated ? ' Only the most frequently hit artifacts are included.' : ''}`, 'coverage-note'));
+  return section;
+}
+
+function nativeOutcomes(snapshot: Snapshot): HTMLElement | null {
+  const reports = projectInsights(snapshot.cache).nativeReports;
+  if (!reports.length) return null;
+  const section = panel('Native outcome evidence', 'Native results, eligibility and original-producer coverage');
+  for (const report of reports) {
+    if (report.integration !== 'gradle') continue;
+    const group = el('section'); group.setAttribute('aria-label', `${integrationLabel(report.integration)} task outcomes`);
+    group.append(el('h3', `${integrationLabel(report.integration)} tasks`), el('p', `${formatNumber(report.reportedInvocations)} reported invocations · ${formatNumber(report.reportedTasks)} task outcomes`, 'muted'));
+    const {wrapper, body} = table(`${integrationLabel(report.integration)} task outcomes`, ['Executed', 'From cache', 'Up to date', 'No source', 'Skipped', 'Failed', 'Unknown']);
+    const row = el('tr');
+    for (const value of [report.outcomes.executed, report.outcomes.fromCache, report.outcomes.upToDate, report.outcomes.noSource, report.outcomes.skipped, report.outcomes.failed, report.outcomes.unknown]) row.append(el('td', formatNumber(value)));
+    body.append(row); group.append(wrapper);
+    group.append(el('p', `${formatNumber(report.hits)} native cache hits · ${formatNumber(report.knownEligible)} known eligible tasks · ${formatNumber(report.eligibilityUnknown)} outcomes with unknown eligibility. ${report.hitRate === null ? 'A complete hit rate is unavailable.' : `Reported eligible-task hit rate: ${percent(report.hitRate)}.`}`, 'coverage-note'));
+    const sources = report.sources.map(source => `${nativeSourceLabel(source.source, snapshot.scope ?? snapshot.cache.status?.visibility)} ${formatNumber(source.hits)}`).join(' · ');
+    group.append(el('p', sources ? `Reported hit sources · ${sources}` : 'No hit sources reported.', 'coverage-note'));
+    group.append(el('p', 'FROM-CACHE establishes native task reuse. Remote or local source attribution and original-producer matching require separate key and transport evidence.', 'coverage-note'));
+    group.append(el('p', `Original producer timing matched for ${formatNumber(report.producerTiming.known)} of ${formatNumber(report.producerTiming.total)} native cache hits; producer resources matched for ${formatNumber(report.producerResources.known)} of ${formatNumber(report.producerResources.total)}.`, 'coverage-note'));
+    group.append(el('p', `Avoided task time: ${formatDuration(report.grossAvoidedTaskTime.milliseconds)}. ${estimateDetail(report.grossAvoidedTaskTime)}. Overlapping tasks do not establish elapsed build-time or CPU savings.`, 'coverage-note'));
+    if (report.netAvoidedTaskTime) group.append(el('p', `Net avoided task elapsed time: ${formatDuration(report.netAvoidedTaskTime.milliseconds)}. ${estimateDetail(report.netAvoidedTaskTime)}. This subtracts cached-task elapsed time from matched original task time, and can be negative. It is not elapsed build-time or CPU savings.`, 'coverage-note'));
+    if (report.historyTruncated) group.append(el('p', 'Retained native history is incomplete. Counts cover only the reports available in this period.', 'callout'));
+    section.append(group);
+  }
+  return section.childElementCount > 1 ? section : null;
+}
+
+function xcodeEvidence(snapshot: Snapshot): HTMLElement | null {
+  const report = projectInsights(snapshot.cache).nativeReports.find(item => item.integration === 'xcode');
+  if (!report) return null;
+  const section = panel('Xcode protocol and compiler evidence', 'Request activity, native verdicts and lifecycle time have separate meanings');
+  if (report.historyTruncated) section.append(el('p', 'Retained Xcode history is incomplete. Counts cover only available reports in this period.', 'callout'));
+  const rpc = report.counters?.rpc;
+  if (rpc) {
+    const {wrapper, body} = table('Xcode protocol activity', ['Protocol operation', 'Reads', 'Hits', 'Writes']);
+    for (const [label, reads, hits, writes] of [['Action index', rpc.actionReads, rpc.actionHits, rpc.actionWrites], ['CAS objects', rpc.casReads, rpc.casHits, rpc.casWrites]] as const) {
+      const row = el('tr'), title = el('th', label); title.scope = 'row'; row.append(title, el('td', formatNumber(reads)), el('td', formatNumber(hits)), el('td', formatNumber(writes))); body.append(row);
+    }
+    section.append(wrapper, el('p', `${formatNumber(rpc.cacheErrors)} cache errors reported. Action-index and CAS hits count protocol requests, including repeated requests. They are not compiler actions avoided or snapshot restores.`, 'coverage-note'));
+  }
+  const compiler = report.counters?.compiler;
+  const compilerGroup = el('section'); compilerGroup.setAttribute('aria-label', 'Xcode compiler verdicts'); compilerGroup.append(el('h3', 'Compiler verdicts'));
+  if (compiler) {
+    compilerGroup.append(el('p', `${compilerScopeLabel(compiler.scope)} · ${compiler.coverage} coverage`, 'coverage-note'));
+    const {wrapper, body} = table('Xcode compiler verdicts', ['Hits', 'Misses', 'Skipped', 'Unknown']);
+    const row = el('tr'); for (const value of [compiler.hits, compiler.misses, compiler.skipped, compiler.unknown]) row.append(el('td', formatNumber(value))); body.append(row); compilerGroup.append(wrapper);
+    const rate = scopedCompilerRate(compiler), classified = compiler.hits !== null && compiler.misses !== null ? compiler.hits + compiler.misses : null;
+    compilerGroup.append(el('p', `Scoped compiler-verdict hit rate: ${percent(rate)}. ${rate === null ? 'Needs complete verdict coverage, a known compiler scope and classified hits and misses.' : `${formatNumber(compiler.hits)} hits / ${formatNumber(classified)} classified compiler verdicts in this scope.`}`, 'coverage-note'));
+    const reasons = {missing: 'The native compiler result was not supplied.', truncated: 'The native compiler result was truncated.', unsupported: 'This compiler result format is not supported.', ambiguous: 'The compiler result could not be attributed without ambiguity.', none: 'No parser limitation was reported.'};
+    if (compiler.reason) compilerGroup.append(el('p', reasons[compiler.reason], 'coverage-note'));
+  } else compilerGroup.append(el('p', 'Compiler verdicts unavailable. The lifecycle did not supply a supported native compiler summary.', 'coverage-note'));
+  compilerGroup.append(el('p', 'Compiler verdicts cover only the stated compiler scope. A complete key-supported denominator and matched original-producer timing are required before these become eligible-task or savings estimates.', 'coverage-note')); section.append(compilerGroup);
+  if (report.timingMs) {
+    const {wrapper, body} = table('Xcode lifecycle timings', ['Phase', 'Recorded elapsed time']);
+    const labels: Record<keyof NonNullable<NativeIntegrationReport['timingMs']>, string> = {operation: 'Lifecycle operation', compile: 'Compile command', load: 'Cache load', restore: 'Snapshot restore', close: 'Cache close', snapshot: 'Snapshot publication'};
+    for (const key of Object.keys(labels) as (keyof typeof labels)[]) {const row = el('tr'), title = el('th', labels[key]); title.scope = 'row'; row.append(title, el('td', formatDuration(report.timingMs[key]))); body.append(row);}
+    section.append(wrapper, el('p', 'Recorded phase times describe lifecycle work. They do not measure time saved, and nested phases must not be added together.', 'coverage-note'));
+  }
+  section.append(el('p', 'Allocated CPU savings, measured CPU use and compute cost savings remain unknown without matched original resources and billing evidence.', 'coverage-note'));
   return section;
 }
 
@@ -99,8 +173,8 @@ function savings(snapshot: Snapshot, compact = false): HTMLElement {
   const rows = [
     ['Avoided task time', formatDuration(savings.avoidedTaskTime?.milliseconds ?? null), estimateDetail(savings.avoidedTaskTime)],
     ['Estimated build time saved', formatDuration(savings.estimatedBuildTime?.milliseconds ?? null), estimateDetail(savings.estimatedBuildTime)],
-    ['CPU-hours saved', 'Not measured', 'Needs the original task duration and its allocated CPU'],
-    ['Compute cost saved', 'Not measured', 'Needs matched resource usage and provider prices'],
+    ['CPU-hours saved', 'Not measured', 'Needs matched original producer duration and allocation. Current host capacity is not saved CPU usage.'],
+    ['Compute cost saved', 'Not measured', 'Needs matched producer resources, provider prices and billing rules. Cache hits alone cannot establish a bill reduction.'],
   ];
   for (const [label, value, detail] of compact ? rows.slice(0, 2) : rows) {
     const row = el('div', '', 'savings-row');
@@ -113,7 +187,7 @@ function savings(snapshot: Snapshot, compact = false): HTMLElement {
 }
 
 function activity(snapshot: Snapshot): HTMLElement {
-  const {activity} = projectInsights(snapshot.cache), section = panel('Cache activity', 'Hits and misses over the selected period');
+  const {activity} = projectInsights(snapshot.cache), section = panel('Cache activity', 'Turbo, Actions and BuildKit outcome history');
   if (!activity.length) {section.append(empty('No time series available', 'Activity appears as clients report cache outcomes.')); return section;}
   const chart = el('div', '', 'mini-trend'); chart.setAttribute('aria-label', 'Cache lookup history');
   const maximum = Math.max(1, ...activity.map(item => item.eligible));
@@ -135,9 +209,9 @@ function overview(snapshot: Snapshot, actions: Actions): HTMLElement {
   const insights = projectInsights(snapshot.cache), stats = el('div', '', 'summary-grid');
   stats.append(
     stat('storage', 'Cached data', insights.storageUsedBytes === null ? 'Unknown' : bytes(insights.storageUsedBytes), insights.storageLimitBytes === null ? 'Capacity unavailable' : `${bytes(insights.storageLimitBytes)} capacity · ${formatNumber(insights.artifacts)} artifacts`),
-    stat('hit-rate', 'Effective hit rate', percent(insights.hitRate), insights.hits === null ? 'No cache report available' : `${formatNumber(insights.hits)} hits / ${formatNumber(insights.eligible)} eligible`),
+    stat('hit-rate', 'Reported cache hit rate', percent(insights.hitRate), insights.hits === null ? 'No cache report available' : `${formatNumber(insights.hits)} hits / ${formatNumber(insights.eligible)} eligible · Turbo, Actions and BuildKit coverage`),
     stat('time-saved', 'Est. build time saved', formatDuration(insights.savings.estimatedBuildTime?.milliseconds ?? null), estimateDetail(insights.savings.estimatedBuildTime)),
-    stat('runs', 'Reported runs', formatNumber(insights.runs), `${formatNumber(insights.misses)} cache misses in this period`),
+    stat('runs', 'Reported runs', formatNumber(insights.runs), `${formatNumber(insights.misses)} misses · Turbo, Actions and BuildKit coverage`),
   );
   node.append(stats);
   if (insights.partial) node.append(el('p', 'Some outcomes have partial or degraded evidence. Totals cover only the reported work.', 'callout'));
@@ -212,10 +286,11 @@ export function renderProjectPage(page: ProjectPage, project: Project, team: Tea
   if (page === 'activity') {
     node.append(activity(snapshot));
     const grid = el('div', '', 'overview-grid'); grid.append(integrations(snapshot), commonHits(snapshot)); node.append(grid);
+    const native = nativeOutcomes(snapshot), xcode = xcodeEvidence(snapshot); if (native) node.append(native); if (xcode) node.append(xcode);
     const details = panel('Transfer and source details', 'Reported cache activity, excluding unmetered native work');
-    details.append(renderCache(scopeName(scope), snapshot.cache, {scope, canPrune: false})); node.append(details);
+    details.append(renderCache(scopeName(scope), snapshot.cache, {scope, canPrune: false, showNative: false})); node.append(details);
     node.append(savings(snapshot));
-    if (report?.eligible === 0) node.append(el('p', 'No measured lookups', 'coverage-note'));
+    if (report?.eligible === 0) node.append(el('p', 'No eligible Turbo, Actions or BuildKit outcomes were reported in this period. Native results and protocol activity have separate coverage.', 'coverage-note'));
     return node;
   }
   if (page === 'storage') {

@@ -53,6 +53,25 @@ workspaces and filesystem migration are outside the current product scope.
   overhead and prices before reporting compute or financial savings. Add explicit
   snapshot purpose metadata to distinguish Xcode/Expo from their shared Turbo
   archive transport. Native keys and compatibility must remain unchanged.
+  October 20 acceptance: report Phone's completed Gradle task outcomes through
+  the public native listener, qualify native eligibility separately from exact
+  native-key/source correlation, and reconcile immutable reports per job and
+  invocation. Match producer duration only to the first committed publication,
+  its digest and an unambiguous executed-task window. Preserve unknowns for
+  missing or ambiguous evidence. Separate Xcode's protocol counters from
+  compiler-confirmed reuse and import bounded Cloud evidence under workload or
+  member authority; snapshot grants remain archive-only. Explain every dashboard
+  integration's reporting support, units, missing evidence and working adoption
+  path. Include local/hosted SQLite/PostgreSQL, matrix jobs, retries, partial
+  reports and real native-client controls, independent reviews, green main CI,
+  deployed dashboard QA and application-owner adoption in the delivery receipt.
+  [Source qualification](docs/evidence/native-metering-20261020.md) now covers
+  the bounded native endpoint, Gradle listener/action, offline native exporters,
+  original publication/resource matching and local/hosted dashboard coverage.
+  [The coverage audit](docs/native-metering.md#coverage-audit) names the remaining
+  reporters and distinguishes missing evidence from zero usage. Published pins,
+  live rollout and normal application adoption remain separate gates; allocation,
+  pricing and shared snapshot-purpose work keep this parent task open.
 
 - [ ] **Show where LayerCache runs and the resources available there.**
   Owner: LayerCache observability. October 20 user outcome: recognize the same

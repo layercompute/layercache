@@ -8,6 +8,13 @@ CLI. This fixture has no downloaded project dependencies. Gradle must have
 network access to the disposable loopback HTTP endpoints; `--offline` disables
 Gradle's HTTP build cache.
 
+`pnpm qa:gradle-native` is the normal Linux CI gate. It runs the action's unit
+controls, all seven public-listener controls below, then the native HTTP matrix.
+Its existing `GRADLE_QA_OUTPUT` receipt includes the sanitized listener summary;
+raw logs and private task identities stay in local scratch. Each ordinary
+command is bounded to 120 seconds; the seven-command listener subprocess has a
+separate ten-minute total limit.
+
 The fixture uses Gradle's standard `JavaCompile` task and an explicitly cacheable
 verification task that launches the compiled class and checks its output. Source,
 compiler release option, verification inputs, and runtime version/vendor/OS/arch
@@ -55,3 +62,33 @@ startup and cleanup. They are fixture timings, not controlled Phone build or
 billing comparisons. Gradle's separate filesystem state remains outside
 LayerCache's byte budget. Local-to-private forwarding and Public caching remain
 unimplemented in this slice.
+
+## Native metering controls
+
+The HTTP acceptance runner also collects public native completion events,
+correlates each invocation's exact info log and submits its bounded projection
+through a fresh synthetic member-local capability. The disposable token helper
+can name only the fixture's project and uses its private test signing key. The
+wire projection contains no raw task paths. Diagnostic archive downloads retain
+unscoped fixture credentials so they cannot become accepted task hits.
+Aggregate report assertions verify the eligible denominator, accepted hit count,
+Local/Team source, original first-publication operation duration and restart
+retention. A duplicate producer with a different archive cannot replace the
+original producer duration. Producer resources and provider charges remain
+unknown in this fixture.
+
+Run the separate public-listener controls with:
+
+```sh
+GRADLE_BIN=/absolute/path/to/gradle-9.3.1/bin/gradle \
+  node qa/gradle-native/metering.mjs
+```
+
+Its small generated text tasks cover root and multiple projects, an included
+build, `buildSrc`, parallel execution, configuration-cache storage and reuse,
+accepted cache restores, up-to-date/no-source/skipped/failed outcomes, explicit
+cache disabling and equivalent tasks sharing one native key. Comparing the
+original init script with the metered script checks unchanged native keys.
+These filesystem-cache controls qualify native outcomes and projection; the
+HTTP runner separately qualifies private source and producer correlation.
+Neither fixture establishes application or billing savings.

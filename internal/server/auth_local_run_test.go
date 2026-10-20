@@ -45,11 +45,11 @@ func TestGitHubLocalRunIssuesOnlyScopedNativeAuthority(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if claims.Integration != integration || claims.Project != input["project"] || claims.SourceCommit != input["sourceCommit"] || claims.Repository != input["repository"] || claims.Ref != input["ref"] || claims.DefaultRef != input["defaultRef"] || claims.Compatibility != input["compatibility"] || claims.RunID != "github-local:github:developer:"+input["runId"] || claims.WorkspaceID != "github-local:github:developer:"+input["workspaceId"] || claims.Allows(access.CapabilityAdmin) || claims.Allows(access.CapabilityWrite) != (role != "reader") {
+				if claims.Integration != integration || claims.Project != input["project"] || claims.SourceCommit != input["sourceCommit"] || claims.Repository != input["repository"] || claims.Ref != input["ref"] || claims.DefaultRef != input["defaultRef"] || claims.Compatibility != input["compatibility"] || claims.RunID != "github-local:github:developer:"+input["runId"] || claims.WorkspaceID != "github-local:github:developer:"+input["workspaceId"] || claims.Allows(access.CapabilityAdmin) || claims.Allows(access.CapabilityWrite) != (role != "reader" && integration != "xcode") {
 					t.Fatalf("incorrect scoped %s authority %+v", integration, claims)
 				}
 			}
-			if len(result.NativeTokens) != 6 {
+			if len(result.NativeTokens) != 7 {
 				t.Fatal("native credential set incomplete")
 			}
 			for name, mutate := range map[string]func(map[string]string){

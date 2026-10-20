@@ -10,12 +10,15 @@ import (
 
 	"github.com/layercache/layercache/internal/access"
 	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/execution"
 )
 
 func main() {
 	path := flag.String("config", "", "disposable cache configuration")
 	capability := flag.String("capability", "read", "read or write")
 	compatibility := flag.String("compatibility", "", "isolated profile")
+	runID := flag.String("run", "", "optional isolated member-local run nonce")
+	workspace := flag.String("workspace", "", "optional opaque isolated workspace identity")
 	flag.Parse()
 	if *path == "" || (*capability != "read" && *capability != "write") {
 		fail(fmt.Errorf("config and read/write capability are required"))
@@ -29,10 +32,21 @@ func main() {
 		profile = *compatibility
 	}
 	now := time.Now().UTC()
-	token, err := access.MintCapabilityToken(cfg.LocalToken, access.Claims{
+	claims := access.Claims{
 		Subject: "github:qa", Project: cfg.ProjectID, Integration: "gradle", Compatibility: profile,
 		Capabilities: []access.Capability{access.Capability(*capability)}, ExpiresAt: now.Add(time.Hour),
-	}, now)
+	}
+	if *runID != "" || *workspace != "" {
+		if *runID == "" || *workspace == "" {
+			fail(fmt.Errorf("run and workspace must be supplied together"))
+		}
+		claims.RunID = "github-local:github:qa:" + *runID
+		claims.WorkspaceID = "github-local:github:qa:" + *workspace
+		claims.Repository = "layercache/gradle-native-qa"
+		claims.SourceCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		claims.Execution = execution.ClientContext("github-id:42", *runID)
+	}
+	token, err := access.MintCapabilityToken(cfg.LocalToken, claims, now)
 	if err != nil {
 		fail(err)
 	}

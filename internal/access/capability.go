@@ -130,7 +130,7 @@ func normalizeClaims(claims Claims, now time.Time) (Claims, error) {
 	if claims.Execution != nil && (claims.Execution.Validate() != nil || claims.RunID == "" || claims.WorkspaceID == "") {
 		return Claims{}, ErrInvalidToken
 	}
-	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" && claims.Integration != "bazel" && claims.Integration != "retained" {
+	if claims.Integration != "" && claims.Integration != "turbo" && claims.Integration != "actions" && claims.Integration != "buildkit" && claims.Integration != "nx" && claims.Integration != "gradle" && claims.Integration != "bazel" && claims.Integration != "retained" && claims.Integration != "xcode" {
 		return Claims{}, ErrInvalidToken
 	}
 	if claims.Integration == "retained" {

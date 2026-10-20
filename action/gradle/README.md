@@ -61,3 +61,58 @@ This action does not install the CLI, start a Local daemon, forward Local
 archives, enable build caching, disable Gradle's filesystem cache or replace an
 existing remote. Loading the init script when another remote is configured
 fails explicitly. Required release handoffs still use retained artifacts.
+
+## Native task reporting
+
+Action revisions containing the metering client enable optional task reporting
+when the server advertises `nativeReports` version 1. The earlier HTTP-only
+revision pinned in the example above does not include this collector. The
+collector uses Gradle's public task completion events and a configuration-cache
+compatible build service. One root listener covers subprojects, included builds
+and `buildSrc`; it does not add tasks or change their native keys.
+
+Accepted `FROM-CACHE` results are eligible cache hits. Up-to-date, no-source,
+skipped, failed and executed results keep separate counts. A successful executed
+task's eligibility remains unknown unless native output supplies its cache key
+or explicitly says caching was disabled. HTTP downloads alone do not establish
+accepted task hits. Gradle's completion API does not supply cache keys or cache
+source.
+
+For exact native-key correlation, provide `native-info-log` as an absolute path
+to one completed Gradle 9.3.1 `--info` log. Keep the caller's existing command and
+preserve its exit status, for example:
+
+```yaml
+# Add to a reviewed action revision containing native metering:
+with:
+  native-info-log: ${{ runner.temp }}/gradle-native-info.log
+
+# In the following build step, pass the init-script output as usual:
+run: |
+  set -o pipefail
+  ./gradlew --build-cache --info --console=plain \
+    --init-script "$CACHE_INIT_SCRIPT" build 2>&1 |
+    tee "$RUNNER_TEMP/gradle-native-info.log"
+```
+
+Use one invocation per action instance when supplying one info log. Multiple
+invocations sharing a log, unsupported versions, missing completion, changed
+files and ambiguous task-path mappings leave key-dependent evidence unknown.
+Equivalent task paths can share a native key; the server separately requires a
+unique matching producer publication before attaching original timing.
+
+Private files are bounded and remain in the owned runner directory. The client
+uploads only hashed task references, qualified native keys, outcomes and native
+operation timestamps. It uploads no raw task paths, logs, commands, inputs or
+credentials. The server scopes and hashes keys using the authenticated project
+and profile. It derives producer timing and cache source from matching native
+transport evidence, rather than accepting those claims in the report body.
+
+Post reporting renews this action's own job authority, including for read-only
+PRs. Authentication or submission failure leaves reporting unavailable and
+preserves the build result; it does not rerun Gradle. The client confirms only a
+bounded final receipt matching the exact invocation and task count. An unknown
+acknowledgement is not retried automatically. Cleanup still removes the
+owned runner directory. Native task elapsed time can include cache overhead and
+overlap other tasks. It is distinct from CPU usage, complete build time and
+provider charges.

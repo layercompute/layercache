@@ -1,10 +1,12 @@
 // Run with DASHBOARD_LINK_FILE and DASHBOARD_BROWSER (defaults to chromium).
+// QA_DASHBOARD_NATIVE_ONLY=1 limits acceptance to the four native display cases.
 // A running dashboard with at least one project is required. No runtime credentials
 // are read or emitted; synthetic response cases exercise the browser projection.
 import { chromium, firefox, webkit } from '@playwright/test';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import type {NativeIntegrationReport} from '../../dashboard/cache-view.js';
 (async () => {
   const link = fs.readFileSync(process.env.DASHBOARD_LINK_FILE!, 'utf8').trim();
   const output = process.env.QA_OUTPUT || fs.mkdtempSync('/tmp/layercache-browser-');
@@ -15,9 +17,12 @@ import path from 'node:path';
   const context = await browser.newContext({viewport:{width:1440,height:1050}});
   const page = await context.newPage();
   const errors: string[] = []; const results: {name: string; passed: boolean; error?: string}[] = []; const requests: string[] = [];
+  const nativeOnly=process.env.QA_DASHBOARD_NATIVE_ONLY==='1';
+  const nativeChecks=new Set(['old servers without native reports keep the compact dashboard clean','native task results separate eligible hits from source and producer evidence','native Xcode RPC counts and zero phase timings never become compiler replay','complete scoped compiler rates preserve generic and native-task coverage']);
   page.on('request', r => requests.push(r.url()));
   page.on('pageerror', e => errors.push(e.message));
-  async function check(name: string, fn: () => Promise<void>) { try { await fn(); results.push({name,passed:true}); } catch (e) { results.push({name,passed:false,error:e instanceof Error ? e.message : String(e)}); await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true}); } }
+  async function check(name: string, fn: () => Promise<void>) { if(nativeOnly&&!nativeChecks.has(name))return; try { await fn(); results.push({name,passed:true}); } catch (e) { results.push({name,passed:false,error:e instanceof Error ? e.message : String(e)}); await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true}); } }
+  async function finish(){fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify({browser:browserName,output,results},null,2));await browser.close();if(results.some(r=>!r.passed))process.exitCode=1;}
   async function settled() { await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#refresh')!.disabled); }
   async function refresh() { await page.locator('#refresh').click(); await settled(); }
   await page.goto(link); await page.locator('.project').first().waitFor(); await settled();
@@ -102,6 +107,8 @@ import path from 'node:path';
   let mocked: typeof snapshot;
   await page.route('**/api/snapshot?*', r=>r.fulfill({json:mocked}));
   const clone=()=>JSON.parse(JSON.stringify(snapshot));
+  function native(integration:'gradle'|'xcode'):NativeIntegrationReport{return {integration,reportedInvocations:1,reportedTasks:0,outcomes:{executed:0,fromCache:0,upToDate:0,noSource:0,skipped:0,failed:0,unknown:0},knownEligible:0,eligibilityUnknown:0,eligible:null,hits:0,misses:0,hitRate:null,sources:[],producerTiming:{known:0,total:0},producerResources:{known:0,total:0},grossAvoidedTaskTime:{milliseconds:null,known:0,total:0,confidence:'unknown'},netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:0,confidence:'unknown'},allocatedCpuSecondsSaved:null,measuredCpuSecondsSaved:null,costSaved:null,historyTruncated:false};}
+
   await check('remote-only selection omits unselected local cache',async()=>{
     mocked=clone();mocked.projects=mocked.projects.slice(0,1);mocked.projects[0].local={state:'not-selected',reportState:'not-selected'};
     await refresh();assert.equal(await page.getByRole('region',{name:'Local Cache',exact:true}).count(),0);assert.equal(await page.locator('.project .cache').count(),1);
@@ -129,9 +136,40 @@ import path from 'node:path';
     for(const [source,hits] of [['localCache','2'],['teamCache','3'],['publicCache','1'],['unattributed','1']])assert.equal(await cache.locator(`.source-row[data-source="${source}"] td`).first().innerText(),hits);
     const text=await cache.innerText();assert.match(text,/7\.0 KiB/);assert.match(text,/2\.0 KiB/);assert.match(text,/13 observed runs/);
     assert.match(text,/Phase durations[\s\S]*can overlap/);assert.match(text,/Local source activity|Local activity cannot be split/);
-    assert.match(text,/Native Gradle, Nx, Bazel and Xcode usage is not yet fully metered/);
+    assert.match(text,/Native task outcomes and protocol activity have separate coverage/);
     assert.match(text,/turbo · 5\/7 hits/);assert.match(text,/buildkit · 2\/3 hits/);
   });
+  if(nativeOnly){mocked=clone();mocked.projects=mocked.projects.slice(0,1);mocked.projects[0].local.report={eligible:10,hits:7,misses:3,runs:13,degraded:false,netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:0,confidence:'unknown'},integrations:[{integration:'turbo',hits:7,eligible:10}]};await refresh();}
+  await check('old servers without native reports keep the compact dashboard clean',async()=>{
+    const cache=page.locator('.cache').first();assert.equal(await cache.locator('details.native-results').count(),0);assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');
+  });
+  await check('native task results separate eligible hits from source and producer evidence',async()=>{
+    const report:NativeIntegrationReport={...native('gradle'),reportedTasks:8,outcomes:{executed:2,fromCache:3,upToDate:1,noSource:1,skipped:1,failed:0,unknown:0},hits:3,knownEligible:4,eligibilityUnknown:1,misses:1,sources:[{source:'teamCache',hits:1},{source:'unattributed',hits:2}],producerTiming:{known:1,total:3},producerResources:{known:0,total:3},grossAvoidedTaskTime:{milliseconds:9000,known:1,total:3,confidence:'low'},netAvoidedTaskTime:{milliseconds:-4000,known:1,total:3,confidence:'low'}};
+    mocked.projects[0].local.status.visibility='personal';mocked.projects[0].local.report.nativeReports=[report];await refresh();
+    const cache=page.locator('.cache').first(),details=cache.locator('details.native-results');assert.equal(await details.getAttribute('open'),null);await details.locator(':scope > summary').click();
+    const gradle=details.getByRole('region',{name:'Gradle native results',exact:true});const text=await gradle.innerText();
+    assert.match(text,/3 native task cache hits[\s\S]*Not measured eligible-task hit rate[\s\S]*4 known eligible tasks[\s\S]*1 outcomes with unknown eligibility/);
+    assert.match(text,/Personal Cache 1[\s\S]*Unattributed 2/);assert.match(text,/producer timing matched for 1 of 3[\s\S]*resources matched for 0 of 3/i);assert.match(text,/Net avoided task elapsed time [−-]4\.0 s/);
+    assert.match(await details.innerText(),/CPU-hours and compute cost saved are not measured/);assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');
+    for(const width of [320,1440]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+    await page.setViewportSize({width:390,height:844});
+  });
+  await check('native Xcode RPC counts and zero phase timings never become compiler replay',async()=>{
+    const report:NativeIntegrationReport={...native('xcode'),counters:{rpc:{actionReads:12,actionHits:9,actionWrites:2,casReads:30,casHits:24,casWrites:4,cacheErrors:0},compiler:{scope:'unknown',coverage:'unsupported',reason:'unsupported',hits:null,misses:null,skipped:null,unknown:null}},timingMs:{operation:5030,compile:5000,load:null,restore:0,close:20,snapshot:null}};
+    mocked.projects[0].local.report.nativeReports=[report];await refresh();const cache=page.locator('.cache').first(),details=cache.locator('details.native-results');await details.locator(':scope > summary').click();
+    const xcode=details.getByRole('region',{name:'Xcode native results',exact:true});assert.match(await xcode.locator('.native-rpc').innerText(),/9 hits \/ 12 reads[\s\S]*24 hits \/ 30 reads[\s\S]*not compiler replay/);
+    assert.match(await xcode.locator('.native-compiler').innerText(),/Unknown hits[\s\S]*Unknown misses[\s\S]*Scoped compiler-verdict hit rate Not measured/);assert.match(await xcode.locator('.native-phases').innerText(),/Load Unknown[\s\S]*Restore 0\.0 s/);
+    assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');
+  });
+  await check('complete scoped compiler rates preserve generic and native-task coverage',async()=>{
+    const compiler={scope:'clang-pch',coverage:'complete',reason:'none',hits:8,misses:2,skipped:null,unknown:0} as const;
+    const report:NativeIntegrationReport={...native('xcode'),counters:{compiler}};mocked.projects[0].local.report.nativeReports=[report];await refresh();
+    const cache=page.locator('.cache').first(),details=cache.locator('details.native-results');await details.locator(':scope > summary').click();const xcode=details.getByRole('region',{name:'Xcode native results',exact:true});
+    assert.match(await xcode.innerText(),/Clang \/ PCH[\s\S]*complete compiler verdict coverage[\s\S]*Scoped compiler-verdict hit rate 80%/);assert.match(await xcode.innerText(),/no native task denominator/);assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');
+    mocked.projects[0].local.report.nativeReports=[{...report,counters:{compiler:{...compiler,reason:'truncated'}}}];await refresh();const partial=cache.locator('details.native-results');await partial.locator(':scope > summary').click();assert.match(await partial.innerText(),/Scoped compiler-verdict hit rate Not measured/);
+    delete mocked.projects[0].local.report.nativeReports;await refresh();assert.equal(await cache.locator('details.native-results').count(),0);
+  });
+  if(nativeOnly){assert.equal(results.length,nativeChecks.size);assert.deepEqual(errors,[]);await finish();return;}
   await check('unavailable source evidence and missing cost stay unknown',async()=>{
     mocked=clone();mocked.projects=mocked.projects.slice(0,1);delete mocked.projects[0].local.report.sources;mocked.projects[0].cost={state:'unknown',complete:false,knownSubtotalMinor:0,totalMinor:null};
     await refresh();const cache=page.locator('.cache').first();
@@ -211,7 +249,5 @@ import path from 'node:path';
   });
   await maintenance.close();
   await check('no browser exceptions',async()=>assert.deepEqual(errors,[]));
-  fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));
-  console.log(JSON.stringify({browser:browserName,output,results},null,2));await browser.close();
-  if(results.some(r=>!r.passed))process.exitCode=1;
+  await finish();
 })().catch(e=>{console.error(e);process.exit(1)});

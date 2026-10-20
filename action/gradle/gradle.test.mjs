@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { createHash, createHmac } from 'node:crypto';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fileCommands } from '../setup/auth.ts';
 import { setupGradle } from './main.mjs';
-import { cleanupGradle } from './post.mjs';
+import { cleanupGradle, completeGradle } from './post.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 function fileValues(path) {
@@ -52,6 +52,13 @@ async function issuer(options = {}) {
       response.end(JSON.stringify({ value: 'id-token-fixture' }));
       return;
     }
+    if (request.url === '/v1/reports/native') {
+      const input = JSON.parse(Buffer.concat(body).toString());
+      const receipt = {version: 1, recorded: true, repeated: false, invocationId: input.invocationId, tasks: input.tasks.length};
+      const content = options.reportBody === undefined ? JSON.stringify({...receipt, ...options.reportReceipt}) : options.reportBody;
+      response.writeHead(options.reportStatus ?? 200).end(content);
+      return;
+    }
     assert.equal(request.url, '/v1/auth/github-oidc/exchange');
     if (options.status) { response.writeHead(options.status).end('{}'); return; }
     const input = JSON.parse(Buffer.concat(body).toString());
@@ -61,7 +68,7 @@ async function issuer(options = {}) {
       repository: 'acme/widget', ref: 'refs/heads/main', defaultRef: 'refs/heads/main', capabilities: ['write'], expiresAt, ...options.claims };
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     token = `lc2.${payload}.${createHmac('sha256', 'disposable-fixture').update(payload).digest('base64url')}`;
-    response.end(JSON.stringify({ teamToken: token, expiresAt }));
+    response.end(JSON.stringify({ teamToken: token, expiresAt, ...(options.nativeReports ? {nativeReports: {version: 1, path: '/v1/reports/native'}} : {}) }));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -141,7 +148,8 @@ test('authentication denial, network outage, missing permission and stale creden
       const fetcher = failure === 'offline' ? async () => { throw new Error('network error containing a token that must not be printed'); } : oauth.fetcher;
       const result = await setupGradle(fixture.env, { fetcher, log: text => messages.push(text) });
       assert.deepEqual(result, { configured: false });
-      assert.deepEqual(fileValues(fixture.env.GITHUB_ENV), { LAYER_CACHE_GRADLE_URL: '', LAYER_CACHE_GRADLE_PUSH: '0', LAYER_CACHE_GRADLE_TOKEN: '' });
+      assert.deepEqual(fileValues(fixture.env.GITHUB_ENV), { LAYER_CACHE_GRADLE_URL: '', LAYER_CACHE_GRADLE_PUSH: '0', LAYER_CACHE_GRADLE_TOKEN: '',
+        LAYER_CACHE_GRADLE_REPORT_DIR: '', LAYER_CACHE_GRADLE_REPORT_PROJECT: '', LAYER_CACHE_GRADLE_REPORT_COMPATIBILITY: '' });
       assert.equal(fixture.env.LAYER_CACHE_GRADLE_TOKEN, '');
       assert.equal(fixture.env.LAYER_CACHE_GRADLE_URL, '');
       assert.equal(fileValues(fixture.env.GITHUB_OUTPUT).configured, 'false');
@@ -232,4 +240,94 @@ test('post cleanup refuses directories outside the owned runner location', () =>
     assert.throws(() => cleanupGradle({ STATE_gradle_root: fixture.root, RUNNER_TEMP: fixture.root }));
     assert.equal(existsSync(fixture.root), true);
   } finally { fixture.cleanup(); }
+});
+
+function meteredInvocation(fixture, result) {
+  const start = Date.now() - 1000, end = Date.now() - 500;
+  const taskPath = ':private:compile';
+  const workRef = 'sha256:' + createHash('sha256').update(`layercache-gradle-task-v1\0${fixture.env.INPUT_PROJECT}\0${fixture.env.INPUT_COMPATIBILITY}\0${taskPath}`).digest('hex');
+  const document = {version: 1, invocationId: 'gradle-11111111-1111-4111-8111-111111111111', gradleVersion: '9.3.1',
+    startedAtMs: start, finishedAtMs: end, status: 'unknown', truncated: false,
+    tasks: [{taskPath, workRef, startedAtMs: start, finishedAtMs: end, outcome: 'fromCache'}]};
+  writeFileSync(join(result.reportDirectory, document.invocationId + '.json'), JSON.stringify(document), {mode: 0o600});
+  if (fixture.env['INPUT_NATIVE-INFO-LOG']) writeFileSync(fixture.env['INPUT_NATIVE-INFO-LOG'],
+    `Build cache key for task '${taskPath}' is ${'a'.repeat(32)}\nBUILD SUCCESSFUL in 1s\n`, {mode: 0o600});
+  return {...fixture.env, ...Object.fromEntries(Object.entries(fileValues(fixture.env.GITHUB_STATE)).map(([name, value]) => ['STATE_' + name, value]))};
+}
+
+test('advertised native reporting exports private collection and renews this action scope before final submission', async () => {
+  const fixture = job(), oauth = await issuer({nativeReports: true}), messages = [];
+  try {
+    fixture.env['INPUT_NATIVE-INFO-LOG'] = join(fixture.root, 'native-info.log');
+    const result = await setupGradle(fixture.env, {fetcher: oauth.fetcher, log: value => messages.push(value)});
+    assert.equal(statSync(result.reportDirectory).mode & 0o777, 0o700);
+    assert.equal(fileValues(fixture.env.GITHUB_ENV).LAYER_CACHE_GRADLE_REPORT_DIR, result.reportDirectory);
+    const env = meteredInvocation(fixture, result);
+    env.LAYER_CACHE_GRADLE_TOKEN = 'later-action-token-for-another-project';
+    env.INPUT_PROJECT = 'later-project';
+    const completed = await completeGradle(env, {fetcher: oauth.fetcher, log: value => messages.push(value)});
+    assert.deepEqual(completed, {reported: 1});
+    const requests = oauth.requests.filter(request => request.url === '/v1/reports/native');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].authorization, 'Bearer ' + oauth.token());
+    const body = JSON.parse(requests[0].body);
+    assert.equal(body.tasks[0].outcome, 'fromCache');assert.equal(body.tasks[0].nativeKey, 'a'.repeat(32));
+    for (const text of ['taskPath', ':private:compile', 'later-project', 'later-action-token']) assert.equal(requests[0].body.includes(text), false);
+    const exchanges = oauth.requests.filter(request => request.url === '/v1/auth/github-oidc/exchange');
+    assert.equal(exchanges.length, 2);assert.equal(JSON.parse(exchanges[1].body).project, 'team-widget');
+    cleanupGradle(env);assert.equal(existsSync(result.root), false);
+  } finally {await oauth.close();fixture.cleanup();}
+});
+
+test('unavailable native submission warns once and does not retry or fail native work', async () => {
+  const fixture = job(), oauth = await issuer({nativeReports: true, reportStatus: 503}), messages = [];
+  try {
+    const result = await setupGradle(fixture.env, {fetcher: oauth.fetcher, log: () => {}});
+    const env = meteredInvocation(fixture, result);
+    assert.deepEqual(await completeGradle(env, {fetcher: oauth.fetcher, log: value => messages.push(value)}), {reported: 0, unavailable: true});
+    assert.equal(oauth.requests.filter(request => request.url === '/v1/reports/native').length, 1);
+    assert.equal(messages.filter(value => value.startsWith('::warning::')).length, 1);
+    assert.ok(messages.filter(value => !value.startsWith('::add-mask::')).every(value => !value.includes(oauth.token()) && !value.includes(':private:compile')));
+    cleanupGradle(env);
+  } finally {await oauth.close();fixture.cleanup();}
+});
+
+test('only a bounded matching final receipt confirms native publication; unknown acknowledgements never retry', async () => {
+  const invalid = [
+    {reportStatus: 201}, {reportBody: '{}'}, {reportReceipt: {version: 2}}, {reportReceipt: {recorded: false}},
+    {reportReceipt: {invocationId: 'run-foreign111111111111'}}, {reportReceipt: {tasks: 2}}, {reportReceipt: {repeated: 'true'}},
+    {reportBody: '{"version":1,"recorded":true'}, {reportBody: 'private-server-error:' + 'x'.repeat(16 * 1024)},
+  ];
+  for (const options of invalid) {
+    const fixture = job(), oauth = await issuer({nativeReports: true, ...options}), messages = [];
+    try {
+      const result = await setupGradle(fixture.env, {fetcher: oauth.fetcher, log: value => messages.push(value)});
+      const env = meteredInvocation(fixture, result);
+      assert.deepEqual(await completeGradle(env, {fetcher: oauth.fetcher, log: value => messages.push(value)}), {reported: 0, unavailable: true});
+      assert.equal(oauth.requests.filter(request => request.url === '/v1/reports/native').length, 1);
+      assert.equal(messages.filter(value => value.startsWith('::warning::')).length, 1);
+      assert.equal(messages.some(value => value.includes('recorded 1') || value.includes('private-server-error')), false);
+      cleanupGradle(env);
+    } finally {await oauth.close();fixture.cleanup();}
+  }
+  const fixture = job(), oauth = await issuer({nativeReports: true, reportReceipt: {repeated: true}});
+  try {
+    const result = await setupGradle(fixture.env, {fetcher: oauth.fetcher, log: () => {}});
+    const env = meteredInvocation(fixture, result);
+    assert.deepEqual(await completeGradle(env, {fetcher: oauth.fetcher, log: () => {}}), {reported: 1});
+    cleanupGradle(env);
+  } finally {await oauth.close();fixture.cleanup();}
+});
+
+test('partial or malformed local invocation is rejected before any report or renewed credential request', async () => {
+  const fixture = job(), oauth = await issuer({nativeReports: true}), messages = [];
+  try {
+    const result = await setupGradle(fixture.env, {fetcher: oauth.fetcher, log: () => {}});
+    const env = meteredInvocation(fixture, result), before = oauth.requests.length;
+    const path = join(result.reportDirectory, 'gradle-11111111-1111-4111-8111-111111111111.json');
+    const document = JSON.parse(readFileSync(path, 'utf8'));document.truncated = true;writeFileSync(path, JSON.stringify(document));
+    assert.deepEqual(await completeGradle(env, {fetcher: oauth.fetcher, log: value => messages.push(value)}), {reported: 0, unavailable: true});
+    assert.equal(oauth.requests.length, before);
+    assert.equal(messages.length, 1);cleanupGradle(env);
+  } finally {await oauth.close();fixture.cleanup();}
 });

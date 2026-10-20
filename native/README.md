@@ -22,6 +22,12 @@ to a newer main. TypeScript is the source; checked-in JavaScript works inside
 node_modules without relying on Node's unsupported dependency type stripping.
 Node 24 or newer is required. The package has no install/build lifecycle scripts.
 
+## Native metering
+
+See [native measurement](../docs/native-metering.md) for completed task/compiler evidence,
+offline report export and import, hit-rate coverage, and the limits of elapsed,
+compute and cost estimates. Native cache transport alone is insufficient.
+
 ## Expo development clients
 
 Set the build cache provider in app configuration:

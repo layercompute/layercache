@@ -3684,9 +3684,547 @@ function snapshotArchiveErrorMessage(error) {
   return classification ? `Snapshot archive operation failed: ${classification}` : "Snapshot archive operation failed";
 }
 
+// native/xcode-report.ts
+import { constants as constants2 } from "node:fs";
+import { open as open2 } from "node:fs/promises";
+var xcodeReportFormat = "xcode27-replay-v1";
+var maximumLogBytes = 64 << 20;
+var maximumLineBytes = 1 << 20;
+var maximumLines = 25e4;
+var maximumStatsBytes = 16 << 10;
+var maximumElapsedMs = 24 * 60 * 60 * 1e3;
+function unknownCompiler(reason, coverage = "unknown") {
+  return { scope: "unknown", coverage, reason, hits: null, misses: null, skipped: null, unknown: null };
+}
+function bounded(value, fallback) {
+  if (value === void 0) return fallback;
+  if (!Number.isSafeInteger(value) || value < 1 || value > fallback) throw new Error("Invalid Xcode reporting limits");
+  return value;
+}
+async function parseXcodeCompilerLog(log, format, limits = {}) {
+  if (format !== xcodeReportFormat) return unknownCompiler("unsupported", "unsupported");
+  if (log === void 0) return unknownCompiler("missing");
+  const byteLimit = bounded(limits.bytes, maximumLogBytes), lineLimit = bounded(limits.lineBytes, maximumLineBytes), linesLimit = bounded(limits.lines, maximumLines);
+  let operation;
+  let clang = false, swift = false, finished = false, ambiguous = false, unsupported = false, truncated = false;
+  let hits = 0, misses = 0, unknown = 0, observed = 0;
+  const finishOperation = () => {
+    if (!operation) return;
+    if (operation.ambiguous || operation.unsupported) {
+      if (operation.kind === "clang-pch") unknown++;
+      ambiguous ||= operation.ambiguous;
+      unsupported ||= operation.unsupported;
+    } else if (operation.outcome) {
+      observed++;
+      if (operation.outcome === "hit") hits++;
+      else misses++;
+    } else if (operation.kind === "clang-pch") unknown++;
+    operation = void 0;
+  };
+  const consume = (line) => {
+    if (/^\*\* (?:BUILD|TEST|ARCHIVE) (?:SUCCEEDED|FAILED) \*\*$/.test(line)) {
+      finishOperation();
+      finished = true;
+      return;
+    }
+    if (/^Cache (?:hit|miss)$/.test(line) || /^(?:note|remark): (?:[Ll]ocal cache miss for key:|cache key query (?:hit|miss)\b|cache (?:hit|miss)$)/.test(line)) return;
+    const kind = /^(?:CompileC|ProcessPCH|ProcessPCH\+\+)\s/.test(line) ? "clang-pch" : /^(?:SwiftCompile|SwiftEmitModule|SwiftDriver\sCompilation(?:\s|$)|SwiftDriver\sCompilation\sRequirements(?:\s|$))/.test(line) ? "swift" : void 0;
+    if (kind) {
+      finishOperation();
+      if (finished) ambiguous = true;
+      finished = false;
+      if (kind === "clang-pch") clang = true;
+      else swift = true;
+      operation = { kind, ambiguous: false, unsupported: false };
+      return;
+    }
+    if (/^[A-Z][A-Za-z0-9+]*\s/.test(line)) {
+      finishOperation();
+      return;
+    }
+    const clangFinal = /^(?:note|remark): (replayed cache hit|cache miss): (\S{1,8192})$/.exec(line);
+    const swiftFinal = /^(?:note|remark): [Rr]eplay cache (hit|miss)$/.exec(line);
+    if (clangFinal || swiftFinal) {
+      const expected = clangFinal ? "clang-pch" : "swift";
+      if (!operation || operation.kind !== expected) {
+        ambiguous = true;
+        return;
+      }
+      const outcome = clangFinal ? clangFinal[1] === "replayed cache hit" ? "hit" : "miss" : swiftFinal[1] === "hit" ? "hit" : "miss";
+      if (operation.diagnostic !== void 0) {
+        operation.ambiguous = true;
+      } else {
+        operation.diagnostic = line;
+        operation.outcome = outcome;
+      }
+      return;
+    }
+    if (/^(?:note|remark): .*cache (?:hit|miss|skipped)\b/i.test(line)) {
+      if (operation) operation.unsupported = true;
+      else unsupported = true;
+    }
+  };
+  const chunks = typeof log === "string" ? (async function* () {
+    for (let start = 0; start < log.length; ) {
+      let end = Math.min(start + (64 << 10), log.length);
+      if (end < log.length && /[\uD800-\uDBFF]/.test(log[end - 1])) end--;
+      yield Buffer.from(log.slice(start, end), "utf8");
+      start = end;
+    }
+  })() : log;
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let bytes = 0, lineBytes = 0, lines = 0, pending = "";
+  try {
+    outer: for await (const chunk of chunks) {
+      if (!(chunk instanceof Uint8Array)) {
+        unsupported = true;
+        break;
+      }
+      const remaining = byteLimit - bytes;
+      const boundedChunk = chunk.subarray(0, remaining);
+      bytes += boundedChunk.byteLength;
+      pending += decoder.decode(boundedChunk, { stream: true });
+      let newline;
+      while ((newline = pending.indexOf("\n")) >= 0) {
+        const line = pending.slice(0, newline).replace(/\r$/, "");
+        if (++lines > linesLimit || Buffer.byteLength(line, "utf8") > lineLimit) {
+          truncated = true;
+          break outer;
+        }
+        if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(line)) {
+          unsupported = true;
+          break outer;
+        }
+        consume(line);
+        pending = pending.slice(newline + 1);
+      }
+      lineBytes = Buffer.byteLength(pending, "utf8");
+      if (lineBytes > lineLimit || chunk.byteLength > remaining) {
+        truncated = true;
+        break;
+      }
+    }
+    if (!truncated && !unsupported) {
+      pending += decoder.decode();
+      if (pending !== "") {
+        if (++lines > linesLimit || Buffer.byteLength(pending, "utf8") > lineLimit) truncated = true;
+        else if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(pending)) unsupported = true;
+        else consume(pending.replace(/\r$/, ""));
+      }
+    }
+  } catch {
+    unsupported = true;
+  }
+  finishOperation();
+  const scope = clang && swift ? "mixed" : clang ? "clang-pch" : swift ? "swift" : "unknown";
+  if (scope === "unknown") return unknownCompiler(truncated ? "truncated" : unsupported ? "unsupported" : ambiguous ? "ambiguous" : "missing", unsupported ? "unsupported" : "unknown");
+  const complete = finished && !truncated && !unsupported && !ambiguous && !swift && unknown === 0 && observed > 0;
+  const reason = truncated ? "truncated" : unsupported ? "unsupported" : ambiguous || swift ? "ambiguous" : !finished || unknown > 0 ? "missing" : "none";
+  return { scope, coverage: complete ? "complete" : "partial", reason, hits, misses, skipped: null, unknown: swift ? null : unknown };
+}
+var rpcFields = ["actionReads", "actionHits", "actionWrites", "casReads", "casHits", "casWrites", "cacheErrors"];
+var extraStatsFields = /* @__PURE__ */ new Set(["actionLookupMisses", "actionValueRejects", "actionReferenceRejects", "graphObjectMisses", "graphObjectCorrupt", "graphReferenceRejects", "graphBudgetRejects", "graphAdmissionRejects", "graphDeadlineRejects", "graphChecks", "graphObjectsChecked", "graphLookupNanos", "graphLeaseMisses"]);
+function parseXcodeRPCStats(text) {
+  if (Buffer.byteLength(text, "utf8") > maximumStatsBytes) throw new Error("Invalid Xcode service statistics");
+  let remaining = text.trim();
+  if (!remaining.startsWith("{")) throw new Error("Invalid Xcode service statistics");
+  remaining = remaining.slice(1);
+  const values = /* @__PURE__ */ new Map();
+  while (true) {
+    if (/^\s*}\s*$/.test(remaining)) {
+      remaining = "";
+      break;
+    }
+    const field = /^\s*"([A-Za-z][A-Za-z0-9]*)"\s*:\s*(0|[1-9][0-9]*|true|false)\s*([,}])/.exec(remaining);
+    if (!field || values.has(field[1])) throw new Error("Invalid Xcode service statistics");
+    const name = field[1], fallback = name === "uncachedFallback" || name === "uncachedRetry";
+    if (!fallback && !rpcFields.some((key) => key === name) && !extraStatsFields.has(name)) throw new Error("Invalid Xcode service statistics");
+    const value = field[2] === "true" ? true : field[2] === "false" ? false : Number(field[2]);
+    if (fallback ? typeof value !== "boolean" : typeof value !== "number" || !Number.isSafeInteger(value)) throw new Error("Invalid Xcode service statistics");
+    values.set(name, value);
+    remaining = remaining.slice(field[0].length);
+    if (field[3] === "}") {
+      if (remaining.trim() !== "") throw new Error("Invalid Xcode service statistics");
+      break;
+    }
+    if (/^\s*}/.test(remaining)) throw new Error("Invalid Xcode service statistics");
+  }
+  const result = { actionReads: null, actionHits: null, actionWrites: null, casReads: null, casHits: null, casWrites: null, cacheErrors: null };
+  for (const key of rpcFields) {
+    const value = values.get(key);
+    if (typeof value !== "number") throw new Error("Invalid Xcode service statistics");
+    result[key] = value;
+  }
+  if (result.actionHits > result.actionReads || result.casHits > result.casReads) throw new Error("Invalid Xcode service statistics");
+  return result;
+}
+var phaseFields = ["operation", "compile", "load", "restore", "close", "snapshot"];
+function parseTime(text) {
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/.exec(text);
+  if (!match) throw new Error("Invalid Xcode reporting window");
+  const utc = /* @__PURE__ */ new Date(match[1] + "Z");
+  if (!Number.isFinite(utc.getTime()) || utc.toISOString().slice(0, 19) !== match[1]) throw new Error("Invalid Xcode reporting window");
+  let offset = 0;
+  if (match[3] !== "Z") {
+    const hours = Number(match[3].slice(1, 3)), minutes = Number(match[3].slice(4));
+    if (hours > 23 || minutes > 59) throw new Error("Invalid Xcode reporting window");
+    offset = (hours * 60 + minutes) * (match[3][0] === "+" ? 1 : -1);
+  }
+  return BigInt(utc.getTime() - offset * 6e4) * 1000000n + BigInt((match[2] ?? "").padEnd(9, "0"));
+}
+async function collectXcodeReport(input) {
+  const start = parseTime(input.startedAt), finish = parseTime(input.finishedAt);
+  if (!/^run-[A-Za-z0-9_-]{12,124}$/.test(input.invocationId) || !["success", "failed", "cancelled", "unknown"].includes(input.status) || finish < start || finish - start > BigInt(maximumElapsedMs) * 1000000n) throw new Error("Invalid Xcode reporting window");
+  const timingMs = { operation: null, compile: null, load: null, restore: null, close: null, snapshot: null };
+  for (const key of Object.keys(input.timingMs ?? {})) if (!phaseFields.some((field) => field === key)) throw new Error("Invalid Xcode reporting timing");
+  for (const key of phaseFields) {
+    const value = input.timingMs?.[key];
+    if (value !== void 0 && value !== null && (!Number.isSafeInteger(value) || value < 0 || value > maximumElapsedMs)) throw new Error("Invalid Xcode reporting timing");
+    timingMs[key] = value ?? null;
+  }
+  const compiler = await parseXcodeCompilerLog(input.log, input.format, input.limits);
+  const rpc = input.serviceStats === void 0 ? void 0 : parseXcodeRPCStats(input.serviceStats);
+  return { version: 1, invocationId: input.invocationId, startedAt: input.startedAt, finishedAt: input.finishedAt, status: input.status, tasks: [], counters: { compiler, ...rpc ? { rpc } : {} }, timingMs };
+}
+async function readStatsFile(path) {
+  let file;
+  try {
+    file = await open2(path, constants2.O_RDONLY | constants2.O_NOFOLLOW | constants2.O_NONBLOCK);
+    const info = await file.stat();
+    if (!info.isFile() || info.size > maximumStatsBytes) throw new Error();
+    const bytes = Buffer.alloc(maximumStatsBytes + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const read = await file.read(bytes, length, bytes.length - length);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    if (length > maximumStatsBytes) throw new Error();
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
+  } catch {
+    throw new Error("Xcode service statistics unavailable");
+  } finally {
+    await file?.close();
+  }
+}
+async function* readLogFile(path) {
+  let file;
+  try {
+    file = await open2(path, constants2.O_RDONLY | constants2.O_NOFOLLOW | constants2.O_NONBLOCK);
+    if (!(await file.stat()).isFile()) throw new Error();
+    const stream = file.createReadStream({ autoClose: false, highWaterMark: 64 << 10 });
+    try {
+      for await (const chunk of stream) yield chunk;
+    } finally {
+      stream.destroy();
+    }
+  } catch {
+    throw new Error("Xcode compiler log unavailable");
+  } finally {
+    await file?.close();
+  }
+}
+async function exportXcodeReport(args) {
+  const allowed = ["--format", "--log-file", "--stats-file", "--invocation-id", "--started-at", "--finished-at", "--status", "--operation-ms", "--compile-ms", "--load-ms", "--restore-ms", "--close-ms", "--snapshot-ms", "--output"];
+  const options = /* @__PURE__ */ new Map();
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index], value = args[index + 1];
+    if (!key || !allowed.includes(key) || !value || options.has(key)) throw new Error("Invalid Xcode report arguments");
+    options.set(key, value);
+  }
+  for (const key of ["--format", "--invocation-id", "--started-at", "--finished-at", "--status", "--output"]) if (!options.has(key)) throw new Error("Missing required Xcode report arguments");
+  const timingMs = {};
+  for (const key of phaseFields) {
+    const value = options.get(`--${key}-ms`);
+    if (value !== void 0) {
+      if (!/^(?:0|[1-9][0-9]{0,8})$/.test(value)) throw new Error("Invalid Xcode reporting timing");
+      timingMs[key] = Number(value);
+    }
+  }
+  const log = options.get("--log-file"), stats = options.get("--stats-file");
+  const status = options.get("--status");
+  if (status !== "success" && status !== "failed" && status !== "cancelled" && status !== "unknown") throw new Error("Invalid Xcode report status");
+  const report = await collectXcodeReport({
+    format: options.get("--format"),
+    invocationId: options.get("--invocation-id"),
+    startedAt: options.get("--started-at"),
+    finishedAt: options.get("--finished-at"),
+    status,
+    timingMs,
+    ...log ? { log: readLogFile(log) } : {},
+    ...stats ? { serviceStats: await readStatsFile(stats) } : {}
+  });
+  let output;
+  try {
+    output = await open2(options.get("--output"), constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL | constants2.O_NOFOLLOW, 384);
+    await output.writeFile(JSON.stringify(report) + "\n");
+    await output.sync();
+  } catch {
+    throw new Error("Xcode report output unavailable");
+  } finally {
+    await output?.close();
+  }
+}
+
+// native/gradle-report.ts
+import { constants as constants4 } from "node:fs";
+import { open as open3 } from "node:fs/promises";
+
+// action/gradle/reports.mjs
+import { createHash as createHash6 } from "node:crypto";
+import { constants as constants3, closeSync, fstatSync, lstatSync, openSync, readdirSync, readSync } from "node:fs";
+import { join as join6 } from "node:path";
+
+// action/gradle/info.mjs
+var maximumBytes = 64 * 1024 * 1024;
+var maximumMatches = 8192;
+var maximumPaths = 4096;
+var maximumPathCharacters = 1024;
+var taskKeyLine = /^Build cache key for task '(:[^'\r\n]*)' is ([a-f0-9]{32})$/;
+var disabledLine = /^Caching disabled for task '(:[^'\r\n]*)' because:$/;
+var pathControls = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+function unavailable(reason) {
+  return { keys: /* @__PURE__ */ new Map(), ineligiblePaths: /* @__PURE__ */ new Set(), ambiguousPaths: /* @__PURE__ */ new Set(), duplicateKeys: /* @__PURE__ */ new Set(), reason };
+}
+function parseGradleInfo(text, { gradleVersion = "9.3.1" } = {}) {
+  if (gradleVersion !== "9.3.1") return unavailable("unsupported-gradle-version");
+  if (typeof text !== "string") return unavailable("invalid-info-log");
+  if (text.length > maximumBytes || Buffer.byteLength(text, "utf8") > maximumBytes) {
+    return unavailable("info-log-too-large");
+  }
+  if (text.length === 0) return unavailable("missing-key-lines");
+  if (!text.endsWith("\n")) return unavailable("truncated-info-log");
+  const pathKeys = /* @__PURE__ */ new Map();
+  const ineligiblePaths = /* @__PURE__ */ new Set();
+  const keyPaths = /* @__PURE__ */ new Map();
+  let matches = 0;
+  let offset = 0;
+  while (offset < text.length) {
+    const end = text.indexOf("\n", offset);
+    const line = text.slice(offset, end > offset && text[end - 1] === "\r" ? end - 1 : end);
+    offset = end + 1;
+    const keyCandidate = line.includes("Build cache key for task");
+    const disabledCandidate = line.includes("Caching disabled for task");
+    if (!keyCandidate && !disabledCandidate) continue;
+    const keyMatch = taskKeyLine.exec(line), disabledMatch = disabledLine.exec(line);
+    const match = keyMatch ?? disabledMatch;
+    if (!match) return unavailable("unrecognized-key-line");
+    const [, path, key] = match;
+    if (path.length > maximumPathCharacters || pathControls.test(path)) {
+      return unavailable("invalid-task-path");
+    }
+    matches++;
+    if (matches > maximumMatches) return unavailable("too-many-key-lines");
+    if (!pathKeys.has(path)) {
+      if (pathKeys.size === maximumPaths) return unavailable("too-many-task-paths");
+      pathKeys.set(path, /* @__PURE__ */ new Set());
+    }
+    if (disabledMatch) {
+      ineligiblePaths.add(path);
+      continue;
+    }
+    pathKeys.get(path).add(key);
+    if (!keyPaths.has(key)) keyPaths.set(key, /* @__PURE__ */ new Set());
+    keyPaths.get(key).add(path);
+  }
+  if (matches === 0) return unavailable("missing-key-lines");
+  const ambiguousPaths = /* @__PURE__ */ new Set();
+  const duplicateKeys = /* @__PURE__ */ new Set();
+  for (const [path, keys2] of pathKeys) {
+    if (keys2.size > 1 || keys2.size > 0 && ineligiblePaths.has(path)) {
+      ambiguousPaths.add(path);
+      ineligiblePaths.delete(path);
+    }
+  }
+  for (const [key, paths] of keyPaths) {
+    if (paths.size > 1) duplicateKeys.add(key);
+  }
+  const keys = /* @__PURE__ */ new Map();
+  for (const [path, candidates] of pathKeys) {
+    if (ambiguousPaths.has(path)) continue;
+    const [key] = candidates;
+    if (key) keys.set(path, key);
+  }
+  return {
+    keys,
+    ineligiblePaths,
+    ambiguousPaths,
+    duplicateKeys,
+    ...keys.size === 0 && ineligiblePaths.size === 0 ? { reason: "ambiguous-key-mapping" } : {}
+  };
+}
+
+// action/gradle/reports.mjs
+var maximumReportBytes = 4 * 1024 ** 2;
+var maximumBatchBytes = 16 * 1024 ** 2;
+var maximumInfoBytes = 64 * 1024 ** 2;
+var outcomes = /* @__PURE__ */ new Set(["executed", "fromCache", "upToDate", "noSource", "skipped", "failed", "unknown"]);
+var controls = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+var unavailable2 = (reason) => {
+  throw new Error(reason);
+};
+function object(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function integer(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+function iso(value) {
+  return new Date(value).toISOString();
+}
+function workRef(project, compatibility, taskPath) {
+  return "sha256:" + createHash6("sha256").update(`layercache-gradle-task-v1\0${project}\0${compatibility}\0${taskPath}`).digest("hex");
+}
+function readBoundedFile(path, maximum, { privateFile = false } = {}) {
+  const descriptor = openSync(path, constants3.O_RDONLY | constants3.O_NOFOLLOW | constants3.O_NONBLOCK);
+  try {
+    const info = fstatSync(descriptor);
+    if (!info.isFile() || info.nlink !== 1 || info.size > maximum || typeof process.getuid === "function" && info.uid !== process.getuid() || privateFile && (info.mode & 63) !== 0) unavailable2("unsafe-native-report-file");
+    const chunks = [];
+    let received = 0;
+    for (; ; ) {
+      const buffer = Buffer.alloc(Math.min(65536, maximum - received + 1));
+      const length = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (!length) break;
+      received += length;
+      if (received > maximum) unavailable2("native-report-file-too-large");
+      chunks.push(buffer.subarray(0, length));
+    }
+    const after = fstatSync(descriptor);
+    if (after.size !== received || after.size !== info.size || after.mtimeMs !== info.mtimeMs || after.ctimeMs !== info.ctimeMs) unavailable2("native-report-file-changed");
+    return { text: Buffer.concat(chunks, received).toString("utf8"), mtimeMs: info.mtimeMs, bytes: received };
+  } finally {
+    closeSync(descriptor);
+  }
+}
+function projectGradleInvocation(document, { project, compatibility, infoText, infoMtimeMs, invocationCount = 1, now = Date.now() } = {}) {
+  if (!object(document) || document.version !== 1 || !/^gradle-[0-9a-f-]{36}$/.test(document.invocationId) || typeof document.gradleVersion !== "string" || document.truncated !== false || !integer(document.startedAtMs) || !integer(document.finishedAtMs) || document.startedAtMs <= 0 || document.finishedAtMs < document.startedAtMs || document.finishedAtMs - document.startedAtMs > 864e5 || document.finishedAtMs > now + 5e3 || !["failed", "unknown"].includes(document.status) || !Array.isArray(document.tasks) || document.tasks.length < 1 || document.tasks.length > 4096 || typeof project !== "string" || !project || typeof compatibility !== "string" || !compatibility) unavailable2("invalid-native-invocation");
+  const tasks = [];
+  const seen = /* @__PURE__ */ new Set();
+  let earliest = Infinity, latest = 0;
+  for (const row of document.tasks) {
+    if (!object(row) || typeof row.taskPath !== "string" || !row.taskPath.startsWith(":") || row.taskPath.length > 1024 || controls.test(row.taskPath) || row.workRef !== workRef(project, compatibility, row.taskPath) || seen.has(row.workRef) || !outcomes.has(row.outcome) || !integer(row.startedAtMs) || !integer(row.finishedAtMs) || row.startedAtMs < document.startedAtMs || row.finishedAtMs > document.finishedAtMs || row.finishedAtMs < row.startedAtMs || row.executionMs !== void 0 && (row.outcome !== "executed" || !integer(row.executionMs) || row.executionMs !== row.finishedAtMs - row.startedAtMs)) unavailable2("invalid-native-task");
+    seen.add(row.workRef);
+    earliest = Math.min(earliest, row.startedAtMs);
+    latest = Math.max(latest, row.finishedAtMs);
+    tasks.push({
+      workRef: row.workRef,
+      outcome: row.outcome,
+      startedAt: iso(row.startedAtMs),
+      finishedAt: iso(row.finishedAtMs),
+      ...row.executionMs === void 0 ? {} : { executionMs: row.executionMs }
+    });
+  }
+  if (earliest !== document.startedAtMs || latest !== document.finishedAtMs || document.status !== (tasks.some((row) => row.outcome === "failed") ? "failed" : "unknown")) unavailable2("invalid-native-invocation-bounds");
+  let keyEvidence = "missing-info-log";
+  let mapping;
+  let completion;
+  if (infoText !== void 0) {
+    const completions = typeof infoText === "string" ? [...infoText.matchAll(/^BUILD (SUCCESSFUL|FAILED) in [^\r\n]+\r?$/gm)] : [];
+    if (invocationCount !== 1 || completions.length !== 1) keyEvidence = "info-log-not-one-completed-invocation";
+    else if (!Number.isFinite(infoMtimeMs) || infoMtimeMs < document.finishedAtMs - 5e3 || infoMtimeMs > now + 5e3) keyEvidence = "info-log-outside-invocation-window";
+    else if (completions[0][1] === "SUCCESSFUL" && document.status === "failed") keyEvidence = "info-log-outcome-conflict";
+    else {
+      mapping = parseGradleInfo(infoText, { gradleVersion: document.gradleVersion });
+      keyEvidence = mapping.reason ?? "native-info-key-correlation";
+      if (!mapping.reason) completion = completions[0][1];
+    }
+  }
+  for (let index = 0; index < tasks.length; index++) {
+    const row = document.tasks[index];
+    const key = mapping && !mapping.reason ? mapping.keys.get(row.taskPath) : void 0;
+    if (row.outcome === "fromCache") tasks[index].cacheEligibility = "eligible";
+    else if (row.outcome === "executed" && key) tasks[index].cacheEligibility = "eligible";
+    else if (row.outcome === "executed" && mapping && !mapping.reason && mapping.ineligiblePaths.has(row.taskPath)) tasks[index].cacheEligibility = "ineligible";
+    if (key && (row.outcome === "executed" || row.outcome === "fromCache")) tasks[index].nativeKey = key;
+  }
+  const body = {
+    version: 1,
+    invocationId: "run-" + document.invocationId.slice("gradle-".length),
+    startedAt: iso(document.startedAtMs),
+    finishedAt: iso(document.finishedAtMs),
+    status: document.status === "failed" || completion === "FAILED" ? "failed" : completion === "SUCCESSFUL" ? "success" : "unknown",
+    tasks
+  };
+  if (Buffer.byteLength(JSON.stringify(body)) > maximumReportBytes) unavailable2("native-report-too-large");
+  return { body, keyEvidence };
+}
+function readGradleReports(directory, { project, compatibility, infoLogPath, now = Date.now() } = {}) {
+  const directoryInfo = lstatSync(directory);
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink() || (directoryInfo.mode & 63) !== 0 || typeof process.getuid === "function" && directoryInfo.uid !== process.getuid()) unavailable2("unsafe-native-report-directory");
+  const files = readdirSync(directory).filter((name) => /^gradle-[0-9a-f-]{36}\.json$/.test(name)).sort();
+  if (files.length > 32) unavailable2("too-many-native-invocations");
+  let total = 0;
+  const documents = files.map((name) => {
+    const file = readBoundedFile(join6(directory, name), maximumReportBytes, { privateFile: true });
+    total += file.bytes;
+    if (total > maximumBatchBytes) unavailable2("native-report-batch-too-large");
+    const document = JSON.parse(file.text);
+    if (document.invocationId + ".json" !== name) unavailable2("native-report-identity-mismatch");
+    return document;
+  });
+  let info;
+  if (infoLogPath) {
+    try {
+      info = readBoundedFile(infoLogPath, maximumInfoBytes);
+    } catch {
+    }
+  }
+  return documents.map((document) => projectGradleInvocation(document, {
+    project,
+    compatibility,
+    now,
+    invocationCount: documents.length,
+    ...info ? { infoText: info.text, infoMtimeMs: info.mtimeMs } : {}
+  }));
+}
+
+// native/gradle-report.ts
+async function exportGradleReport(args) {
+  const allowed = ["--project", "--compatibility", "--reports-dir", "--info-log-file", "--output"];
+  const values = /* @__PURE__ */ new Map();
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index], value = args[index + 1];
+    if (!flag || !allowed.includes(flag) || !value || values.has(flag)) throw new Error("Invalid Gradle report arguments");
+    values.set(flag, value);
+  }
+  const project = values.get("--project"), compatibility = values.get("--compatibility");
+  if (!project || project.length > 256 || /[\p{White_Space}\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(project) || !compatibility || !/^[a-z0-9][a-z0-9_.:+@-]{0,255}$/.test(compatibility) || !values.has("--reports-dir") || !values.has("--output")) throw new Error("Invalid Gradle report arguments");
+  let reports;
+  try {
+    reports = readGradleReports(values.get("--reports-dir"), {
+      project,
+      compatibility,
+      infoLogPath: values.get("--info-log-file")
+    });
+  } catch {
+    throw new Error("Gradle invocation reports unavailable");
+  }
+  if (reports.length !== 1) throw new Error("Gradle report export requires exactly one completed invocation");
+  const report = reports[0].body;
+  let output;
+  try {
+    output = await open3(values.get("--output"), constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL | constants4.O_NOFOLLOW, 384);
+    await output.writeFile(JSON.stringify(report) + "\n");
+    await output.sync();
+  } catch {
+    throw new Error("Gradle report output unavailable");
+  } finally {
+    await output?.close();
+  }
+}
+
 // native/cli.ts
 async function main() {
   const [operation, ...args] = process.argv.slice(2);
+  if (operation === "xcode-report") {
+    await exportXcodeReport(args);
+    return;
+  }
+  if (operation === "gradle-report") {
+    await exportGradleReport(args);
+    return;
+  }
   if (operation === "key" && args.length === 0) {
     console.log(await sourceKey(process.cwd()));
     return;

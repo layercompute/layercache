@@ -136,12 +136,19 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 	}
 	if localRun {
 		nativeTokens := make(map[string]string)
-		for _, integration := range []string{"turbo", "actions", "nx", "gradle", "buildkit", "bazel"} {
+		integrations := []string{"turbo", "actions", "nx", "gradle", "buildkit", "bazel"}
+		if server.config.Role == "team" {
+			integrations = append(integrations, "xcode")
+		}
+		for _, integration := range integrations {
 			claims.Integration = integration
 			// Native run credentials authorize reads/writes, never maintenance,
 			// even when the human login has project administrator membership.
 			if claims.Allows(access.CapabilityAdmin) {
 				claims.Capabilities = []access.Capability{access.CapabilityWrite}
+			}
+			if integration == "xcode" {
+				claims.Capabilities = []access.Capability{access.CapabilityRead}
 			}
 			nativeToken, mintErr := access.MintCapabilityToken(server.config.LocalToken, claims, now)
 			if mintErr != nil {
@@ -151,6 +158,9 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 			nativeTokens[integration] = nativeToken
 		}
 		result["nativeTokens"] = nativeTokens
+		if feature := server.nativeReportCapability(); feature != nil {
+			result["nativeReports"] = feature
+		}
 	}
 	if server.config.Role == "team" {
 		result["teamToken"] = token
@@ -301,6 +311,11 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	}
 	if claims.Execution != nil {
 		result["executionObservations"] = execution.Supported()
+	}
+	if claims.Integration == "gradle" {
+		if feature := server.nativeReportCapability(); feature != nil {
+			result["nativeReports"] = feature
+		}
 	}
 	writeJSON(writer, http.StatusOK, result)
 }

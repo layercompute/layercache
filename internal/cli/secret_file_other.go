@@ -11,3 +11,7 @@ func readSecretFile(string) (string, error) {
 func readProtectedFile(string) ([]byte, error) {
 	return nil, errors.New("protected files are unavailable on this platform")
 }
+
+func readProtectedFileUpTo(string, int64) ([]byte, error) {
+	return nil, errors.New("protected files are unavailable on this platform")
+}

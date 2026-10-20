@@ -106,6 +106,9 @@ func (server *Server) localAdministratorClaims(request *http.Request, integratio
 
 func requiredRequestCapability(request *http.Request) (access.Capability, string) {
 	path := request.URL.Path
+	if path == "/v1/reports/native" {
+		return access.CapabilityRead, ""
+	}
 	if path == "/v1/sync/turbo" {
 		return access.CapabilityWrite, "turbo"
 	}

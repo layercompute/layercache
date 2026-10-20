@@ -1,11 +1,12 @@
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { endpointURL, exchangeCapability, fileCommand, fileCommands } from '../setup/auth.ts';
 
 const actionRoot = dirname(fileURLToPath(import.meta.url));
 const defaultLog = value => { process.stdout.write(value); };
-const emptyConnection = { LAYER_CACHE_GRADLE_URL: '', LAYER_CACHE_GRADLE_PUSH: '0', LAYER_CACHE_GRADLE_TOKEN: '' };
+const emptyConnection = { LAYER_CACHE_GRADLE_URL: '', LAYER_CACHE_GRADLE_PUSH: '0', LAYER_CACHE_GRADLE_TOKEN: '',
+  LAYER_CACHE_GRADLE_REPORT_DIR: '', LAYER_CACHE_GRADLE_REPORT_PROJECT: '', LAYER_CACHE_GRADLE_REPORT_COMPATIBILITY: '' };
 const emptyOutputs = { configured: 'false', 'init-script': '', 'expires-at': '' };
 const trustedEvents = new Set(['push', 'workflow_dispatch', 'schedule']);
 const singleLine = value => typeof value === 'string' && value.length > 0 && !/[\x00-\x20\x7f]/.test(value);
@@ -25,14 +26,16 @@ function connectionInputs(env) {
   if (!['true', 'false'].includes(push)) throw new Error('push must be true or false');
   const minutes = Number(input('ttl-minutes') || '60');
   if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) throw new Error('ttl-minutes must be an integer from 1 to 60');
+  const infoLog = input('native-info-log');
+  if (infoLog && (!isAbsolute(infoLog) || infoLog.length > 4096 || /[\x00-\x1f\x7f]/.test(infoLog))) throw new Error('native-info-log must be an explicit absolute single-line path');
   if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(env.GITHUB_REPOSITORY || '')) throw new Error('GitHub repository identity is required');
   for (const key of ['RUNNER_TEMP', 'GITHUB_ENV', 'GITHUB_OUTPUT', 'GITHUB_STATE']) {
     if (!env[key] || /[\x00-\x1f\x7f]/.test(env[key]) || !isAbsolute(env[key])) throw new Error(`${key} must be an absolute single-line runner path`);
   }
-  return { endpoint, url, project, compatibility, push: push === 'true', minutes };
+  return { endpoint, url, project, compatibility, push: push === 'true', minutes, infoLog };
 }
 
-function capabilityScope(result, inputs, env) {
+export function capabilityScope(result, inputs, env) {
   if (result.teamToken.length > 32 * 1024 || !/^lc2\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$/.test(result.teamToken)) throw new Error('Invalid Gradle capability');
   const parts = result.teamToken.split('.');
   const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
@@ -74,6 +77,16 @@ export async function setupGradle(env = process.env, { fetcher = fetch, log = de
     const url = inputs.url;
     url.pathname = `${url.pathname.replace(/\/+$/, '').replace(/\/v1$/, '')}/v1/gradle-cache/`;
     const environment = { LAYER_CACHE_GRADLE_URL: url.href, LAYER_CACHE_GRADLE_PUSH: writable ? '1' : '0', LAYER_CACHE_GRADLE_TOKEN: result.teamToken };
+    const metering = result.nativeReports?.version === 1 && result.nativeReports.path === '/v1/reports/native';
+    let reportDirectory;
+    if (metering) {
+      reportDirectory = join(root, 'reports');
+      mkdirSync(reportDirectory, {mode: 0o700});
+      Object.assign(environment, {LAYER_CACHE_GRADLE_REPORT_DIR: reportDirectory,
+        LAYER_CACHE_GRADLE_REPORT_PROJECT: inputs.project, LAYER_CACHE_GRADLE_REPORT_COMPATIBILITY: inputs.compatibility});
+      fileCommands(env.GITHUB_STATE, {gradle_metering: '1', gradle_endpoint: inputs.endpoint, gradle_project: inputs.project,
+        gradle_compatibility: inputs.compatibility, gradle_info_log: inputs.infoLog});
+    }
     fileCommands(env.GITHUB_ENV, environment);
     try {
       fileCommands(env.GITHUB_OUTPUT, { configured: 'true', 'init-script': initScript, 'expires-at': result.expiresAt });
@@ -83,7 +96,7 @@ export async function setupGradle(env = process.env, { fetcher = fetch, log = de
     }
     Object.assign(env, environment);
     log(`Layer Cache Gradle connected with ${writable ? 'publication enabled' : 'read-only publication policy'}. Credentials expire at ${result.expiresAt}.\n`);
-    return { configured: true, root, initScript, expiresAt: result.expiresAt, writable };
+    return { configured: true, root, initScript, expiresAt: result.expiresAt, writable, ...(reportDirectory ? {reportDirectory} : {}) };
   } catch (error) {
     rmSync(root, { recursive: true, force: true });
     throw error;
