@@ -45,6 +45,10 @@ workspaces and filesystem migration are outside the current product scope.
   Qualify normal trusted publishers and independent consumers before declaring
   adoption complete. An existing consumer following main already submitted a
   correct normal OIDC export report after the source update, without dispatch.
+  The hosted CLI report path also needs the native summary allowlist: unused
+  inputs, environment metadata and commands must stay on the machine. Owner:
+  LayerCache CLI/measurement. Qualify raw and wire bounds, malformed-input
+  refusal before HTTP and unchanged original summaries for native publication.
   The Expo provider needs a native credential/cloud-only storage bridge; Go
   `remoteOnly` does not control that client's local archives or extractions.
   Existing compiler/provider snapshots remain separate. Native metering and
