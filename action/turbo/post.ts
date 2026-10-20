@@ -15,6 +15,8 @@ export async function reportTurbo(
   }: Dependencies = {},
 ): Promise<void> {
   if (!env.STATE_layercache_turbo) return;
+  let stage: 'state' | 'collect' | 'auth' | 'submit' | 'response' = 'state';
+  let responseStatus: number | undefined;
   try {
     if (env.STATE_layercache_turbo.length > 256 * 1024)
       throw new Error('State too large');
@@ -42,6 +44,7 @@ export async function reportTurbo(
     const endpoint = endpointURL(state.endpoint);
     if (endpoint.protocol !== 'https:' || endpoint.pathname !== '/')
       throw new Error('Invalid endpoint');
+    stage = 'collect';
     const summaries = await completedSummaries(state);
     if (!summaries.length) {
       log(
@@ -51,6 +54,7 @@ export async function reportTurbo(
     }
     // The setup token may have expired during a long build. A fresh OIDC
     // exchange resolves to the same signed workflow attempt and check/job ID.
+    stage = 'auth';
     const auth = await exchangeTurbo({
       endpoint: endpoint.origin,
       project: state.project,
@@ -60,6 +64,7 @@ export async function reportTurbo(
       fetcher,
       log,
     });
+    stage = 'submit';
     const response = await fetcher(new URL('/v1/reports/turbo', endpoint), {
       method: 'POST',
       headers: {
@@ -70,10 +75,17 @@ export async function reportTurbo(
       redirect: 'error',
       signal: AbortSignal.timeout(20_000),
     });
+    if (
+      Number.isInteger(response.status) &&
+      response.status >= 100 &&
+      response.status <= 599
+    )
+      responseStatus = response.status;
     if (!response.ok || !response.body) {
       await response.body?.cancel();
       throw new Error('Report rejected');
     }
+    stage = 'response';
     const chunks: Uint8Array[] = [];
     let bytes = 0;
     for await (const chunk of response.body) {
@@ -112,8 +124,10 @@ export async function reportTurbo(
       );
     }
   } catch {
+    // Only fixed local stages and a validated numeric status may leave this
+    // handler. Exceptions, server bodies and paths can contain private data.
     log(
-      '::warning::Layer Cache Turbo report unavailable. Build result is unchanged; savings are unknown to this step.\n',
+      `::warning::Layer Cache Turbo report unavailable (stage=${stage}${responseStatus === undefined ? '' : `, HTTP ${responseStatus}`}). Build result is unchanged; savings are unknown to this step.\n`,
     );
   }
 }

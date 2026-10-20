@@ -61,7 +61,7 @@ function sourceTable(report: Report, scope: Scope): HTMLElement {
   const section = el('section', 'source-usage'); section.append(el('h4', '', 'Reuse by source'));
   const wrapper = el('div', 'table-scroll'), table = el('table'); table.setAttribute('aria-label', 'Reported cache source activity');
   const head = el('thead'), headings = el('tr');
-  for (const name of ['Source', 'Hits', 'Downloaded', 'Uploaded']) headings.append(el('th', '', name));
+  for (const name of ['Source', 'Hits', 'Downloaded']) headings.append(el('th', '', name));
   for (const heading of Array.from(headings.children)) heading.setAttribute('scope', 'col');
   head.append(headings); table.append(head);
   const body = el('tbody');
@@ -69,14 +69,15 @@ function sourceTable(report: Report, scope: Scope): HTMLElement {
   const known = report.sources !== undefined && report.sources !== null;
   for (const [source, label] of Object.entries(names)) {
     const selected = report.sources?.filter(item => source === 'unattributed' ? !Object.hasOwn(names, item.source) || item.source === 'unattributed' : item.source === source) ?? [];
-    const total = selected.reduce((sum, item) => ({hits: sum.hits + item.hits, downloaded: sum.downloaded + item.downloadedBytes, uploaded: sum.uploaded + item.uploadedBytes}), {hits: 0, downloaded: 0, uploaded: 0});
+    const total = selected.reduce((sum, item) => ({hits: sum.hits + item.hits, downloaded: sum.downloaded + item.downloadedBytes}), {hits: 0, downloaded: 0});
     const row = el('tr', 'source-row'); row.dataset.source = source;
     const heading = el('th', '', label); heading.scope = 'row'; row.append(heading);
-    for (const value of [total.hits.toLocaleString(), bytes(total.downloaded), bytes(total.uploaded)]) row.append(el('td', '', known ? value : 'Unknown'));
+    for (const value of [total.hits.toLocaleString(), bytes(total.downloaded)]) row.append(el('td', '', known ? value : 'Unknown'));
     body.append(row);
   }
   table.append(body); wrapper.append(table); section.append(wrapper);
   section.append(el('p', 'coverage-note', scope === 'unknown' ? 'Private remote ownership is unknown. Local activity cannot be split into Personal, Team and Public storage from this report.' : 'Local source activity does not reveal its Personal, Team or Public storage composition. Unattributed outcomes have no known source.'));
+  section.append(el('p', 'coverage-note', 'Upload totals above include cache publications. Their destination is not attributed by restore source.'));
   return section;
 }
 

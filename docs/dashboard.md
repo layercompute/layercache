@@ -88,7 +88,9 @@ usable when proactive refresh fails, subject to the Team Cache's authorization.
   establish Gradle, Nx, Bazel or Xcode task coverage.
 - Effective hit rate is hits divided by eligible reported outcomes. Source
   attribution shows observed Local, private remote and trusted Public hits and
-  transfer bytes. Transfer phase durations can overlap and are not bandwidth.
+  downloaded bytes. Upload totals include cache publications; their destination
+  cannot be inferred from the restore-source rows. Transfer phase durations can
+  overlap and are not bandwidth.
 - Local describes storage on a machine, not Personal ownership. The hosted
   membership authority distinguishes Personal and Team caches. Standalone
   private remote ownership can remain unknown. Public Cache accepts publication
@@ -191,6 +193,36 @@ followed, and the browser cannot supply upstream endpoints or project selectors.
 The existing cache data path and artifact identity remain reusable across these
 slices. The hosted dashboard consumes authorized project projections and checks
 browser sessions server-side without exposing cache credentials.
+
+## Verify command adoption
+
+A dashboard project and a cloud-only CLI configuration do not redirect an
+existing command. Launch that command through the existing authenticated client:
+
+```bash
+mise exec -- layercache run --config /path/to/project.json -- pnpm check
+```
+
+Use the repository's pinned tools and a compatibility profile matching those
+actual tools. A profile named for CI does not establish that the developer
+machine uses the same Node, package manager, operating system or architecture.
+Resolve discrepancies before publishing. Do not replace native Gradle, Expo or
+Xcode profiles with a generic JavaScript profile.
+
+Trace each local task, pre-push hook, PR job and main publisher separately. A
+bare `pnpm` command can still select another provider or only its workspace
+cache. In CI, use an immutable action revision, explicit read-only policy for
+eligible PR consumers and the server's trusted publisher rules. Keep tasks
+declared noncacheable fresh. Inspect native task summaries together with server
+transfers before claiming shared reuse. Storage growth alone establishes no
+successful restore or complete reporting coverage.
+
+The Expo provider is a separate native client. Its local archive and extraction
+settings do not inherit the Go CLI's `remoteOnly` option, and its selected
+platform/toolchain identity needs matching scoped credentials. Likewise, GitHub
+compiler snapshots and provider-managed builds are separate caches. Required
+pipeline handoffs keep their retained-artifact fallback until their publication
+and consumer contract qualifies.
 
 ## Development
 

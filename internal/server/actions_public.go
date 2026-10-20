@@ -11,6 +11,7 @@ import (
 	"github.com/layercache/layercache/internal/actionscache"
 	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/measurement"
 	"github.com/layercache/layercache/internal/publictrust"
 	"github.com/layercache/layercache/internal/remote"
 )
@@ -128,6 +129,16 @@ func isUnavailablePublicHTTPStatus(err error) bool {
 		}
 	}
 	return false
+}
+
+// The chain calls its first provider Local Cache even when that provider is
+// this Team runtime's hosted store. Keep its trust and warming decisions intact;
+// report new outcomes from the selected Team backend as Team Cache activity.
+func (server *Server) recordActionsOutcome(outcome measurement.FinalOutcome) error {
+	if server.config.Role == "team" && outcome.Source == measurement.SourceLocalCache {
+		outcome.Source = measurement.SourceTeamCache
+	}
+	return server.measurements.Record(outcome)
 }
 
 func configureActionsIndex(

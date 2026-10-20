@@ -286,6 +286,7 @@ func TestPostgresRepositoryAgainstPostgres(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(repeated, turboReport) {
 		t.Fatalf("repeat PostgreSQL report changed: %#v, %v", repeated, err)
 	}
+	transitReport := testTurboOmittedTransitDependencies(t, repository)
 
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)
@@ -297,5 +298,9 @@ func TestPostgresRepositoryAgainstPostgres(t *testing.T) {
 	reopened, err := repository.RunReport("run-persisted")
 	if err != nil || !reflect.DeepEqual(reopened, expectedReport) {
 		t.Fatalf("reopened PostgreSQL report = %#v, %v", reopened, err)
+	}
+	reopenedTransit, err := repository.RunReport("run-transit")
+	if err != nil || !reflect.DeepEqual(reopenedTransit, transitReport) {
+		t.Fatalf("reopened PostgreSQL incomplete graph report = %#v, %v", reopenedTransit, err)
 	}
 }

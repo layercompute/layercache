@@ -6,6 +6,8 @@ import {
   readFile,
   rm,
   symlink,
+  truncate,
+  open,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -166,4 +168,189 @@ test('summary collector rejects symlink files and workspace escapes', async (t) 
     }),
     /escapes workspace/,
   );
+});
+
+async function summaryFixture(t: { after: (fn: () => Promise<void>) => void }) {
+  const workspace = await mkdtemp(join(tmpdir(), 'turbo-report-'));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const state = await startReport(workspace, '.', {
+    endpoint: 'https://cache.example',
+    project: 'github.com/acme/widget',
+    compatibility: 'linux-node24',
+  });
+  const runs = join(workspace, '.turbo/runs');
+  await mkdir(runs, { recursive: true });
+  const now = Date.now();
+  const task = (id = 'app#build') => ({
+    taskId: id,
+    hash: 'hash',
+    dependencies: [],
+    execution: { startTime: now, endTime: now + 1, exitCode: 0 },
+    cache: { status: 'MISS' },
+    resolvedTaskDefinition: { cache: true },
+  });
+  const summary = (id = 'summary') => ({
+    id,
+    version: '1',
+    execution: { startTime: now, endTime: now + 1 },
+    tasks: [task()],
+  });
+  return { state, runs, task, summary };
+}
+
+test('large native input maps are bounded locally and excluded from reported summaries', async (t) => {
+  const { state, runs, summary } = await summaryFixture(t);
+  // Real task graphs repeat source input maps across tasks. A representative
+  // native document exceeds the old 2 MiB limit without a large report payload.
+  const unused = 'private-input-and-environment-'.repeat(120_000);
+  const document = summary();
+  await writeFile(
+    join(runs, 'large.json'),
+    JSON.stringify({
+      ...document,
+      environmentVariables: unused,
+      tasks: document.tasks.map((task) => ({
+        ...task,
+        inputs: { 'private/path.ts': unused },
+        environmentVariables: unused,
+      })),
+    }),
+  );
+  const summaries = await completedSummaries(state);
+  assert.equal(summaries.length, 1);
+  assert.ok(JSON.stringify(summaries).length < 1024);
+  assert.ok(!JSON.stringify(summaries).includes('private-input'));
+});
+
+test('raw file and cumulative raw summary limits reject sparse oversized files before parsing', async (t) => {
+  const { state, runs } = await summaryFixture(t);
+  const first = join(runs, 'one.json');
+  await writeFile(first, '{}');
+  await truncate(first, 64 * 1024 ** 2 + 1);
+  await assert.rejects(completedSummaries(state), /summary.*limit/i);
+  await truncate(first, 33 * 1024 ** 2);
+  const second = join(runs, 'two.json');
+  await writeFile(second, '{}');
+  await truncate(second, 33 * 1024 ** 2);
+  await assert.rejects(completedSummaries(state), /batch.*limit/i);
+});
+
+test('summary growth after stat is rejected by the actual read budget', async (t) => {
+  const { state, runs, summary } = await summaryFixture(t);
+  const path = join(runs, 'growing.json');
+  await writeFile(path, JSON.stringify(summary()));
+  await assert.rejects(
+    completedSummaries(state, {
+      openSummary: async (name, flags) => {
+        const file = await open(name, flags);
+        const stat = file.stat.bind(file);
+        Object.defineProperty(file, 'stat', {
+          value: async () => {
+            const metadata = await stat();
+            await truncate(path, 64 * 1024 ** 2 + 1);
+            return metadata;
+          },
+        });
+        return file;
+      },
+    }),
+    /summary.*limit/i,
+  );
+});
+
+test('sanitized request byte and cumulative task limits remain independent of raw metadata', async (t) => {
+  const { state, runs, summary, task } = await summaryFixture(t);
+  for (const name of ['one', 'two']) {
+    const document = summary(name);
+    document.tasks[0]!.hash = 'x'.repeat(4 * 1024 ** 2);
+    await writeFile(join(runs, `${name}.json`), JSON.stringify(document));
+  }
+  await assert.rejects(completedSummaries(state), /request.*limit/i);
+  for (const name of ['one', 'two']) {
+    await writeFile(
+      join(runs, `${name}.json`),
+      JSON.stringify({
+        ...summary(name),
+        tasks: Array.from({ length: 2049 }, (_, index) => task(`app#task-${name}-${index}`)),
+      }),
+    );
+  }
+  await assert.rejects(completedSummaries(state), /task.*limit/i);
+});
+
+test('summary count stays bounded before collection', async (t) => {
+  const { state, runs, summary } = await summaryFixture(t);
+  await Promise.all(
+    Array.from({ length: 33 }, (_, index) =>
+      writeFile(join(runs, `${index}.json`), JSON.stringify(summary(`${index}`))),
+    ),
+  );
+  await assert.rejects(completedSummaries(state), /Too many new summaries/);
+});
+
+test('the 8 MiB request limit includes its JSON envelope and UTF-8 bytes', async (t) => {
+  const { state, runs, summary } = await summaryFixture(t);
+  const document = summary();
+  const path = join(runs, 'boundary.json');
+  await writeFile(path, JSON.stringify(document));
+  const initial = await completedSummaries(state);
+  const padding =
+    8 * 1024 ** 2 - Buffer.byteLength(JSON.stringify({ summaries: initial }));
+  document.tasks[0]!.hash +=
+    'é'.repeat(Math.floor(padding / 2)) + (padding % 2 ? 'x' : '');
+  await writeFile(path, JSON.stringify(document));
+  const accepted = await completedSummaries(state);
+  assert.equal(
+    Buffer.byteLength(JSON.stringify({ summaries: accepted })),
+    8 * 1024 ** 2,
+  );
+  document.tasks[0]!.hash += 'x';
+  await writeFile(path, JSON.stringify(document));
+  await assert.rejects(completedSummaries(state), /request.*limit/i);
+});
+
+test('report failures expose fixed stages and numeric HTTP status without private diagnostics', async (t) => {
+  for (const stage of ['state', 'collect', 'auth', 'submit', 'response']) {
+    await t.test(stage, async (t) => {
+      const { state, runs, summary } = await summaryFixture(t);
+      await writeFile(join(runs, 'new.json'), JSON.stringify(summary()));
+      if (stage === 'collect') {
+        await rm(join(runs, 'new.json'));
+        await symlink('/private/path-with-token', join(runs, 'new.json'));
+      }
+      const logs: string[] = [];
+      await reportTurbo(
+        {
+          STATE_layercache_turbo:
+            stage === 'state' ? 'invalid-private-state-token' : JSON.stringify(state),
+          ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example/token',
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'private-request-token',
+        },
+        {
+          fetcher: async (url) => {
+            if (stage === 'auth')
+              throw new Error('private-error-with-path-and-token');
+            if (String(url).includes('oidc.example'))
+              return Response.json({ value: 'fixture-identity' });
+            if (String(url).includes('/exchange'))
+              return Response.json({
+                teamToken: 'fixture-capability',
+                expiresAt: new Date(Date.now() + 300_000).toISOString(),
+              });
+            return new Response('private-server-body-token', {
+              status: stage === 'submit' ? 403 : 200,
+              headers: { 'X-Private-Header': 'private-response-header-token' },
+            });
+          },
+          log: (value) => logs.push(value),
+        },
+      );
+      const warning = logs.find((value) => value.startsWith('::warning::'));
+      assert.ok(warning?.includes(`stage=${stage}`));
+      assert.equal(warning?.includes('HTTP 403'), stage === 'submit');
+      assert.equal(warning?.includes('HTTP 200'), stage === 'response');
+      assert.ok(!logs.join('').includes('private-'));
+      assert.match(warning!, /Build result is unchanged/);
+    });
+  }
 });

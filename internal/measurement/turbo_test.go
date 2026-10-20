@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -186,6 +187,235 @@ func TestTurboRunSummaryNeverInventsRemoteSource(t *testing.T) {
 	}
 	if report.Outcomes[0].Timing.RestoreMS != 20 {
 		t.Fatalf("restore timing = %#v", report.Outcomes[0].Timing)
+	}
+}
+
+// Turbo can name a transit dependency without including a task record when
+// that package has no matching script. The omitted graph cannot establish a
+// critical path, but it must not discard the actual tasks' cache outcomes.
+func TestTurboRunSummaryPreservesOmittedTransitDependencies(t *testing.T) {
+	t.Parallel()
+	repository, err := measurement.OpenSQLiteRepository(filepath.Join(t.TempDir(), "measurements.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	testTurboOmittedTransitDependencies(t, repository)
+}
+
+type turboMeasurementRepository interface {
+	ReconcileTurboSummaries(string, measurement.TurboReconcileOptions, [][]byte) (int, error)
+	RunReport(string) (measurement.RunReport, error)
+}
+
+func testTurboOmittedTransitDependencies(t *testing.T, repository turboMeasurementRepository) measurement.RunReport {
+	t.Helper()
+	base := time.Date(2026, time.October, 20, 10, 0, 0, 0, time.UTC)
+	document := turboSummaryDocument(t, map[string]any{
+		"id": "summary-transit", "version": "1",
+		"execution": map[string]any{"startTime": base.UnixMilli(), "endTime": base.Add(time.Second).UnixMilli()},
+		"tasks": []any{
+			turboTask("pkg#build", "hash-build", nil, true, "MISS", false, false, "", 0,
+				base.Add(10*time.Millisecond), base.Add(110*time.Millisecond), 0),
+			turboTask("pkg#uncached", "hash-uncached", []string{"pkg#build", "pkg#transit"}, false,
+				"MISS", false, false, "", 0, base.Add(110*time.Millisecond), base.Add(200*time.Millisecond), 0),
+			turboTask("pkg#test", "hash-test", []string{"pkg#uncached", "pkg#transit", "pkg#transit"}, true,
+				"HIT", false, true, "REMOTE", 500, base.Add(200*time.Millisecond), base.Add(220*time.Millisecond), 0),
+			turboTask("other#uncached", "hash-other", []string{"other#unreachable-transit"}, false,
+				"MISS", false, false, "", 0, base.Add(300*time.Millisecond), base.Add(400*time.Millisecond), 0),
+		},
+	})
+	options := measurement.TurboReconcileOptions{Project: "github.com/acme/widget", CompatibilityID: "linux-amd64-schema1"}
+	count, err := repository.ReconcileTurboSummaries("run-transit", options, [][]byte{document})
+	if err != nil || count != 3 {
+		t.Fatalf("reconcile actual tasks and reachable graph boundary = %d, %v", count, err)
+	}
+	report, err := repository.RunReport("run-transit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Eligible != 2 || report.Hits != 1 || report.Misses != 1 || report.Groups != 3 || report.HitRate != 0.5 {
+		t.Fatalf("transit dependencies changed actual task counts: %#v", report)
+	}
+	if report.GrossAvoidedTaskTime.Milliseconds == nil || *report.GrossAvoidedTaskTime.Milliseconds != 500 {
+		t.Fatalf("known gross avoided task time = %#v", report.GrossAvoidedTaskTime)
+	}
+	if report.NetEstimatedBuildTimeSaved.Milliseconds != nil ||
+		report.NetEstimatedBuildTimeSaved.Confidence != measurement.ConfidenceUnknown ||
+		report.NetEstimatedBuildTimeSaved.Known != 2 || report.NetEstimatedBuildTimeSaved.Total != 3 {
+		t.Fatalf("incomplete graph claimed a critical path: %#v", report.NetEstimatedBuildTimeSaved)
+	}
+	var hit, miss, boundary measurement.OutcomeReport
+	for _, outcome := range report.Outcomes {
+		if !strings.HasPrefix(outcome.WorkID, "sha256:") || strings.Contains(outcome.WorkID, "pkg#") {
+			t.Fatalf("raw task identity retained: %#v", outcome)
+		}
+		switch outcome.Result {
+		case measurement.ResultHit:
+			hit = outcome
+		case measurement.ResultMiss:
+			miss = outcome
+		case measurement.ResultUnknown:
+			boundary = outcome
+		}
+	}
+	if boundary.WorkID == "" || boundary.Source != measurement.SourceUnattributed || boundary.ArtifactID != "" ||
+		boundary.ProducerDurationMS != nil || boundary.ExecutionDurationMS != nil ||
+		boundary.EligibleUnits != 0 || boundary.HitUnits != 0 || boundary.Bytes != (measurement.Bytes{}) ||
+		boundary.Timing != (measurement.TimingReport{}) {
+		t.Fatalf("omitted transit dependency invented activity: %#v", boundary)
+	}
+	wantDependencies := []string{miss.WorkID, boundary.WorkID}
+	sort.Strings(wantDependencies)
+	if !reflect.DeepEqual(hit.Dependencies, wantDependencies) {
+		t.Fatalf("known and omitted dependency edges = %#v, want %#v", hit.Dependencies, wantDependencies)
+	}
+	count, err = repository.ReconcileTurboSummaries("run-transit", options, [][]byte{document})
+	if err != nil || count != 3 {
+		t.Fatalf("repeat reconciliation = %d, %v", count, err)
+	}
+	repeated, err := repository.RunReport("run-transit")
+	if err != nil || !reflect.DeepEqual(repeated, report) {
+		t.Fatalf("repeat incomplete graph report changed: %#v, %v", repeated, err)
+	}
+	return report
+}
+
+func TestTurboRunSummaryRejectsUnboundedAndCyclicGraphs(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, time.October, 20, 10, 0, 0, 0, time.UTC)
+	task := func(id string, dependencies []string) map[string]any {
+		return turboTask(id, "hash-"+id, dependencies, true, "MISS", false, false, "", 0,
+			base.Add(time.Millisecond), base.Add(2*time.Millisecond), 0)
+	}
+	cases := []struct {
+		name  string
+		tasks func() []any
+	}{
+		{"self dependency", func() []any { return []any{task("pkg#build", []string{"pkg#build"})} }},
+		{"empty omitted identity", func() []any { return []any{task("pkg#build", []string{""})} }},
+		{"oversized omitted identity", func() []any { return []any{task("pkg#build", []string{strings.Repeat("x", 513)})} }},
+		{"control character in omitted identity", func() []any { return []any{task("pkg#build", []string{"other\n#build"})} }},
+		{"too many dependencies", func() []any { return []any{task("pkg#build", make([]string, 257))} }},
+		{"too many tasks", func() []any {
+			tasks := make([]any, 4097)
+			for index := range tasks {
+				tasks[index] = task(fmt.Sprintf("pkg#task-%d", index), nil)
+			}
+			return tasks
+		}},
+		{"too many omitted dependencies", func() []any {
+			tasks := make([]any, 17)
+			for index := range tasks {
+				dependencies := make([]string, 256)
+				for dependency := range dependencies {
+					dependencies[dependency] = fmt.Sprintf("omitted#%d-%d", index, dependency)
+				}
+				tasks[index] = task(fmt.Sprintf("pkg#task-%d", index), dependencies)
+			}
+			return tasks
+		}},
+		{"cycle through uncached tasks with omitted dependency", func() []any {
+			first := task("pkg#first", []string{"pkg#second", "pkg#transit"})
+			second := task("pkg#second", []string{"pkg#first"})
+			first["resolvedTaskDefinition"] = map[string]any{"cache": false}
+			second["resolvedTaskDefinition"] = map[string]any{"cache": false}
+			return []any{first, second}
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			repository, err := measurement.OpenSQLiteRepository(filepath.Join(t.TempDir(), "measurements.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = repository.Close() })
+			document := turboSummaryDocument(t, map[string]any{
+				"id": "summary-invalid", "version": "1",
+				"execution": map[string]any{"startTime": base.UnixMilli(), "endTime": base.Add(time.Second).UnixMilli()},
+				"tasks":     test.tasks(),
+			})
+			if _, err := repository.ReconcileTurboSummaries("run-invalid", measurement.TurboReconcileOptions{
+				Project: "github.com/acme/widget", CompatibilityID: "linux-amd64-schema1",
+			}, [][]byte{document}); err == nil {
+				t.Fatal("accepted invalid summary graph")
+			}
+			if _, err := repository.RunReport("run-invalid"); !errors.Is(err, measurement.ErrRunNotFound) {
+				t.Fatalf("invalid graph left outcomes: %v", err)
+			}
+		})
+	}
+}
+
+func TestTurboOmittedTransitIdentityIsScopedToSummary(t *testing.T) {
+	t.Parallel()
+	repository, err := measurement.OpenSQLiteRepository(filepath.Join(t.TempDir(), "measurements.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	base := time.Date(2026, time.October, 20, 10, 0, 0, 0, time.UTC)
+	documents := make([][]byte, 2)
+	for index := range documents {
+		documents[index] = turboSummaryDocument(t, map[string]any{
+			"id": fmt.Sprintf("summary-%d", index), "version": "1",
+			"execution": map[string]any{"startTime": base.UnixMilli(), "endTime": base.Add(time.Second).UnixMilli()},
+			"tasks": []any{turboTask("pkg#test", "hash-test", []string{"pkg#transit"}, true,
+				"HIT", false, true, "REMOTE", 100, base.Add(time.Millisecond), base.Add(2*time.Millisecond), 0)},
+		})
+	}
+	if count, err := repository.ReconcileTurboSummaries("run-two-summaries", measurement.TurboReconcileOptions{
+		Project: "github.com/acme/widget", CompatibilityID: "linux-amd64-schema1",
+	}, documents); err != nil || count != 4 {
+		t.Fatalf("reconcile separate invocations = %d, %v", count, err)
+	}
+	report, err := repository.RunReport("run-two-summaries")
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundaries := make(map[string]bool)
+	for _, outcome := range report.Outcomes {
+		if outcome.Result == measurement.ResultUnknown {
+			boundaries[outcome.WorkID] = true
+		}
+	}
+	if len(boundaries) != 2 || report.Eligible != 2 || report.Hits != 2 || report.NetEstimatedBuildTimeSaved.Milliseconds != nil {
+		t.Fatalf("separate invocation graph boundaries collapsed: %#v", report)
+	}
+}
+
+func TestTurboOmittedTransitBoundSpansSummaryBatch(t *testing.T) {
+	t.Parallel()
+	repository, err := measurement.OpenSQLiteRepository(filepath.Join(t.TempDir(), "measurements.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	base := time.Date(2026, time.October, 20, 10, 0, 0, 0, time.UTC)
+	documents := make([][]byte, 2)
+	for summary := range documents {
+		tasks := make([]any, 9)
+		for index := range tasks {
+			dependencies := make([]string, 256)
+			for dependency := range dependencies {
+				dependencies[dependency] = fmt.Sprintf("omitted#%d-%d", index, dependency)
+			}
+			tasks[index] = turboTask(fmt.Sprintf("pkg#test-%d", index), fmt.Sprintf("hash-%d", index),
+				dependencies, true, "MISS", false, false, "", 0, base.Add(time.Millisecond), base.Add(2*time.Millisecond), 0)
+		}
+		documents[summary] = turboSummaryDocument(t, map[string]any{
+			"id": fmt.Sprintf("summary-%d", summary), "version": "1",
+			"execution": map[string]any{"startTime": base.UnixMilli(), "endTime": base.Add(time.Second).UnixMilli()},
+			"tasks":     tasks,
+		})
+	}
+	if _, err := repository.ReconcileTurboSummaries("run-large-batch", measurement.TurboReconcileOptions{
+		Project: "github.com/acme/widget", CompatibilityID: "linux-amd64-schema1",
+	}, documents); err == nil || !strings.Contains(err.Error(), "too many reconciled omitted") {
+		t.Fatalf("unbounded omitted graph batch = %v", err)
+	}
+	if _, err := repository.RunReport("run-large-batch"); !errors.Is(err, measurement.ErrRunNotFound) {
+		t.Fatalf("rejected batch left partial outcomes: %v", err)
 	}
 }
 
