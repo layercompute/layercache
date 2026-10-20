@@ -16,7 +16,7 @@ const readerBootstrap = `lcs1.reader.${'b'.repeat(64)}`;
 const nativeKey = (key: string) => `native-v1-${createHash('sha256').update(JSON.stringify([project, compatibility, key])).digest('hex')}`;
 
 async function cli(args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  const child = spawn(process.execPath, [resolve('native/cli.ts'), ...args], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [resolve(process.env.LAYERCACHE_SNAPSHOT_CLI_TEST_ENTRY ?? 'native/cli.ts'), ...args], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
   child.stderr.on('data', chunk => { stderr += chunk; });
@@ -35,7 +35,7 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
   const calls: Array<{ method: string; path: string; authorization: string; body: string }> = [];
   const objects = new Map<string, Buffer>();
   const tokens = new Map<string, { mode: string; nativeKey: string }>();
-  const state = { response: 'normal', revoked: false, artifactHeaders: {} as Record<string, string>, artifactDelayMs: 0 };
+  const state = { response: 'normal', revoked: false, artifactHeaders: {} as Record<string, string>, readHeaders: {} as Record<string, string>, artifactDelayMs: 0 };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url!, 'http://fixture');
     const chunks: Buffer[] = [];
@@ -81,7 +81,7 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     if (!stored) { response.writeHead(404); response.end(); return; }
     if (state.artifactDelayMs) await delay(state.artifactDelayMs);
     if (response.destroyed) return;
-    response.writeHead(200, { 'Content-Length': String(stored.length), 'x-layercache-digest': `sha256:${createHash('sha256').update(stored).digest('hex')}` });
+    response.writeHead(200, { 'Content-Length': String(stored.length), 'x-layercache-digest': `sha256:${createHash('sha256').update(stored).digest('hex')}`, ...state.readHeaders });
     response.end(stored);
   });
   await new Promise<void>(resolveReady => server.listen(0, '127.0.0.1', resolveReady));
@@ -196,6 +196,35 @@ test('scoped mode needs its explicit endpoint and a new destination, without fal
   const existing = join(f.root, 'existing'); await mkdir(existing); await writeFile(join(existing, 'source'), 'preserved');
   const result = await cli([...f.args('restore'), '--path', existing, '--cache-dir', join(f.root, 'reader-cache')]);
   assert.notEqual(result.code, 0); assert.equal(await readFile(join(existing, 'source'), 'utf8'), 'preserved');
+});
+
+test('scoped CLI distinguishes response metadata, byte integrity, compression and destination failures without private details', async t => {
+  const f = await fixture(t);
+  const input = join(f.root, 'ClosedCache'); await mkdir(input); await writeFile(join(input, 'data'), 'verified archive bytes');
+  assert.equal((await cli([...f.args('save', f.writer), '--path', input, '--cache-dir', join(f.root, 'producer-cache')])).code, 0);
+  const archive = f.objects.get(nativeKey(key))!;
+  const privateCanary = 'private-response-token-path-canary';
+  const cases: Array<{ name: string; code: string; headers: Record<string, string>; bytes: Buffer }> = [
+    { name: 'metadata', code: 'metadata-invalid', headers: { 'x-layercache-digest': privateCanary }, bytes: archive },
+    { name: 'integrity', code: 'integrity-failed', headers: { 'x-layercache-digest': `sha256:${'0'.repeat(64)}` }, bytes: archive },
+    { name: 'compression', code: 'compression-invalid', headers: {}, bytes: Buffer.from(privateCanary) },
+    { name: 'destination', code: 'filesystem-exists', headers: {}, bytes: archive },
+  ];
+  for (const control of cases) {
+    f.state.readHeaders = control.headers;
+    f.objects.set(nativeKey(key), control.bytes);
+    const destination = join(f.root, control.name);
+    if (control.name === 'destination') { await mkdir(destination); await writeFile(join(destination, 'source'), privateCanary); }
+    const start = f.calls.length;
+    const result = await cli([...f.args('restore'), '--path', destination, '--cache-dir', join(f.root, `reader-${control.name}`)]);
+    assert.notEqual(result.code, 0, control.name);
+    assert.equal(result.stdout, '', control.name);
+    assert.equal(result.stderr.trim(), `Snapshot archive operation failed: ${control.code}`, control.name);
+    assert.deepEqual(f.calls.slice(start).map(call => call.method), ['POST', 'GET']);
+    for (const value of [privateCanary, f.root, readerBootstrap, 'lc2.fixture.']) assert.ok(!result.stderr.includes(value));
+    if (control.name === 'destination') assert.equal(await readFile(join(destination, 'source'), 'utf8'), privateCanary);
+    else await assert.rejects(stat(destination), { code: 'ENOENT' });
+  }
 });
 
 test('immutable scoped saves reject degraded or queued acknowledgment and preserve the canonical winner on conflict', async t => {

@@ -4,6 +4,7 @@ import { sourceKey } from './source.ts';
 import { resolve } from 'node:path';
 import { detectSimulatorTarget, parseSimulatorTarget, planExpoSimulator } from './expo-identity.ts';
 import { authenticateSnapshot, SnapshotAuthenticationError } from './snapshot-auth.ts';
+import { snapshotArchiveErrorMessage } from './snapshot-error.ts';
 
 // Deliberately uses the same key and transport as CI. No checkout path or runner
 // identity is included, so compatible worktrees can share outputs.
@@ -42,7 +43,7 @@ async function main(): Promise<void> {
       if (error instanceof SnapshotAuthenticationError) throw error;
       if (error instanceof NativeCacheConflictError) throw new Error('Snapshot generation already has different immutable content');
       if (error instanceof NativeCachePublicationError) throw new Error('Snapshot Team publication was not confirmed');
-      throw new Error('Snapshot archive operation failed');
+      throw new Error(snapshotArchiveErrorMessage(error));
     }
     return;
   }

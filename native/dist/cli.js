@@ -3617,6 +3617,73 @@ async function authenticateSnapshot(input) {
   }
 }
 
+// native/snapshot-error.ts
+var clientFailures = /* @__PURE__ */ new Map([
+  ["Invalid artifact digest or size", "metadata-invalid"],
+  ["Artifact exceeds declared size", "integrity-failed"],
+  ["Artifact integrity check failed", "integrity-failed"],
+  ["Duplicate or case-colliding archive path", "archive-path-collision"],
+  ["Unsafe archive path", "archive-path-unsafe"],
+  ["Unsupported archive entry", "archive-entry-unsupported"],
+  ["Special permission bits are not cacheable", "archive-permissions-unsupported"],
+  ["Empty archive link", "archive-link-unsafe"],
+  ["Unsafe archive link", "archive-link-unsafe"],
+  ["Archive writes through a symlink", "archive-link-unsafe"],
+  ["Unsafe archive link chain", "archive-link-unsafe"],
+  ["Cyclic archive link", "archive-link-cycle"],
+  ["Empty artifact archive", "archive-empty"],
+  ["Invalid archive", "archive-invalid"],
+  ["Too many archive entries", "archive-entry-limit"],
+  ["Artifact exceeds local cache budget", "cache-budget-exceeded"],
+  ["Expanded artifact exceeds local cache budget", "cache-budget-exceeded"],
+  ["Insufficient local cache budget", "cache-budget-exceeded"],
+  ["Insufficient local cache budget: live Expo consumers are pinned", "cache-budget-exceeded"],
+  ["Native cache is busy; inspect its .lock directory", "cache-busy"],
+  ["Cannot replace native artifact backing live Expo consumers; use a complete build key", "cache-busy"],
+  ["Build must be a directory or regular file", "input-unsupported"],
+  ["Unsupported build file", "input-unsupported"],
+  ["Too many build files", "input-unsupported"],
+  ["maxBytes must be positive integer bytes", "configuration-invalid"],
+  ["maxAgeMs must be positive integer milliseconds", "configuration-invalid"]
+]);
+var libraryFailures = /* @__PURE__ */ new Map([
+  ["EEXIST", "filesystem-exists"],
+  ["ENOENT", "filesystem-missing"],
+  ["EACCES", "filesystem-permission"],
+  ["EPERM", "filesystem-permission"],
+  ["ENOSPC", "filesystem-full"],
+  ["EDQUOT", "filesystem-full"],
+  ["EROFS", "filesystem-read-only"],
+  ["ENOTDIR", "filesystem-path-invalid"],
+  ["EISDIR", "filesystem-path-invalid"],
+  ["ELOOP", "filesystem-path-invalid"],
+  ["EBUSY", "filesystem-busy"],
+  ["Z_DATA_ERROR", "compression-invalid"],
+  ["Z_BUF_ERROR", "compression-invalid"],
+  ["TAR_BAD_ARCHIVE", "archive-invalid"],
+  ["TAR_ABORT", "archive-invalid"],
+  ["TAR_ENTRY_ERROR", "archive-extraction-failed"],
+  ["TAR_ENTRY_UNSUPPORTED", "archive-entry-unsupported"],
+  ["ETIMEDOUT", "timeout"],
+  ["ABORT_ERR", "canceled"]
+]);
+function snapshotArchiveErrorMessage(error) {
+  let classification;
+  try {
+    if (error instanceof Error) {
+      classification = clientFailures.get(error.message);
+      if (!classification && "code" in error && typeof error.code === "string") classification = libraryFailures.get(error.code);
+      if (!classification && error instanceof DOMException) {
+        if (error.name === "TimeoutError") classification = "timeout";
+        else if (error.name === "AbortError") classification = "canceled";
+      }
+    }
+  } catch {
+    classification = void 0;
+  }
+  return classification ? `Snapshot archive operation failed: ${classification}` : "Snapshot archive operation failed";
+}
+
 // native/cli.ts
 async function main() {
   const [operation, ...args] = process.argv.slice(2);
@@ -3664,7 +3731,7 @@ async function main() {
       if (error instanceof SnapshotAuthenticationError) throw error;
       if (error instanceof NativeCacheConflictError) throw new Error("Snapshot generation already has different immutable content");
       if (error instanceof NativeCachePublicationError) throw new Error("Snapshot Team publication was not confirmed");
-      throw new Error("Snapshot archive operation failed");
+      throw new Error(snapshotArchiveErrorMessage(error));
     }
     return;
   }
