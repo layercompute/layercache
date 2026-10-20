@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -38,7 +39,7 @@ func TestPutRemovesNewBlobWhenMetadataCommitFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (Stats{}) {
+	if !reflect.DeepEqual(stats, Stats{StorageByIntegration: []IntegrationStats{}}) {
 		t.Fatalf("stats after failed metadata commit = %+v, want empty Store", stats)
 	}
 }
@@ -70,7 +71,7 @@ func TestPutRemovesNewBlobWhenMetadataCommitIsCanceled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (Stats{}) {
+	if !reflect.DeepEqual(stats, Stats{StorageByIntegration: []IntegrationStats{}}) {
 		t.Fatalf("stats after canceled metadata commit = %+v, want empty Store", stats)
 	}
 }
@@ -147,8 +148,9 @@ func TestPutFailureDoesNotRemoveExistingDeduplicatedBlob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantStats := Stats{UsageBytes: int64(len(body)), MetadataBytes: stats.MetadataBytes, Artifacts: 1, Entries: 1}
-	if stats != wantStats {
+	wantStats := Stats{UsageBytes: int64(len(body)), MetadataBytes: stats.MetadataBytes, Artifacts: 1, Entries: 1,
+		StorageByIntegration: []IntegrationStats{{Integration: firstKey.Integration, UsageBytes: int64(len(body)), Artifacts: 1, Entries: 1}}}
+	if !reflect.DeepEqual(stats, wantStats) {
 		t.Fatalf("stats after failed shared-digest Put = %+v, want %+v", stats, wantStats)
 	}
 }

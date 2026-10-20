@@ -146,15 +146,16 @@ type SourceReport struct {
 }
 
 type IntegrationReport struct {
-	Integration Integration  `json:"integration"`
-	Groups      int          `json:"groups"`
-	Eligible    int          `json:"eligible"`
-	Hits        int          `json:"hits"`
-	Misses      int          `json:"misses"`
-	HitRate     float64      `json:"hitRate"`
-	Timing      TimingReport `json:"timing"`
-	Bytes       Bytes        `json:"bytes"`
-	Degraded    bool         `json:"degraded"`
+	Integration          Integration  `json:"integration"`
+	Groups               int          `json:"groups"`
+	Eligible             int          `json:"eligible"`
+	Hits                 int          `json:"hits"`
+	Misses               int          `json:"misses"`
+	HitRate              float64      `json:"hitRate"`
+	Timing               TimingReport `json:"timing"`
+	Bytes                Bytes        `json:"bytes"`
+	Degraded             bool         `json:"degraded"`
+	GrossAvoidedTaskTime Estimate     `json:"grossAvoidedTaskTime"`
 }
 
 type RunReport struct {
@@ -194,6 +195,9 @@ type PeriodReport struct {
 	Sources                    []SourceReport      `json:"sources"`
 	Integrations               []IntegrationReport `json:"integrations,omitempty"`
 	Degraded                   bool                `json:"degraded"`
+	TopArtifacts               []ArtifactReport    `json:"topArtifacts"`
+	TopArtifactsTruncated      bool                `json:"topArtifactsTruncated"`
+	Activity                   []ActivityBucket    `json:"activity"`
 }
 
 type HistoricalWork struct {
@@ -693,10 +697,15 @@ func buildRunReport(runID string, outcomes []FinalOutcome) (RunReport, error) {
 		case ResultHit:
 			if outcome.ProducerDuration != nil {
 				producer := outcome.ProducerDuration.Milliseconds()
-				grossMS += producer
+				// A partial native hit group can retain a cold whole-graph
+				// baseline for the net estimate. That entire baseline is not
+				// evidence that all its task work was avoided.
+				if eligibleUnits == hitUnits {
+					grossMS += producer
+					knownGross++
+				}
 				baselineWeights[outcome.WorkID] = producer
 				observedWeights[outcome.WorkID] = observed
-				knownGross++
 				knownNet++
 			}
 			source := sources[outcome.Source]
@@ -751,6 +760,9 @@ func buildRunReport(runID string, outcomes []FinalOutcome) (RunReport, error) {
 			integration.HitRate = float64(integration.Hits) / float64(integration.Eligible)
 		}
 		report.Integrations = append(report.Integrations, *integration)
+	}
+	for index := range report.Integrations {
+		report.Integrations[index].GrossAvoidedTaskTime = integrationAvoidedTime(report.Outcomes, report.Integrations[index].Integration)
 	}
 	sort.Slice(report.Integrations, func(i, j int) bool {
 		return report.Integrations[i].Integration < report.Integrations[j].Integration
@@ -919,9 +931,14 @@ func aggregatePeriod(from, to time.Time, reports []RunReport) PeriodReport {
 		}
 		period.Integrations = append(period.Integrations, *integration)
 	}
+	for index := range period.Integrations {
+		period.Integrations[index].GrossAvoidedTaskTime = aggregateIntegrationAvoidedTime(reports, period.Integrations[index].Integration)
+	}
 	sort.Slice(period.Integrations, func(i, j int) bool {
 		return period.Integrations[i].Integration < period.Integrations[j].Integration
 	})
+	period.TopArtifacts, period.TopArtifactsTruncated = commonArtifacts(reports)
+	period.Activity = activityBuckets(from, to, reports)
 	return period
 }
 

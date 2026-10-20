@@ -19,6 +19,11 @@ scope; TODOs.md owns future work.
   configurations continue to work offline without a cloud account.
 - Local and hosted views share cache rendering, definitions and empty states.
   Hosted navigation and session authentication remain in the existing portal.
+  The hosted project Overview places storage, hit rate and timing coverage first.
+  Activity, Infrastructure, Storage and Settings have direct, reloadable paths.
+  Period changes update the selected project without replacing its navigation,
+  losing focus or collapsing scroll. An unavailable update labels previous data;
+  expiry removes private content. Back/forward and encoded project IDs work.
 - Show effective hit rate as hits divided by eligible reported outcomes, observed
   runs, transfer bytes and phase durations, source attribution, integration
   breakdown and net estimated time saved with evidence coverage. No outcomes
@@ -32,6 +37,20 @@ scope; TODOs.md owns future work.
   backend. These values exclude host disk, registry storage and separate native
   engine stores, including configured Bazel engines. Current reports cover reconciled Turbo, Actions and BuildKit outcomes;
   other native protocols need separate metering.
+- Partition artifact bytes using explicit integration metadata, counting shared
+  blobs once. Turbo-transport snapshots cannot be relabeled as Xcode or Expo.
+  Keep missing storage breakdowns separate from an explicitly empty store.
+- Group CI jobs by authenticated repository/run/attempt identity with expandable
+  detail. Persistent clients are separate from CI jobs. Default host rows require
+  at least two distinct reported executions and a fresh resource sample. Keep
+  one-off, stale and unknown-count clients collapsed. Deduplicate start/finish
+  phases and count only timestamped primary observations in the selected period.
+  These bounded observations do not establish unique physical hardware.
+- Capacity changes require current administrator authority and a matching prior
+  limit. Stay within the assigned allocation, reject insufficient committed or
+  retained/metadata capacity and preserve restart persistence. Changes never
+  evict entries or replace plan allocation. An uncertain write requires a fresh
+  read before another attempt. Ordinary native managed-quota denial remains.
 - Local maintenance is opt-in with `--allow-prune`; sharing a default read-only
   dashboard link must not confer administration. Hosted pruning requires current
   administrator membership. Require an explicit target and confirmation, bounded

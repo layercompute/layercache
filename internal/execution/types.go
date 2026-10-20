@@ -124,6 +124,12 @@ type Entry struct {
 	Phase            string    `json:"phase"`
 	Sample           Sample    `json:"sample"`
 	CacheActivity    string    `json:"cacheActivity"`
+
+	// ObservedExecutions counts distinct authenticated execution/run/workspace
+	// tuples in retained primary samples within the requested inventory period.
+	// It is a lower bound: overwritten samples and context aliases without their
+	// own receive times cannot establish additional in-period executions.
+	ObservedExecutions int `json:"observedExecutions"`
 }
 type Inventory struct {
 	Version           int       `json:"version"`

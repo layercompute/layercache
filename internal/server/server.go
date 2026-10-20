@@ -439,8 +439,9 @@ func (server *Server) status(writer http.ResponseWriter, request *http.Request) 
 		"running": true, "role": server.config.Role, "projectId": server.config.ProjectID,
 		"startedAt": server.startedAt, "usageBytes": stats.UsageBytes,
 		"artifacts": stats.Artifacts, "entries": stats.Entries,
-		"evictionPolicy": server.config.EvictionPolicy,
-		"runtimePid":     server.runtimePID, "runtimeInstanceId": server.runtimeInstanceID,
+		"storageByIntegration": stats.StorageByIntegration,
+		"evictionPolicy":       server.config.EvictionPolicy,
+		"runtimePid":           server.runtimePID, "runtimeInstanceId": server.runtimeInstanceID,
 	}
 	// Visibility comes from the membership authority, never from storage location
 	// or the number of configured members. Standalone private ownership is unknown.

@@ -233,6 +233,12 @@ func (r *SQLRepository) Inventory(ctx context.Context, project string, from, to 
 		entry       Entry
 		authorities []Authority
 	}
+	type executionContext struct{ execution, run, workspace string }
+	// Only primary samples have a trusted receive time in this query's period.
+	// Stored context aliases remain useful for cache activity linkage, but can
+	// predate their enclosing sample and must not inflate in-period recurrence.
+	// Persistence retains at most two primary samples per bounded execution.
+	observedExecutions := map[string]map[executionContext]struct{}{}
 	executions := map[string]observed{}
 	for rows.Next() {
 		var received int64
@@ -276,6 +282,10 @@ func (r *SQLRepository) Inventory(ctx context.Context, project string, from, to 
 		if err != nil {
 			break
 		}
+		if observedExecutions[id] == nil {
+			observedExecutions[id] = map[executionContext]struct{}{}
+		}
+		observedExecutions[id][executionContext{a.ExecutionID, a.RunID, a.WorkspaceID}] = struct{}{}
 		old, exists := executions[a.ExecutionID]
 		if !exists {
 			executions[a.ExecutionID] = observed{entry, contexts}
@@ -340,6 +350,7 @@ func (r *SQLRepository) Inventory(ctx context.Context, project string, from, to 
 		}
 	}
 	for _, value := range selected {
+		value.entry.ObservedExecutions = len(observedExecutions[value.entry.ID])
 		for _, a := range value.authorities {
 			if activity[a.ExecutionID] {
 				value.entry.CacheActivity = "observed"

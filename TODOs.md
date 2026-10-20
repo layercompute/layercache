@@ -15,6 +15,40 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
+- [ ] **Make the hosted dashboard useful for an active project.**
+  Owner: LayerCache dashboard. October 20 user outcome: open Phone App directly,
+  see stored artifacts, effective hit rate and cache types first, then navigate
+  focused Activity, Infrastructure, Storage and Settings pages with shareable
+  URLs. Period changes update only the selected project without replacing its
+  navigation, losing focus or collapsing scroll. Roll GitHub Actions job
+  attempts up by authenticated run identity; keep persistent clients separate
+  from disposable CI jobs. Default client rows require repeated distinct
+  executions and a fresh sample; one-off and unqualified clients stay collapsed.
+  Show common artifact hits without uploading task
+  paths or commands. Expose timing-backed task/critical-path estimates and their
+  coverage, leaving CPU-hours and money unknown without matched resource/rate
+  evidence. Support explicit capacity adjustments within assigned entitlements,
+  reject decreases below protected/committed usage, and keep pruning separate.
+  Acceptance: route/history/reload, stale-response and scroll/focus browser
+  checks; permission, quota concurrency and restart controls; independent
+  reviews, required CI, and authenticated deployed Phone App QA.
+  [Source qualification](docs/evidence/project-dashboard-ux-20261020.md) now
+  records 201 hosted browser checks, shared/local compatibility and real
+  PostgreSQL concurrency/restart controls. Reviewed implementation is
+  [`52944c0`](https://github.com/ziahamza/layercache/commit/52944c0).
+  Hosted deployment and current-account Phone acceptance remain pending.
+
+- [ ] **Match native reuse to original execution resources and cost.**
+  Owner: LayerCache measurement/native integrations. Extend native Gradle,
+  Xcode and other clients through their existing reporting seams. Pair eligible
+  reused work with the original compatible producer timing and allocation,
+  rather than multiplying hits by current runner size. Distinguish task elapsed
+  estimates, allocated vCPU-seconds, measured CPU usage and provider charges.
+  Cover missing/mixed resources, partial native groups, concurrent tasks, cache
+  overhead and prices before reporting compute or financial savings. Add explicit
+  snapshot purpose metadata to distinguish Xcode/Expo from their shared Turbo
+  archive transport. Native keys and compatibility must remain unchanged.
+
 - [ ] **Show where LayerCache runs and the resources available there.**
   Owner: LayerCache observability. October 20 user outcome: recognize the same
   persistent client installation across projects and worktrees, distinguish

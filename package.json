@@ -30,7 +30,7 @@
   "scripts": {
     "build": "node native/build.ts && node dashboard/build.ts && node cloud/build.ts",
     "typecheck": "tsc --noEmit && tsc -p dashboard/tsconfig.json && tsc -p qa/dashboard/tsconfig.json && tsc -p cloud/tsconfig.json && tsc -p qa/cloud/tsconfig.json",
-    "test": "node --test native/*.test.ts deploy/pool/*.test.ts action/retained/*.test.mjs",
+    "test": "node --test native/*.test.ts dashboard/*.test.ts deploy/pool/*.test.ts action/retained/*.test.mjs",
     "test:dashboard": "node qa/dashboard/run.ts",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "test:cloud": "node qa/cloud/run.ts",
