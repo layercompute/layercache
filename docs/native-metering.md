@@ -169,10 +169,14 @@ documents. Optional transport provenance separately admits 65,536 rows and
 32 MiB of documents. Capacity refusals affect reporting coverage, not cache
 publication or native execution. Reports must describe a completed
 invocation within the preceding 24 hours. History outside retention and known
-quota-related admission gaps are marked incomplete. Loss markers use bounded
-daily ranges for the affected workload timestamps; gaps within one marked day's
-range remain conservative. A later refusal does not mark an earlier unrelated
-period incomplete. Cache transport provenance uses an optional 100 ms recording budget
+quota-related admission gaps are marked incomplete. Report-loss markers follow
+the refused invocation's start time. Transport-loss markers follow each selected
+invocation's full report/task window, including the five-second matching grace,
+even when that window ends after the dashboard period or the loss arrives later.
+Daily ranges retain at most 124 rows per project across two integrations and
+two loss kinds over 31 UTC days. Gaps within one marked day's range remain
+conservative. A later refusal does not mark an earlier unrelated period
+incomplete. Cache transport provenance uses an optional 100 ms recording budget
 and indexed quota counters; missing evidence leaves source or timing unknown.
 Optional reporting never promises artifact retention or future
 availability. Required transfers continue to use the retained-artifact contract.

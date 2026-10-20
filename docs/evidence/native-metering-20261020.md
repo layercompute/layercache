@@ -43,7 +43,11 @@ counter-only native evidence preserves the independent generic graph estimate,
 and a forced native-store error returns available generic data with explicit
 native unavailability. Bounded daily loss markers follow the affected workload
 period and integration, including delayed uploads, disjoint periods, multiple
-losses, restart and half-open boundaries. The follow-up passed 22 projection
+losses, restart and half-open boundaries. Transport losses intersect the full
+selected invocation/task window with the existing five-second matching grace.
+Controls include losses after the query end, losses received after the report,
+task-window extensions and the 124-row project bound. These passed race testing
+on SQLite and fresh PostgreSQL without database skips. The follow-up passed 22 projection
 tests and 21 focused browser controls across all three engines. Generic graph
 scope is visible beside its estimates. The earlier 498 and 96 browser checks
 remain separate qualification records rather than additional distinct scenarios.

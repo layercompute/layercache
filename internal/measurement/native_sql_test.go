@@ -27,10 +27,17 @@ var nativeSQLBase = time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
 
 const nativeSQLKey = "a8e040e29aac448693d23ccdf5a81af9"
 
+type nativeSQLTestRepository struct {
+	measurement.NativeRepository
+	database *sql.DB
+	dialect  string
+}
+
 func TestNativeSQLSQLite(t *testing.T) {
 	t.Parallel()
 	runNativeSQLContract(t, func(t *testing.T) measurement.NativeRepository {
-		repository, err := measurement.OpenSQLiteRepository(filepath.Join(t.TempDir(), "measurement.sqlite"))
+		path := filepath.Join(t.TempDir(), "measurement.sqlite")
+		repository, err := measurement.OpenSQLiteRepository(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +46,13 @@ func TestNativeSQLSQLite(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return native
+		database, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		database.SetMaxOpenConns(1)
+		t.Cleanup(func() { _ = database.Close() })
+		return &nativeSQLTestRepository{NativeRepository: native, database: database, dialect: "sqlite"}
 	})
 }
 
@@ -86,7 +99,13 @@ func TestNativeSQLPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return native
+		database, err := sql.Open("pgx", isolated.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		database.SetMaxOpenConns(1)
+		t.Cleanup(func() { _ = database.Close() })
+		return &nativeSQLTestRepository{NativeRepository: native, database: database, dialect: "postgres"}
 	})
 }
 
@@ -676,6 +695,72 @@ func runNativeSQLContract(t *testing.T, open func(*testing.T) measurement.Native
 		probe(measurement.IntegrationGradle, unrelatedDay)
 		check(measurement.IntegrationGradle, unrelatedDay, unrelatedDay.Add(time.Nanosecond), false)
 	})
+
+	t.Run("transport loss follows the selected invocation window", func(t *testing.T) {
+		for _, test := range []struct {
+			name          string
+			losses        []time.Duration
+			beforeReceipt bool
+			reportEnd     time.Duration
+			taskStart     time.Duration
+			taskEnd       time.Duration
+			integration   measurement.Integration
+			want          bool
+		}{
+			{name: "loss beyond query end before report receipt", losses: []time.Duration{8 * time.Minute}, beforeReceipt: true, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute, want: true},
+			{name: "loss beyond query end after report receipt", losses: []time.Duration{8 * time.Minute}, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute, want: true},
+			{name: "earlier job already finished", losses: []time.Duration{8 * time.Minute}, reportEnd: time.Minute, taskEnd: time.Minute},
+			{name: "upper tolerance endpoint", losses: []time.Duration{10*time.Minute + 5*time.Second}, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute, want: true},
+			{name: "outside upper tolerance", losses: []time.Duration{10*time.Minute + 5*time.Second + time.Nanosecond}, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute},
+			{name: "lower tolerance endpoint", losses: []time.Duration{-5 * time.Second}, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute, want: true},
+			{name: "outside lower tolerance", losses: []time.Duration{-5*time.Second - time.Nanosecond}, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute},
+			{name: "task extends upper invocation envelope", losses: []time.Duration{10*time.Minute + 10*time.Second}, reportEnd: 10 * time.Minute, taskEnd: 10*time.Minute + 5*time.Second, want: true},
+			{name: "outside extended task envelope", losses: []time.Duration{10*time.Minute + 10*time.Second + time.Nanosecond}, reportEnd: 10 * time.Minute, taskEnd: 10*time.Minute + 5*time.Second},
+			{name: "task extends lower invocation envelope", losses: []time.Duration{-10 * time.Second}, reportEnd: 10 * time.Minute, taskStart: -5 * time.Second, taskEnd: 10 * time.Minute, want: true},
+			{name: "other integration is isolated", losses: []time.Duration{8 * time.Minute}, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute, integration: measurement.IntegrationXcode},
+			{name: "daily envelope gap is conservative", losses: []time.Duration{-time.Hour, time.Hour}, reportEnd: 10 * time.Minute, taskEnd: 10 * time.Minute, want: true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				fixture := open(t).(*nativeSQLTestRepository)
+				at := time.Now().UTC().Truncate(24 * time.Hour).Add(-24*time.Hour + 12*time.Hour)
+				authority := nativeSQLAuthority("cohort-workflow", "job-one")
+				task := nativeSQLTask("compile", nativeSQLKey, "fromCache", at.Add(test.taskStart), -1)
+				task.FinishedAt = at.Add(test.taskEnd)
+				report := nativeSQLReport("run-transport-cohort-0001", at, task)
+				report.FinishedAt = at.Add(test.reportEnd)
+				lossIntegration := test.integration
+				if lossIntegration == "" {
+					lossIntegration = measurement.IntegrationGradle
+				}
+				seedLoss := func() {
+					t.Helper()
+					first, last := at.Add(test.losses[0]), at.Add(test.losses[len(test.losses)-1])
+					query := `INSERT INTO layercache_native_loss_days_v1(project_id,integration,loss_kind,day_start,first_lost_at,last_lost_at) VALUES(?,?,?,?,?,?)`
+					if fixture.dialect == "postgres" {
+						query = `INSERT INTO layercache_native_loss_days_v1(project_id,integration,loss_kind,day_start,first_lost_at,last_lost_at) VALUES($1,$2,$3,$4,$5,$6)`
+					}
+					if _, err := fixture.database.Exec(query, "project", string(lossIntegration), "transport", first.Truncate(24*time.Hour).UnixNano(), first.UnixNano(), last.UnixNano()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if test.beforeReceipt {
+					seedLoss()
+				}
+				nativeSQLRecordAt(t, fixture, authority, report, report.FinishedAt.Add(time.Minute))
+				if !test.beforeReceipt {
+					before, err := fixture.PeriodReport(context.Background(), at, at.Add(5*time.Minute))
+					if err != nil || len(before) != 1 || before[0].HistoryTruncated {
+						t.Fatalf("lossless invocation already marked truncated: reports=%+v error=%v", before, err)
+					}
+					seedLoss()
+				}
+				reports, err := fixture.PeriodReport(context.Background(), at, at.Add(5*time.Minute))
+				if err != nil || len(reports) != 1 || reports[0].HistoryTruncated != test.want {
+					t.Fatalf("transport loss ignored actual selected invocation window or leaked into another cohort: reports=%+v want truncated=%v error=%v", reports, test.want, err)
+				}
+			})
+		}
+	})
 }
 
 func TestNativeSQLiteReopenKeepsReceiptsAndDoesNotPersistNativeKeys(t *testing.T) {
@@ -927,7 +1012,7 @@ func TestNativeSQLiteTransportByteBudgetRejectsGrowthButAllowsExactReplay(t *tes
 		t.Fatalf("rejected growth or exact replay changed transport storage: rows %d to %d, bytes %d to %d", count, afterCount, total, afterBytes)
 	}
 	var day, firstLoss, lastLoss int64
-	if err := database.QueryRow(`SELECT day_start,first_lost_at,last_lost_at FROM layercache_native_coverage_days_v1 WHERE project_id='project' AND integration='gradle'`).Scan(&day, &firstLoss, &lastLoss); err != nil {
+	if err := database.QueryRow(`SELECT day_start,first_lost_at,last_lost_at FROM layercache_native_loss_days_v1 WHERE project_id='project' AND integration='gradle' AND loss_kind='transport'`).Scan(&day, &firstLoss, &lastLoss); err != nil {
 		t.Fatal(err)
 	}
 	if day != boundary.UnixNano() || firstLoss != newEvent.FinishedAt.UnixNano() || lastLoss != newEvent.FinishedAt.UnixNano() {
@@ -954,6 +1039,25 @@ func TestNativeSQLiteCoverageLossDaysSurviveRestart(t *testing.T) {
 	nativeSQLRefuseCappedInvocation(t, native, authority, secondAt, secondAt.Add(3*time.Minute), false)
 	probe := nativeSQLCounterReport("run-restart-loss-probe-0001", secondAt)
 	nativeSQLRecordAt(t, native, nativeSQLAuthority("coverage-probes", "job-one"), probe, secondAt.Add(time.Minute))
+	transportAt := secondAt.Add(12 * time.Hour)
+	task := nativeSQLTask("compile", nativeSQLKey, "fromCache", transportAt, -1)
+	task.FinishedAt = transportAt.Add(10 * time.Minute)
+	transportReport := nativeSQLReport("run-restart-transport-0001", transportAt, task)
+	transportReport.FinishedAt = task.FinishedAt
+	nativeSQLRecordAt(t, native, nativeSQLAuthority("transport-restart-probe", "job-one"), transportReport, task.FinishedAt.Add(time.Minute))
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lostTransport := transportAt.Add(8 * time.Minute)
+	if _, err := database.Exec(`INSERT INTO layercache_native_loss_days_v1(project_id,integration,loss_kind,day_start,first_lost_at,last_lost_at) VALUES(?,?,?,?,?,?)`,
+		"project", "gradle", "transport", lostTransport.Truncate(24*time.Hour).UnixNano(), lostTransport.UnixNano(), lostTransport.UnixNano()); err != nil {
+		_ = database.Close()
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -972,6 +1076,10 @@ func TestNativeSQLiteCoverageLossDaysSurviveRestart(t *testing.T) {
 			t.Fatalf("restart lost retained loss day at %s: reports=%+v error=%v", at, reports, err)
 		}
 	}
+	transportReports, err := native.PeriodReport(context.Background(), transportAt, transportAt.Add(5*time.Minute))
+	if err != nil || len(transportReports) != 1 || !transportReports[0].HistoryTruncated {
+		t.Fatalf("restart lost transport coverage beyond the query end within the selected invocation: reports=%+v error=%v", transportReports, err)
+	}
 }
 
 func TestNativeSQLiteCoverageLossDaysStayBoundedPerIntegration(t *testing.T) {
@@ -979,6 +1087,25 @@ func TestNativeSQLiteCoverageLossDaysStayBoundedPerIntegration(t *testing.T) {
 	native, database := nativeSQLSQLiteDatabase(t)
 	newestDay := time.Now().UTC().Truncate(24 * time.Hour)
 	newestEvent := newestDay.Add(time.Minute)
+	// Existing transport losses must keep their independent daily allowance
+	// while report refusals grow and prune their own bounded history.
+	tx, err := database.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	for _, integration := range []measurement.Integration{measurement.IntegrationGradle, measurement.IntegrationXcode} {
+		for day := range 31 {
+			at := newestEvent.Add(-time.Duration(day) * 24 * time.Hour)
+			if _, err := tx.Exec(`INSERT INTO layercache_native_loss_days_v1(project_id,integration,loss_kind,day_start,first_lost_at,last_lost_at) VALUES(?,?,?,?,?,?)`,
+				"project", string(integration), "transport", at.Truncate(24*time.Hour).UnixNano(), at.UnixNano(), at.UnixNano()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 	for _, integration := range []measurement.Integration{measurement.IntegrationGradle, measurement.IntegrationXcode} {
 		authority := nativeSQLAuthority("coverage-limited-workflow", "job-one")
 		authority.Integration = integration
@@ -989,29 +1116,29 @@ func TestNativeSQLiteCoverageLossDaysStayBoundedPerIntegration(t *testing.T) {
 			nativeSQLRefuseCappedInvocation(t, native, authority, at, at.Add(time.Minute), day == 0)
 		}
 	}
-	rows, err := database.Query(`SELECT integration,COUNT(*),MIN(day_start),MAX(day_start)
-		FROM layercache_native_coverage_days_v1 WHERE project_id='project' GROUP BY integration ORDER BY integration`)
+	rows, err := database.Query(`SELECT integration,loss_kind,COUNT(*),MIN(day_start),MAX(day_start)
+		FROM layercache_native_loss_days_v1 WHERE project_id='project' GROUP BY integration,loss_kind ORDER BY integration,loss_kind`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	integrations := 0
+	groups := 0
 	for rows.Next() {
-		var integration string
+		var integration, kind string
 		var count, oldest, newest int64
-		if err := rows.Scan(&integration, &count, &oldest, &newest); err != nil {
+		if err := rows.Scan(&integration, &kind, &count, &oldest, &newest); err != nil {
 			t.Fatal(err)
 		}
 		if count != 31 || oldest != newestDay.Add(-30*24*time.Hour).UnixNano() || newest != newestDay.UnixNano() {
-			t.Fatalf("%s loss-day bound changed: count=%d oldest=%d newest=%d", integration, count, oldest, newest)
+			t.Fatalf("%s/%s loss-day bound changed: count=%d oldest=%d newest=%d", integration, kind, count, oldest, newest)
 		}
-		integrations++
+		groups++
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if integrations != 2 {
-		t.Fatalf("loss-day limits leaked between Gradle and Xcode: integration rows=%d", integrations)
+	if groups != 4 {
+		t.Fatalf("loss-day limits leaked between integrations or report/transport kinds: groups=%d", groups)
 	}
 	if err := rows.Close(); err != nil {
 		t.Fatal(err)
