@@ -59,6 +59,11 @@ func executionCall(t *testing.T, server *Server, claims access.Claims, method st
 	return out
 }
 
+func executionHumanReader(server *Server) access.Claims {
+	server.config.TeamMembers = map[string]string{"observer": "reader"}
+	return access.Claims{Subject: "github:observer", Project: server.config.ProjectID, Capabilities: []access.Capability{access.CapabilityRead}, ExpiresAt: time.Now().Add(time.Hour)}
+}
+
 func TestExecutionReadOnlyJobReportsOnlyOwnAuthorityAndPreservesNativeContexts(t *testing.T) {
 	server, repo, claims := executionRouteFixture(t)
 	request := executionRequestFixture()
@@ -81,7 +86,7 @@ func TestExecutionReadOnlyJobReportsOnlyOwnAuthorityAndPreservesNativeContexts(t
 	if out := executionCall(t, server, actions, "POST", body); out.Code != 201 {
 		t.Fatalf("second integration %d %s", out.Code, out.Body.String())
 	}
-	out := executionCall(t, server, claims, "GET", nil)
+	out := executionCall(t, server, executionHumanReader(server), "GET", nil)
 	if out.Code != 200 {
 		t.Fatal(out.Code, out.Body.String())
 	}
@@ -134,8 +139,15 @@ func TestExecutionObservationRejectsForgedFieldsOldTokensAndRevokedMembership(t 
 	if out := executionCall(t, server, old, "POST", raw); out.Code != 401 {
 		t.Fatal("old token fabricated inventory authority")
 	}
-	if out := executionCall(t, server, old, "GET", nil); out.Code != 200 {
-		t.Fatal("old read credential lost inventory read compatibility")
+	if out := executionCall(t, server, old, "GET", nil); out.Code != 401 {
+		t.Fatal("old native credential could read project inventory")
+	}
+	human := executionHumanReader(server)
+	if out := executionCall(t, server, human, "GET", nil); out.Code != 200 {
+		t.Fatal("generic human read credential lost inventory compatibility")
+	}
+	if out := executionCall(t, server, human, http.MethodHead, nil); out.Code != http.StatusOK {
+		t.Fatal("generic human HEAD credential lost inventory compatibility")
 	}
 	membership := &executionMembership{role: "writer"}
 	server.projectAuthority = membership
@@ -146,7 +158,7 @@ func TestExecutionObservationRejectsForgedFieldsOldTokensAndRevokedMembership(t 
 	if out := executionCall(t, server, claims, "POST", raw); out.Code != 401 {
 		t.Fatal("revoked member report accepted")
 	}
-	if out := executionCall(t, server, claims, "GET", nil); out.Code != 401 {
+	if out := executionCall(t, server, human, "GET", nil); out.Code != 401 {
 		t.Fatal("revoked member inventory visible")
 	}
 }
@@ -213,10 +225,20 @@ func TestExecutionStandaloneWritesNeedNoAccountAndStayLocal(t *testing.T) {
 	if out := executionCall(t, server, claims, "POST", body); out.Code != 201 {
 		t.Fatalf("standalone write %d %s", out.Code, out.Body.String())
 	}
-	out := executionCall(t, server, claims, "GET", nil)
+	requestRead := httptest.NewRequest(http.MethodGet, execution.Path, nil)
+	requestRead.Header.Set("Authorization", "Bearer "+server.config.LocalToken)
+	out := httptest.NewRecorder()
+	server.Handler().ServeHTTP(out, requestRead)
 	var inventory execution.Inventory
 	if out.Code != 200 || json.Unmarshal(out.Body.Bytes(), &inventory) != nil || len(inventory.Installations) != 1 || inventory.Installations[0].OwnerID != "local:"+installation {
 		t.Fatalf("standalone dashboard %d %s", out.Code, out.Body.String())
+	}
+	requestHead := httptest.NewRequest(http.MethodHead, execution.Path, nil)
+	requestHead.Header.Set("Authorization", "Bearer "+server.config.LocalToken)
+	head := httptest.NewRecorder()
+	server.Handler().ServeHTTP(head, requestHead)
+	if head.Code != http.StatusOK {
+		t.Fatalf("standalone operator HEAD %d", head.Code)
 	}
 	// A local-only owner context is not hosted authority, even if accidentally
 	// minted with a Team signing key by another local integration.
@@ -226,6 +248,34 @@ func TestExecutionStandaloneWritesNeedNoAccountAndStayLocal(t *testing.T) {
 	}
 	if out = executionCall(t, server, claims, "GET", nil); out.Code != 401 {
 		t.Fatal("hosted inventory accepted standalone owner")
+	}
+}
+
+func TestExecutionNativeScopesCannotReadProjectInventory(t *testing.T) {
+	server, _, claims := executionRouteFixture(t)
+	body, _ := json.Marshal(executionRequestFixture())
+	for _, integration := range []string{"turbo", "actions", "gradle", "nx", "buildkit", "bazel", "retained"} {
+		for _, capability := range []access.Capability{access.CapabilityRead, access.CapabilityWrite, access.CapabilityAdmin} {
+			t.Run(integration+"/"+string(capability), func(t *testing.T) {
+				scoped := claims
+				scoped.Integration = integration
+				scoped.Capabilities = []access.Capability{capability}
+				if integration == "retained" {
+					scoped.RepositoryID, scoped.WorkflowRef, scoped.ActionsRunID = "123", "acme/widget/.github/workflows/ci.yml@refs/heads/main", "456"
+					scoped.RunAttempt, scoped.CheckRunID, scoped.SourceCommit = "1", "456", strings.Repeat("a", 40)
+					scoped.ActionsActorID, scoped.ActionsActor = "42", "observer"
+					scoped.ExpiresAt = time.Now().Add(30 * time.Minute)
+				}
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					if out := executionCall(t, server, scoped, method, nil); out.Code != http.StatusUnauthorized {
+						t.Fatalf("native scope %s inventory: %d %s", method, out.Code, out.Body.String())
+					}
+				}
+				if out := executionCall(t, server, scoped, http.MethodPost, body); out.Code != http.StatusCreated {
+					t.Fatalf("own native report rejected: %d %s", out.Code, out.Body.String())
+				}
+			})
+		}
 	}
 }
 

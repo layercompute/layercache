@@ -32,6 +32,22 @@ the caller open, and a real active-handle Node probe whose parent must exit
 within its deadline. Native requests retain their project and credential scope.
 Reporting uses an allowlisted, bounded payload and never changes artifact keys.
 
+Follow-up review controls preserve the latest resource sample when one native
+action starts after another finishes in the same CI job. Native integration
+credentials can submit their own observations, but cannot read project-wide
+inventory. Generic human, portal and Local operator reads retain current
+membership checks. The portal passed 105 isolated browser scenarios across
+the three engines, including a two-project period-change regression.
+The 30-day inventory window is separate from physical row deletion, which runs
+when a project next accepts a report.
+
+The first hosted macOS Go job failed during concurrent installation identity
+creation with an error that did not distinguish lock opening from acquisition.
+The follow-up retries documented interrupted syscalls and preserves the exact
+stage and errno without private paths. Linux race repetitions and Darwin
+cross-compilation passed; the next normal macOS run must confirm runtime
+behavior. The cause of the original failure is not yet established.
+
 An older backend rejects newly issued execution-aware credentials after
 rollback. Clients must exchange fresh credentials against the older version or
 wait for expiry. The source checks do not establish transparent in-flight token

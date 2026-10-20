@@ -281,7 +281,7 @@ func (r *SQLRepository) Inventory(ctx context.Context, project string, from, to 
 			executions[a.ExecutionID] = observed{entry, contexts}
 		} else {
 			old.authorities = append(old.authorities, contexts...)
-			if old.entry.Phase != "finish" && p.Phase == "finish" {
+			if old.entry.LastObservedAt.Before(entry.LastObservedAt) {
 				old.entry = entry
 			}
 			executions[a.ExecutionID] = old

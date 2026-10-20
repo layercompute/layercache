@@ -17,8 +17,9 @@ func (server *Server) executionRoutes() {
 	server.mux.Handle("GET "+execution.Path, server.executionAccess(http.HandlerFunc(server.executionInventory)))
 }
 
-// Inventory reporting accepts a read-only native credential's own signed
-// execution. It does not turn that credential into artifact write authority.
+// Native credentials can report their own signed execution, without gaining
+// artifact publication or project-wide inventory access. Inventory reads use
+// the generic human/dashboard credential or Local operator credential.
 func (server *Server) executionAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := server.authenticateRequest(r, "")
@@ -27,6 +28,10 @@ func (server *Server) executionAccess(next http.Handler) http.Handler {
 			return
 		}
 		if claims.Execution != nil && strings.HasPrefix(claims.Execution.OwnerID, "local:") && server.config.Role != "local" {
+			server.writeAuthorizationFailure(w, r)
+			return
+		}
+		if r.Method != http.MethodPost && claims.Integration != "" {
 			server.writeAuthorizationFailure(w, r)
 			return
 		}

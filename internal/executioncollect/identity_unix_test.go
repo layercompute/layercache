@@ -5,6 +5,7 @@ package executioncollect
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,6 +103,76 @@ func TestInstallationSeedConcurrentCreationAndPermissions(t *testing.T) {
 	entries, err := os.ReadDir(base)
 	if err != nil || len(entries) != 2 {
 		t.Fatal("identity staging files remained", err)
+	}
+}
+
+func TestIdentityLockRetriesInterruptedSyscalls(t *testing.T) {
+	for _, operation := range []string{"openat", "flock"} {
+		t.Run(operation, func(t *testing.T) {
+			calls := 0
+			err := identityLockSyscall(context.Background(), operation, func() error {
+				calls++
+				if calls < 3 {
+					return unix.EINTR
+				}
+				return nil
+			})
+			if err != nil || calls != 3 {
+				t.Fatalf("interrupted %s did not complete: calls=%d, err=%v", operation, calls, err)
+			}
+		})
+	}
+}
+
+func TestIdentityLockInterruptedRetryHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	err := identityLockSyscall(ctx, "openat", func() error {
+		calls++
+		cancel()
+		return unix.EINTR
+	})
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("canceled interrupted operation retried: calls=%d, err=%v", calls, err)
+	}
+	err = identityLockSyscall(ctx, "flock", func() error {
+		t.Fatal("canceled context reached syscall")
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled context was lost", err)
+	}
+}
+
+func TestIdentityLockPreservesStageAndErrnoWithoutRetry(t *testing.T) {
+	for _, operation := range []string{"openat", "flock"} {
+		for _, failure := range []error{unix.ENOENT, unix.EACCES, unix.ELOOP, unix.EBADF, unix.EWOULDBLOCK} {
+			calls := 0
+			err := identityLockSyscall(context.Background(), operation, func() error {
+				calls++
+				return failure
+			})
+			if !errors.Is(err, failure) || calls != 1 || err.Error() != "client identity lock "+operation+": "+failure.Error() {
+				t.Fatalf("%s failure lost stage/errno or retried: calls=%d, err=%v", operation, calls, err)
+			}
+		}
+	}
+	directory := t.TempDir()
+	base := filepath.Join(directory, "layercache", "client-identity")
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(directory, "private-outside")
+	if err := os.WriteFile(outside, []byte("private-contents"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(base, "identity.lock")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadIdentityAt(context.Background(), directory, "https://cache.example")
+	if !errors.Is(err, unix.ELOOP) || !strings.HasPrefix(err.Error(), "client identity lock openat:") || strings.Contains(err.Error(), directory) || strings.Contains(err.Error(), "private-contents") {
+		t.Fatal("real lock-open failure lost sanitized syscall diagnosis", err)
 	}
 }
 

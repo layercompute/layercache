@@ -135,12 +135,12 @@ export function renderExecutions(projects: ExecutionProject[], now = Date.now())
   if (!supported) {section.append(el('p', 'Execution inventory unavailable. Older clients or servers may not report it; installation and job counts are unknown.', 'execution-empty')); return section;}
   section.append(el('p', `${installations.size} observed client ${installations.size === 1 ? 'installation' : 'installations'} · ${jobs.size} observed CI ${jobs.size === 1 ? 'job' : 'jobs'}`, 'execution-counts'));
   const from = inventories.map(item => date(item.from)).filter(Boolean), to = inventories.map(item => date(item.to)).filter(Boolean);
-  section.append(el('p', `Inventory covers retained observations${from.length && to.length ? ` from ${time(new Date(Math.min(...from)).toISOString())} to ${time(new Date(Math.max(...to)).toISOString())}` : ''}. History is retained for 30 days; these are not lifetime counts. Samples older than 24 hours are marked stale, without an offline inference.`, 'coverage-note'));
+  section.append(el('p', `Inventory covers observations${from.length && to.length ? ` from ${time(new Date(Math.min(...from)).toISOString())} to ${time(new Date(Math.max(...to)).toISOString())}` : ''}. The 30-day inventory window does not give lifetime counts. Samples older than 24 hours are marked stale, without an offline inference.`, 'coverage-note'));
   if (missing || truncated || projects.length > 32) section.append(el('p', `Partial inventory.${missing ? ` ${missing} project ${missing === 1 ? 'inventory is' : 'inventories are'} unavailable.` : ''}${truncated ? ' Stored history or returned rows are limited.' : ''}${projects.length > 32 ? ' Only the first 32 authorized projects are included.' : ''} Counts describe the observations returned.`, 'coverage-note execution-partial'));
   for (const [title, entries, client] of [['Client installations', installations, true], ['CI jobs', jobs, false]] as const) {
     const group = el('section', '', 'execution-group'); group.setAttribute('aria-label', title); group.append(el('h3', title));
     const ordered = Array.from(entries.values()).sort((a, b) => date(b.entry.lastObservedAt) - date(a.entry.lastObservedAt) || a.entry.id.localeCompare(b.entry.id));
-    if (!ordered.length) group.append(el('p', 'No observations returned in this retained period. This does not establish that no other installations or jobs exist.', 'execution-empty'));
+    if (!ordered.length) group.append(el('p', 'No observations returned in this reporting period. This does not establish that no other installations or jobs exist.', 'execution-empty'));
     ordered.slice(0, maximumRows).forEach((observed, index) => group.append(renderEntry(observed, now, client, client && index === 0)));
     if (ordered.length > maximumRows) group.append(el('p', `Showing the newest ${maximumRows} of ${ordered.length} observed ${client ? 'installations' : 'jobs'}.`, 'coverage-note'));
     section.append(group);

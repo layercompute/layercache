@@ -219,6 +219,38 @@ func TestExecutionInventoryAggregatesActivityWithinInstallation(t *testing.T) {
 	}
 }
 
+func TestExecutionInventoryNewerStartSupersedesOlderFinish(t *testing.T) {
+	db, repo := openSQLiteExecution(t, filepath.Join(t.TempDir(), "measurements.db"), nil)
+	defer db.Close()
+	exerciseLatestObservation(t, repo)
+}
+
+func exerciseLatestObservation(t *testing.T, repo *SQLRepository) {
+	t.Helper()
+	authority := Authority{Context: Context{Kind: "githubActions", OwnerID: "github-id:42", ExecutionID: "github-actions:123:456:1:789", RunnerEnvironment: "self-hosted"}, Project: repo.project, RunID: "github-actions:acme/widgets:456:1:check:789", WorkspaceID: "github-actions-check:acme/widgets:789"}
+	now := time.Now().UTC().Add(-time.Minute)
+	finish := reportFixture()
+	finish.InstallationID, finish.Phase = "", "finish"
+	if err := repo.Record(context.Background(), authority, finish, now); err != nil {
+		t.Fatal(err)
+	}
+	start := reportFixture()
+	start.InstallationID = ""
+	start.Sample.Filesystems[0].FreeBytes = number(20)
+	start.Sample.Filesystems[0].AvailableBytes = number(15)
+	later := now.Add(time.Second)
+	if err := repo.Record(context.Background(), authority, start, later); err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := repo.Inventory(context.Background(), repo.project, now.Add(-time.Hour), later.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Jobs) != 1 || inventory.Jobs[0].Phase != "start" || !inventory.Jobs[0].LastObservedAt.Equal(later) || inventory.Jobs[0].Sample.Filesystems[0].FreeBytes == nil || *inventory.Jobs[0].Sample.Filesystems[0].FreeBytes != 20 {
+		t.Fatalf("newer resource snapshot lost to older finish: %+v", inventory)
+	}
+}
+
 func TestExecutionPostgresPersistenceAgainstPostgres(t *testing.T) {
 	source := os.Getenv("LAYERCACHE_MEASUREMENT_POSTGRES_URL")
 	if source == "" {
@@ -272,4 +304,9 @@ func TestExecutionPostgresPersistenceAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	exerciseRepository(t, repo, db)
+	latest, err := NewSQLRepository(context.Background(), db, "postgres", "widgets-latest", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exerciseLatestObservation(t, latest)
 }

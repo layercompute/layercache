@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -49,21 +50,28 @@ func loadIdentitySeed(ctx context.Context, configurationDirectory string) ([32]b
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	lock, err := unix.Openat(directory, "identity.lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	lock := -1
+	err = identityLockSyscall(ctx, "openat", func() error {
+		var openErr error
+		lock, openErr = unix.Openat(directory, "identity.lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+		return openErr
+	})
 	if err != nil {
-		return empty, errors.New("client identity lock unavailable")
+		return empty, err
 	}
 	defer unix.Close(lock)
 	if err := privateIdentityFile(lock, -1); err != nil {
 		return empty, err
 	}
 	for {
-		err = unix.Flock(lock, unix.LOCK_EX|unix.LOCK_NB)
+		err = identityLockSyscall(ctx, "flock", func() error {
+			return unix.Flock(lock, unix.LOCK_EX|unix.LOCK_NB)
+		})
 		if err == nil {
 			break
 		}
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
-			return empty, errors.New("client identity lock unavailable")
+			return empty, err
 		}
 		timer := time.NewTimer(10 * time.Millisecond)
 		select {
@@ -118,6 +126,25 @@ func loadIdentitySeed(ctx context.Context, configurationDirectory string) ([32]b
 		return empty, errors.New("client identity could not be synced")
 	}
 	return seed, nil
+}
+
+func identityLockSyscall(ctx context.Context, operation string, call func() error) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := call()
+		// Like os.OpenFile and cmd/go's filelock implementation, retry only
+		// interrupted syscalls. Keep other errnos and their stage available
+		// for diagnosis without including identity paths or seed contents.
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("client identity lock %s: %w", operation, err)
+		}
+		return nil
+	}
 }
 
 func commitIdentitySeed(directory int, temporary string) error {

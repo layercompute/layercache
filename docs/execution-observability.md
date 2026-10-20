@@ -60,10 +60,13 @@ expanded outputs and provider invoices. Neither filesystem totals nor standalone
 directory sizes establish reclaimable storage.
 
 The inventory shows when the server received an observation. Old samples are
-labeled stale, rather than offline. Observation history has age and count
-bounds, with truncation visible. It is independent of cache eviction and
-retained-artifact obligations. Old servers and clients can omit this inventory;
-an unavailable projection does not become a claim of zero usage.
+labeled stale, rather than offline. It uses a 30-day inventory window and bounded
+execution and installation counts, with truncation visible. Observations older
+than 30 days are pruned when the project next accepts a report. Dormant projects
+can retain older database rows; this is not a deadline for physical deletion.
+These inventory limits are independent of cache eviction and retained-artifact
+obligations. Old servers and clients can omit this inventory; an unavailable
+projection does not become a claim of zero usage.
 
 ## Collection and compatibility
 
