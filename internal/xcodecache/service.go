@@ -32,22 +32,8 @@ const readLeaseNamespace = "xcode-restore"
 const graphLookupTimeout = 10 * time.Second
 const maximumGraphObjects = 100000
 
-// Stats reports protocol reuse, not estimated compilation time saved.
-type Stats struct {
-	CASReads            uint64 `json:"casReads"`
-	CASHits             uint64 `json:"casHits"`
-	CASWrites           uint64 `json:"casWrites"`
-	ActionReads         uint64 `json:"actionReads"`
-	ActionHits          uint64 `json:"actionHits"`
-	ActionWrites        uint64 `json:"actionWrites"`
-	CacheErrors         uint64 `json:"cacheErrors"`
-	GraphChecks         uint64 `json:"graphChecks"`
-	GraphObjectsChecked uint64 `json:"graphObjectsChecked"`
-	GraphLookupNanos    uint64 `json:"graphLookupNanos"`
-	GraphLeaseMisses    uint64 `json:"graphLeaseMisses"`
-}
-
 type Service struct {
+	diagnostics diagnosticCounters
 	cas.UnimplementedCASDBServiceServer
 	kv.UnimplementedKeyValueDBServer
 	store                                                                            *artifact.Store
@@ -71,16 +57,6 @@ func New(store *artifact.Store, project, abi string) (*Service, error) {
 		return nil, err
 	}
 	return &Service{store: store, project: project, compatibility: abi}, nil
-}
-
-func (s *Service) Stats() Stats {
-	return Stats{
-		CASReads: s.casReads.Load(), CASHits: s.casHits.Load(), CASWrites: s.casWrites.Load(),
-		ActionReads: s.actionReads.Load(), ActionHits: s.actionHits.Load(), ActionWrites: s.actionWrites.Load(),
-		CacheErrors: s.cacheErrors.Load(), GraphChecks: s.graphChecks.Load(),
-		GraphObjectsChecked: s.graphObjectsChecked.Load(), GraphLookupNanos: s.graphLookupNanos.Load(),
-		GraphLeaseMisses: s.graphLeaseMisses.Load(),
-	}
 }
 
 func (s *Service) key(kind string, id []byte) artifact.Key {
@@ -220,10 +196,15 @@ func (s *Service) lookupObjectEntry(ctx context.Context, id *cas.CASDataID) (*ca
 // entries. Eviction during the walk becomes a miss at final admission. After
 // admission, every descendant stays available for a fixed two-minute fetch
 // interval. Ordinary CAS reads do not extend an abandoned action's lease.
-func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []GraphReference) error {
+func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []GraphReference) (result error) {
 	started := time.Now()
 	s.graphChecks.Add(1)
-	defer func() { s.graphLookupNanos.Add(uint64(time.Since(started))) }()
+	defer func() {
+		s.graphLookupNanos.Add(uint64(time.Since(started)))
+		if errors.Is(result, context.DeadlineExceeded) {
+			s.diagnostics.graphDeadlineRejects.Add(1)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, graphLookupTimeout)
 	defer cancel()
 	var queue []GraphReference
@@ -231,6 +212,7 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 	enqueue := func(refs []GraphReference) error {
 		for _, ref := range refs {
 			if len(ref.ID) != sha256.Size {
+				s.diagnostics.graphReferenceRejects.Add(1)
 				return artifact.ErrCorrupt
 			}
 			prior, known := discovered[string(ref.ID)]
@@ -238,6 +220,7 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 				continue
 			}
 			if !known && len(discovered) >= maximumGraphObjects {
+				s.diagnostics.graphBudgetRejects.Add(1)
 				return artifact.ErrQuota
 			}
 			discovered[string(ref.ID)] = ref.NativeNode
@@ -262,16 +245,24 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 			continue
 		}
 		if !known && len(seen) >= maximumGraphObjects {
+			s.diagnostics.graphBudgetRejects.Add(1)
 			return artifact.ErrQuota
 		}
 		seen[string(ref.ID)] = ref.NativeNode
 		object, entry, err := s.lookupObjectEntry(ctx, &cas.CASDataID{Id: ref.ID})
 		if err != nil {
+			if errors.Is(err, artifact.ErrNotFound) {
+				s.diagnostics.graphObjectMisses.Add(1)
+			}
+			if errors.Is(err, artifact.ErrCorrupt) {
+				s.diagnostics.graphObjectCorrupt.Add(1)
+			}
 			return err
 		}
 		if !known {
 			s.graphObjectsChecked.Add(1)
 			if entry.Size > s.store.MaxBytes()-size {
+				s.diagnostics.graphBudgetRejects.Add(1)
 				return artifact.ErrQuota
 			}
 			size += entry.Size
@@ -279,6 +270,7 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 		}
 		children, err := ObjectReferences(ref, object)
 		if err != nil {
+			s.diagnostics.graphReferenceRejects.Add(1)
 			return err
 		}
 		if err := enqueue(children); err != nil {
@@ -289,7 +281,11 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 		return nil
 	}
 	owner := sha256.Sum256(append([]byte(s.project+"\x00"+s.compatibility+"\x00"), identity...))
-	return s.store.RetainForRead(ctx, readLeaseNamespace, hex.EncodeToString(owner[:]), entries, artifact.MaximumReadLeaseDuration)
+	err := s.store.RetainForRead(ctx, readLeaseNamespace, hex.EncodeToString(owner[:]), entries, artifact.MaximumReadLeaseDuration)
+	if err != nil {
+		s.diagnostics.graphAdmissionRejects.Add(1)
+	}
+	return err
 }
 
 func (s *Service) Put(ctx context.Context, request *cas.CASPutRequest) (*cas.CASPutResponse, error) {
@@ -339,6 +335,7 @@ func (s *Service) GetValue(ctx context.Context, request *kv.GetValueRequest) (*k
 	id := sha256.Sum256(request.Key)
 	data, err := s.get(ctx, "kv", id[:])
 	if errors.Is(err, artifact.ErrNotFound) || errors.Is(err, artifact.ErrCorrupt) {
+		s.diagnostics.actionLookupMisses.Add(1)
 		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
 	}
 	if err != nil {
@@ -346,10 +343,12 @@ func (s *Service) GetValue(ctx context.Context, request *kv.GetValueRequest) (*k
 	}
 	value := new(kv.Value)
 	if err = proto.Unmarshal(data, value); err != nil {
+		s.diagnostics.actionValueRejects.Add(1)
 		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
 	}
 	refs, err := ActionReferences(value)
 	if err != nil {
+		s.diagnostics.actionReferenceRejects.Add(1)
 		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
 	}
 	_, native := value.Entries["value"]

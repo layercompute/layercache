@@ -110,7 +110,10 @@ func startRuntime(ctx context.Context, options Options, serverOptions ...grpc.Se
 	}
 	parent, err := privateDirectory(filepath.Dir(options.Socket), false)
 	if err != nil {
-		return nil, fmt.Errorf("socket parent must be a private directory: %w", err)
+		if errors.Is(err, errUnsafePath) {
+			return nil, fmt.Errorf("socket parent must be a private directory: %w", err)
+		}
+		return nil, startupFailure{err}
 	}
 	parent.Close()
 	lock, err := lockDirectory(options.DataDir)

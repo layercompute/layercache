@@ -22,11 +22,24 @@ func privateDirectory(path string, create bool) (*os.File, error) {
 	}
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return nil, fmt.Errorf("%w: private directory unavailable", errUnsafePath)
+		// An unavailable directory does not establish an unsafe path. Check the
+		// leaf without opening it so aliases and known ownership/mode violations
+		// remain fatal even when the open itself fails, for example with EACCES.
+		var info unix.Stat_t
+		if statErr := unix.Lstat(path, &info); statErr == nil &&
+			(info.Mode&unix.S_IFMT == unix.S_IFLNK || info.Mode&unix.S_IFMT == unix.S_IFDIR &&
+				(info.Uid != uint32(os.Geteuid()) || info.Mode&0777 != 0700)) {
+			return nil, fmt.Errorf("%w: directory must be current-owned with mode 0700 and not a symlink", errUnsafePath)
+		}
+		return nil, fmt.Errorf("private directory unavailable: %w", err)
 	}
 	file := os.NewFile(uintptr(fd), path)
 	var info unix.Stat_t
-	if err := unix.Fstat(fd, &info); err != nil || info.Uid != uint32(os.Geteuid()) || info.Mode&0777 != 0700 {
+	if err := unix.Fstat(fd, &info); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("inspect private directory: %w", err)
+	}
+	if info.Uid != uint32(os.Geteuid()) || info.Mode&0777 != 0700 {
 		file.Close()
 		return nil, fmt.Errorf("%w: directory must be current-owned with mode 0700", errUnsafePath)
 	}
