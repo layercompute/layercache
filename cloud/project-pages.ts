@@ -1,6 +1,7 @@
 import {bytes, renderCache, renderCost, scopeName, type Estimate, type NativeIntegrationReport} from '../dashboard/cache-view.js';
 import {compilerScopeLabel, formatDuration, integrationLabel, nativeSourceLabel, projectInsights, scopedCompilerRate, type IntegrationInsight} from '../dashboard/insights.js';
 import {renderInfrastructure} from './infrastructure.js';
+import {renderOperations} from '../dashboard/operation-view.js';
 import {el, empty, panel, table} from './ui.js';
 import type {API, Project, ProjectPage, Session, Snapshot, Team} from './types.js';
 
@@ -218,6 +219,7 @@ function overview(snapshot: Snapshot, actions: Actions): HTMLElement {
   if (insights.partial) node.append(el('p', 'Some outcomes have partial or degraded evidence. Totals cover only the reported work.', 'callout'));
   const grid = el('div', '', 'overview-grid'); grid.append(integrations(snapshot, true), savings(snapshot, true)); node.append(grid);
   const lower = el('div', '', 'overview-grid'); lower.append(activity(snapshot), commonHits(snapshot)); node.append(lower);
+  const operations = renderOperations(snapshot.cache.report?.operationReports, snapshot.cache.report?.operationReportsUnavailable, true); if (operations) node.append(operations);
   const footer = el('div', '', 'overview-footer'); footer.append(pageLink('Explore activity', 'activity', actions), pageLink('Manage storage', 'storage', actions)); node.append(footer);
   return node;
 }
@@ -288,6 +290,7 @@ export function renderProjectPage(page: ProjectPage, project: Project, team: Tea
     node.append(activity(snapshot));
     const grid = el('div', '', 'overview-grid'); grid.append(integrations(snapshot), commonHits(snapshot)); node.append(grid);
     const native = nativeOutcomes(snapshot), xcode = xcodeEvidence(snapshot); if (native) node.append(native); if (xcode) node.append(xcode);
+    const operations = renderOperations(report?.operationReports, report?.operationReportsUnavailable); if (operations) node.append(operations);
     const details = panel('Transfer and source details', 'Reported cache activity, excluding unmetered native work');
     details.append(renderCache(scopeName(scope), snapshot.cache, {scope, canPrune: false, showNative: false})); node.append(details);
     node.append(savings(snapshot));

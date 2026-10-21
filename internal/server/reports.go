@@ -44,5 +44,17 @@ func (server *Server) periodReport(writer http.ResponseWriter, request *http.Req
 			report.NativeReports = native
 		}
 	}
+	if server.operationReports != nil {
+		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+		operations, operationErr := server.operationReports.OperationPeriod(ctx, from, to)
+		cancel()
+		if operationErr != nil {
+			report.OperationReportsUnavailable = true
+		} else {
+			report.OperationReports = &operations
+		}
+	} else if server.config.Role != "public" {
+		report.OperationReportsUnavailable = true
+	}
 	writeJSON(writer, http.StatusOK, report)
 }

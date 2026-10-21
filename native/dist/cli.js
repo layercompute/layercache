@@ -1,4 +1,137 @@
 #!/usr/bin/env node
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => function __require() {
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
+};
+var __copyProps = (to2, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to2, key) && key !== except)
+        __defProp(to2, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to2;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
+// node_modules/.pnpm/secure-json-parse@4.1.0/node_modules/secure-json-parse/index.js
+var require_secure_json_parse = __commonJS({
+  "node_modules/.pnpm/secure-json-parse@4.1.0/node_modules/secure-json-parse/index.js"(exports, module) {
+    "use strict";
+    var hasBuffer = typeof Buffer !== "undefined";
+    var suspectProtoRx = /"(?:_|\\u005[Ff])(?:_|\\u005[Ff])(?:p|\\u0070)(?:r|\\u0072)(?:o|\\u006[Ff])(?:t|\\u0074)(?:o|\\u006[Ff])(?:_|\\u005[Ff])(?:_|\\u005[Ff])"\s*:/;
+    var suspectConstructorRx = /"(?:c|\\u0063)(?:o|\\u006[Ff])(?:n|\\u006[Ee])(?:s|\\u0073)(?:t|\\u0074)(?:r|\\u0072)(?:u|\\u0075)(?:c|\\u0063)(?:t|\\u0074)(?:o|\\u006[Ff])(?:r|\\u0072)"\s*:/;
+    function _parse(text, reviver, options) {
+      if (options == null) {
+        if (reviver !== null && typeof reviver === "object") {
+          options = reviver;
+          reviver = void 0;
+        }
+      }
+      if (hasBuffer && Buffer.isBuffer(text)) {
+        text = text.toString();
+      }
+      if (text && text.charCodeAt(0) === 65279) {
+        text = text.slice(1);
+      }
+      const obj = JSON.parse(text, reviver);
+      if (obj === null || typeof obj !== "object") {
+        return obj;
+      }
+      const protoAction = options && options.protoAction || "error";
+      const constructorAction = options && options.constructorAction || "error";
+      if (protoAction === "ignore" && constructorAction === "ignore") {
+        return obj;
+      }
+      if (protoAction !== "ignore" && constructorAction !== "ignore") {
+        if (suspectProtoRx.test(text) === false && suspectConstructorRx.test(text) === false) {
+          return obj;
+        }
+      } else if (protoAction !== "ignore" && constructorAction === "ignore") {
+        if (suspectProtoRx.test(text) === false) {
+          return obj;
+        }
+      } else {
+        if (suspectConstructorRx.test(text) === false) {
+          return obj;
+        }
+      }
+      return filter(obj, { protoAction, constructorAction, safe: options && options.safe });
+    }
+    function filter(obj, { protoAction = "error", constructorAction = "error", safe } = {}) {
+      let next = [obj];
+      while (next.length) {
+        const nodes = next;
+        next = [];
+        for (const node of nodes) {
+          if (protoAction !== "ignore" && Object.prototype.hasOwnProperty.call(node, "__proto__")) {
+            if (safe === true) {
+              return null;
+            } else if (protoAction === "error") {
+              throw new SyntaxError("Object contains forbidden prototype property");
+            }
+            delete node.__proto__;
+          }
+          if (constructorAction !== "ignore" && Object.prototype.hasOwnProperty.call(node, "constructor") && node.constructor !== null && typeof node.constructor === "object" && Object.prototype.hasOwnProperty.call(node.constructor, "prototype")) {
+            if (safe === true) {
+              return null;
+            } else if (constructorAction === "error") {
+              throw new SyntaxError("Object contains forbidden prototype property");
+            }
+            delete node.constructor;
+          }
+          for (const key in node) {
+            const value = node[key];
+            if (value && typeof value === "object") {
+              next.push(value);
+            }
+          }
+        }
+      }
+      return obj;
+    }
+    function parse2(text, reviver, options) {
+      const { stackTraceLimit } = Error;
+      Error.stackTraceLimit = 0;
+      try {
+        return _parse(text, reviver, options);
+      } finally {
+        Error.stackTraceLimit = stackTraceLimit;
+      }
+    }
+    function safeParse(text, reviver) {
+      const { stackTraceLimit } = Error;
+      Error.stackTraceLimit = 0;
+      try {
+        return _parse(text, reviver, { safe: true });
+      } catch {
+        return void 0;
+      } finally {
+        Error.stackTraceLimit = stackTraceLimit;
+      }
+    }
+    module.exports = parse2;
+    module.exports.default = parse2;
+    module.exports.parse = parse2;
+    module.exports.safeParse = safeParse;
+    module.exports.scan = filter;
+  }
+});
 
 // native/client.ts
 import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
@@ -2994,12 +3127,12 @@ var Extractions = class {
     return join(this.root, `${owner}-${createHash("sha256").update(key + digest).digest("hex")}`);
   }
   async usage() {
-    const keys = /* @__PURE__ */ new Set();
+    const keys2 = /* @__PURE__ */ new Set();
     let info;
     try {
       info = await lstat(this.root);
     } catch (error) {
-      if (error.code === "ENOENT") return { bytes: 0, keys };
+      if (error.code === "ENOENT") return { bytes: 0, keys: keys2 };
       throw error;
     }
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Unsafe native extraction directory");
@@ -3026,10 +3159,10 @@ var Extractions = class {
       if (!Number.isSafeInteger(reserved) || reserved <= 0) throw new Error("Invalid native extraction reservation");
       const key = await readFile(join(path, "key"), "utf8");
       if (!/^native-v1-[a-f0-9]{64}$/.test(key)) throw new Error("Invalid native extraction key");
-      keys.add(key);
+      keys2.add(key);
       total += reserved;
     }
-    return { bytes: total, keys };
+    return { bytes: total, keys: keys2 };
   }
   async existing(path) {
     try {
@@ -3080,9 +3213,9 @@ function artifactKey(identity) {
   return `native-v1-${sha(JSON.stringify([identity.project, identity.compatibility, identity.key]))}`;
 }
 async function digestFile(path) {
-  const hash = createHash2("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return hash.digest("hex");
+  const hash2 = createHash2("sha256");
+  for await (const chunk of createReadStream(path)) hash2.update(chunk);
+  return hash2.digest("hex");
 }
 function origin(value) {
   const url = new URL(value);
@@ -3411,7 +3544,7 @@ async function sourceKey(directory) {
   const git = (args) => execFileSync("git", ["-C", directory, ...args], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
   const root = git(["rev-parse", "--show-toplevel"]).trim();
   const files = execFileSync("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
-  const hash = createHash3("sha256").update("layercache-source-v1\0");
+  const hash2 = createHash3("sha256").update("layercache-source-v1\0");
   for (const name of [...new Set(files.split("\0").filter(Boolean))].sort()) {
     const path = join3(root, name);
     let value;
@@ -3424,13 +3557,13 @@ async function sourceKey(directory) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") value = [name, "deleted"];
       else throw error;
     }
-    hash.update(JSON.stringify(value)).update("\0");
+    hash2.update(JSON.stringify(value)).update("\0");
   }
-  return hash.digest("hex");
+  return hash2.digest("hex");
 }
 
 // native/cli.ts
-import { resolve as resolve3 } from "node:path";
+import { resolve as resolve4 } from "node:path";
 
 // native/expo-identity.ts
 import { createHash as createHash4 } from "node:crypto";
@@ -3708,7 +3841,7 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
   let operation;
   let clang = false, swift = false, finished = false, ambiguous = false, unsupported = false, truncated = false;
   let hits = 0, misses = 0, unknown = 0, observed = 0;
-  const finishOperation = () => {
+  const finishOperation2 = () => {
     if (!operation) return;
     if (operation.ambiguous || operation.unsupported) {
       if (operation.kind === "clang-pch") unknown++;
@@ -3723,14 +3856,14 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
   };
   const consume = (line) => {
     if (/^\*\* (?:BUILD|TEST(?: BUILD)?|ARCHIVE) (?:SUCCEEDED|FAILED) \*\*$/.test(line)) {
-      finishOperation();
+      finishOperation2();
       finished = true;
       return;
     }
     if (/^Cache (?:hit|miss)$/.test(line) || /^(?:note|remark): (?:[Ll]ocal cache miss for key:|cache key query (?:hit|miss)\b|cache (?:hit|miss)$)/.test(line)) return;
     const kind = /^(?:CompileC|ProcessPCH|ProcessPCH\+\+|PrecompileModule)\s/.test(line) ? "clang-pch" : /^(?:(?:SwiftCompile|SwiftEmitModule|SwiftGeneratePch|SwiftExplicitDependencyGeneratePcm|SwiftExplicitDependencyCompileModuleFromInterface)(?:\s|$)|SwiftDriver\sCompilation(?:\s|$)|SwiftDriver\sCompilation\sRequirements(?:\s|$))/.test(line) ? "swift" : void 0;
     if (kind) {
-      finishOperation();
+      finishOperation2();
       if (finished) ambiguous = true;
       finished = false;
       if (kind === "clang-pch") clang = true;
@@ -3739,7 +3872,7 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
       return;
     }
     if (/^[A-Z][A-Za-z0-9+]*\s/.test(line)) {
-      finishOperation();
+      finishOperation2();
       return;
     }
     const diagnostic = line.replace(/ \(in target '[^'\r\n]{1,1024}' from project '[^'\r\n]{1,1024}'\)$/, "");
@@ -3820,7 +3953,7 @@ async function parseXcodeCompilerLog(log, format, limits = {}) {
   } catch {
     unsupported = true;
   }
-  finishOperation();
+  finishOperation2();
   const scope = clang && swift ? "mixed" : clang ? "clang-pch" : swift ? "swift" : "unknown";
   if (scope === "unknown") return unknownCompiler(truncated ? "truncated" : unsupported ? "unsupported" : ambiguous ? "ambiguous" : "missing", unsupported ? "unsupported" : "unknown");
   const complete = finished && !truncated && !unsupported && !ambiguous && !swift && unknown === 0 && observed > 0;
@@ -4038,8 +4171,8 @@ function parseGradleInfo(text, { gradleVersion = "9.3.1" } = {}) {
   if (matches === 0) return unavailable("missing-key-lines");
   const ambiguousPaths = /* @__PURE__ */ new Set();
   const duplicateKeys = /* @__PURE__ */ new Set();
-  for (const [path, keys2] of pathKeys) {
-    if (keys2.size > 1 || keys2.size > 0 && ineligiblePaths.has(path)) {
+  for (const [path, keys3] of pathKeys) {
+    if (keys3.size > 1 || keys3.size > 0 && ineligiblePaths.has(path)) {
       ambiguousPaths.add(path);
       ineligiblePaths.delete(path);
     }
@@ -4047,18 +4180,18 @@ function parseGradleInfo(text, { gradleVersion = "9.3.1" } = {}) {
   for (const [key, paths] of keyPaths) {
     if (paths.size > 1) duplicateKeys.add(key);
   }
-  const keys = /* @__PURE__ */ new Map();
+  const keys2 = /* @__PURE__ */ new Map();
   for (const [path, candidates] of pathKeys) {
     if (ambiguousPaths.has(path)) continue;
     const [key] = candidates;
-    if (key) keys.set(path, key);
+    if (key) keys2.set(path, key);
   }
   return {
-    keys,
+    keys: keys2,
     ineligiblePaths,
     ambiguousPaths,
     duplicateKeys,
-    ...keys.size === 0 && ineligiblePaths.size === 0 ? { reason: "ambiguous-key-mapping" } : {}
+    ...keys2.size === 0 && ineligiblePaths.size === 0 ? { reason: "ambiguous-key-mapping" } : {}
   };
 }
 
@@ -4083,11 +4216,11 @@ function iso(value) {
 function workRef(project, compatibility, taskPath) {
   return "sha256:" + createHash6("sha256").update(`layercache-gradle-task-v1\0${project}\0${compatibility}\0${taskPath}`).digest("hex");
 }
-function readBoundedFile(path, maximum, { privateFile = false } = {}) {
+function readBoundedFile(path, maximum, { privateFile: privateFile2 = false } = {}) {
   const descriptor = openSync(path, constants3.O_RDONLY | constants3.O_NOFOLLOW | constants3.O_NONBLOCK);
   try {
     const info = fstatSync(descriptor);
-    if (!info.isFile() || info.nlink !== 1 || info.size > maximum || typeof process.getuid === "function" && info.uid !== process.getuid() || privateFile && (info.mode & 63) !== 0) unavailable2("unsafe-native-report-file");
+    if (!info.isFile() || info.nlink !== 1 || info.size > maximum || typeof process.getuid === "function" && info.uid !== process.getuid() || privateFile2 && (info.mode & 63) !== 0) unavailable2("unsafe-native-report-file");
     const chunks = [];
     let received = 0;
     for (; ; ) {
@@ -4222,9 +4355,377 @@ async function exportGradleReport(args) {
   }
 }
 
+// native/operation.ts
+var import_secure_json_parse = __toESM(require_secure_json_parse(), 1);
+import { createHash as createHash7, randomBytes } from "node:crypto";
+import { execFileSync as execFileSync2 } from "node:child_process";
+import { constants as constants5 } from "node:fs";
+import { lstat as lstat4, open as open4, readFile as readFile3, realpath, rename as rename2, unlink, link } from "node:fs/promises";
+import { hostname } from "node:os";
+import { dirname as dirname2, isAbsolute as isAbsolute2, join as join7, resolve as resolve3 } from "node:path";
+var phases = ["setup", "restore", "work", "close", "publish"];
+var preparations = ["hit", "miss", "mixed", "unavailable", "bypassed", "unknown"];
+var limitMs = 864e5;
+var fileLimit = 32 * 1024;
+var transitionLimit = 128;
+var digestPattern = /^sha256:[a-f0-9]{64}$/;
+var receiptPattern = /^[a-f0-9]{64}$/;
+var idPattern = /^run-[A-Za-z0-9_-]{12,124}$/;
+var errorMessage = "Operation measurement unavailable: invalid, changed or unsafe private measurement state";
+var hash = (value) => createHash7("sha256").update(value).digest("hex");
+var own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+var plain = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+function keys(value, allowed) {
+  if (Object.keys(value).some((key) => !allowed.includes(key))) throw new Error();
+}
+function optionalDigest(value) {
+  return value === void 0 || typeof value === "string" && digestPattern.test(value);
+}
+function integer2(value, max = limitMs) {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= max;
+}
+function ns2(value) {
+  if (typeof value !== "string" || !/^(0|[1-9][0-9]{0,24})$/.test(value)) throw new Error();
+  return BigInt(value);
+}
+var systemClock = {
+  async sample() {
+    let boot;
+    if (process.platform === "linux") boot = await readFile3("/proc/sys/kernel/random/boot_id", "utf8");
+    else if (process.platform === "darwin") boot = execFileSync2("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], { encoding: "utf8", timeout: 2e3, maxBuffer: 1024, stdio: ["ignore", "pipe", "ignore"] });
+    else throw new Error();
+    if (!/^[a-f0-9-]{36}\s*$/i.test(boot)) throw new Error();
+    return { wallMs: Date.now(), monotonicNs: process.hrtime.bigint(), binding: hash(`${process.platform}\0${hostname()}\0${boot.trim()}`) };
+  }
+};
+function context(value) {
+  if (!plain(value)) throw new Error();
+  keys(value, ["version", "project", "integration", "compatibility", "sourceCommit", "sessionId", "workloadDigest", "coverageDigest", "environmentDigest", "otherCachesDigest", "outputState", "cachePolicy", "cachePreparation", "baselineReceiptId"]);
+  if (value.version !== void 0 && value.version !== 1 || typeof value.project !== "string" || value.project.length < 1 || value.project.length > 256 || /[\p{White_Space}\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value.project) || !["gradle", "xcode"].includes(String(value.integration)) || typeof value.compatibility !== "string" || !/^[a-z0-9][a-z0-9_.:+@-]{0,255}$/.test(value.compatibility) || value.sourceCommit !== void 0 && (typeof value.sourceCommit !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value.sourceCommit)) || value.sessionId !== void 0 && (typeof value.sessionId !== "string" || !idPattern.test(value.sessionId)) || typeof value.workloadDigest !== "string" || !digestPattern.test(value.workloadDigest) || typeof value.coverageDigest !== "string" || !digestPattern.test(value.coverageDigest) || !optionalDigest(value.environmentDigest) || !optionalDigest(value.otherCachesDigest) || !["fresh", "incremental", "unknown"].includes(String(value.outputState)) || !["enabled", "bypass", "unknown"].includes(String(value.cachePolicy)) || value.cachePreparation !== void 0 && !preparations.includes(value.cachePreparation) || value.baselineReceiptId !== void 0 && (typeof value.baselineReceiptId !== "string" || !receiptPattern.test(value.baselineReceiptId))) throw new Error();
+  return value;
+}
+function sameInfo(a, b2) {
+  return a.dev === b2.dev && a.ino === b2.ino && a.size === b2.size && a.mtimeMs === b2.mtimeMs && a.ctimeMs === b2.ctimeMs;
+}
+function privateFile(info) {
+  return process.geteuid !== void 0 && info.isFile() && info.uid === process.geteuid() && (info.mode & 4095) === 384 && info.nlink === 1 && info.size > 0 && info.size <= fileLimit;
+}
+async function trustedPath(path) {
+  if (!isAbsolute2(path) || path !== resolve3(path)) throw new Error();
+  const parent = dirname2(path), owner2 = process.geteuid?.();
+  if (owner2 === void 0 || await realpath(parent) !== parent) throw new Error();
+  let current = parent;
+  while (true) {
+    const info = await lstat4(current);
+    if (!info.isDirectory() || ![0, owner2].includes(info.uid)) throw new Error();
+    if (current === parent && (info.uid !== owner2 || (info.mode & 4095) !== 448)) throw new Error();
+    if ((info.mode & 18) !== 0 && !(info.uid === 0 && (info.mode & 512) !== 0)) throw new Error();
+    if (dirname2(current) === current) break;
+    current = dirname2(current);
+  }
+  return path;
+}
+async function readPrivate(path) {
+  await trustedPath(path);
+  let file;
+  try {
+    file = await open4(path, constants5.O_RDONLY | constants5.O_NOFOLLOW | constants5.O_NONBLOCK);
+    const before = await file.stat();
+    if (!privateFile(before)) throw new Error();
+    const buffer = Buffer.alloc(fileLimit + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = await file.read(buffer, length, buffer.length - length, null);
+      if (!read.bytesRead) break;
+      length += read.bytesRead;
+    }
+    const after = await file.stat();
+    if (length !== before.size || length > fileLimit || !privateFile(after) || !sameInfo(before, after) || !sameInfo(after, await lstat4(path))) throw new Error();
+    return { bytes: buffer.toString("utf8", 0, length), info: after };
+  } finally {
+    await file?.close();
+  }
+}
+async function writePrivate(path, bytes, previous) {
+  await trustedPath(path);
+  if (Buffer.byteLength(bytes) > fileLimit) throw new Error();
+  const temporary = join7(dirname2(path), `.measurement-${randomBytes(16).toString("hex")}`);
+  let file;
+  try {
+    file = await open4(temporary, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL | constants5.O_NOFOLLOW, 384);
+    await file.writeFile(bytes);
+    await file.sync();
+    await file.close();
+    file = void 0;
+    if (previous) {
+      const current = await readPrivate(path);
+      if (!sameInfo(previous.info, current.info) || previous.bytes !== current.bytes) throw new Error();
+      await rename2(temporary, path);
+    } else {
+      await link(temporary, path);
+      await unlink(temporary);
+    }
+    const directory = await open4(dirname2(path), constants5.O_RDONLY);
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
+  } finally {
+    await file?.close();
+    await unlink(temporary).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
+}
+async function locked(path, action) {
+  await trustedPath(path);
+  const lockPath = path + ".lock";
+  let lock;
+  let identity;
+  try {
+    lock = await open4(lockPath, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL | constants5.O_NOFOLLOW, 384);
+    await lock.writeFile(randomBytes(16).toString("hex"));
+    identity = await lock.stat();
+    return await action();
+  } finally {
+    await lock?.close();
+    if (identity) {
+      const current = await lstat4(lockPath);
+      if (current.dev !== identity.dev || current.ino !== identity.ino) throw new Error();
+      await unlink(lockPath);
+    }
+  }
+}
+function stateBytes(value) {
+  return JSON.stringify({ version: 1, state: value, sha256: hash(JSON.stringify(value)) }) + "\n";
+}
+function readState(bytes) {
+  const envelope = (0, import_secure_json_parse.parse)(bytes, void 0, { protoAction: "error", constructorAction: "error" });
+  if (!plain(envelope)) throw new Error();
+  keys(envelope, ["version", "state", "sha256"]);
+  if (envelope.version !== 1 || !plain(envelope.state) || envelope.sha256 !== hash(JSON.stringify(envelope.state))) throw new Error();
+  const s3 = envelope.state;
+  keys(s3, ["version", "operationId", "contextPath", "contextSha256", "context", "binding", "startedWallMs", "lastWallMs", "startedNs", "lastNs", "activePhase", "phaseNs", "transitions", "preparation", "report", "reportSha256"]);
+  context(s3.context);
+  if (s3.version !== 1 || typeof s3.operationId !== "string" || !idPattern.test(s3.operationId) || typeof s3.contextPath !== "string" || typeof s3.contextSha256 !== "string" || !receiptPattern.test(s3.contextSha256) || typeof s3.binding !== "string" || !receiptPattern.test(s3.binding) || !integer2(s3.startedWallMs, Number.MAX_SAFE_INTEGER) || !integer2(s3.lastWallMs, Number.MAX_SAFE_INTEGER) || !integer2(s3.transitions, transitionLimit) || !phases.includes(s3.activePhase) || !preparations.includes(s3.preparation) || !plain(s3.phaseNs)) throw new Error();
+  keys(s3.phaseNs, phases);
+  const elapsed = ns2(s3.lastNs) - ns2(s3.startedNs);
+  if (elapsed < 0n || elapsed > BigInt(limitMs) * 1000000n || s3.lastWallMs < s3.startedWallMs || s3.lastWallMs - s3.startedWallMs > limitMs || Math.abs(s3.lastWallMs - s3.startedWallMs - Number(elapsed / 1000000n)) > 5e3) throw new Error();
+  let total = 0n;
+  for (const phase of phases) {
+    if (!own(s3.phaseNs, phase)) throw new Error();
+    if (s3.phaseNs[phase] !== null) total += ns2(s3.phaseNs[phase]);
+  }
+  if (total !== elapsed || s3.phaseNs[s3.activePhase] === null) throw new Error();
+  if (s3.report !== void 0 && (!plain(s3.report) || !["success", "failed", "cancelled", "unknown"].includes(String(s3.report.status)) || s3.reportSha256 !== hash(JSON.stringify(s3.report)))) throw new Error();
+  if (s3.report === void 0 && s3.reportSha256 !== void 0) throw new Error();
+  return s3;
+}
+async function loaded(path, clock) {
+  const previous = await readPrivate(path), state = readState(previous.bytes), source = await readPrivate(state.contextPath);
+  if (hash(source.bytes) !== state.contextSha256 || JSON.stringify(context((0, import_secure_json_parse.parse)(source.bytes, void 0, { protoAction: "error", constructorAction: "error" }))) !== JSON.stringify(state.context)) throw new Error();
+  const now = await clock.sample();
+  if (now.binding !== state.binding || !receiptPattern.test(now.binding) || !integer2(now.wallMs, Number.MAX_SAFE_INTEGER) || now.wallMs < state.lastWallMs || now.monotonicNs < ns2(state.lastNs)) throw new Error();
+  return { state, previous, now };
+}
+function advance(state, now) {
+  const elapsedNs = now.monotonicNs - ns2(state.startedNs), stepNs = now.monotonicNs - ns2(state.lastNs);
+  if (elapsedNs < 0n || elapsedNs > BigInt(limitMs) * 1000000n || now.wallMs < state.lastWallMs || now.wallMs - state.startedWallMs > limitMs || Math.abs(now.wallMs - state.startedWallMs - Number(elapsedNs / 1000000n)) > 5e3 || Math.abs(now.wallMs - state.lastWallMs - Number(stepNs / 1000000n)) > 5e3) throw new Error();
+  state.phaseNs[state.activePhase] = String(ns2(state.phaseNs[state.activePhase]) + stepNs);
+  state.lastNs = String(now.monotonicNs);
+  state.lastWallMs = now.wallMs;
+}
+function preparation(value) {
+  if (!preparations.includes(value)) throw new Error();
+  return value;
+}
+function reportFor(state, status) {
+  const c = state.context;
+  return {
+    version: 1,
+    operationId: state.operationId,
+    ...c.sessionId ? { sessionId: c.sessionId } : {},
+    workloadDigest: c.workloadDigest,
+    coverageDigest: c.coverageDigest,
+    ...c.environmentDigest ? { environmentDigest: c.environmentDigest } : {},
+    ...c.otherCachesDigest ? { otherCachesDigest: c.otherCachesDigest } : {},
+    outputState: c.outputState,
+    cachePolicy: c.cachePolicy,
+    cachePreparation: state.preparation,
+    ...c.baselineReceiptId ? { baselineReceiptId: c.baselineReceiptId } : {},
+    startedAt: new Date(state.startedWallMs).toISOString(),
+    finishedAt: new Date(state.lastWallMs).toISOString(),
+    elapsedMs: Number((ns2(state.lastNs) - ns2(state.startedNs)) / 1000000n),
+    status,
+    phaseTimingMs: Object.fromEntries(phases.map((phase) => [phase, state.phaseNs[phase] === null ? null : Number(ns2(state.phaseNs[phase]) / 1000000n)]))
+  };
+}
+async function startOperation(contextPath, statePath, clock = systemClock) {
+  try {
+    return await locked(statePath, async () => {
+      if (contextPath === statePath || contextPath === statePath + ".lock") throw new Error();
+      const source = await readPrivate(contextPath), declared = context((0, import_secure_json_parse.parse)(source.bytes, void 0, { protoAction: "error", constructorAction: "error" })), now = await clock.sample();
+      if (!receiptPattern.test(now.binding) || !integer2(now.wallMs, Number.MAX_SAFE_INTEGER) || now.monotonicNs < 0n) throw new Error();
+      const operationId = "run-" + randomBytes(18).toString("base64url");
+      await writePrivate(statePath, stateBytes({
+        version: 1,
+        operationId,
+        contextPath,
+        contextSha256: hash(source.bytes),
+        context: declared,
+        binding: now.binding,
+        startedWallMs: now.wallMs,
+        lastWallMs: now.wallMs,
+        startedNs: String(now.monotonicNs),
+        lastNs: String(now.monotonicNs),
+        activePhase: "setup",
+        phaseNs: { setup: "0", restore: null, work: null, close: null, publish: null },
+        transitions: 0,
+        preparation: declared.cachePreparation ?? "unknown"
+      }));
+      return operationId;
+    });
+  } catch {
+    throw new Error(errorMessage);
+  }
+}
+async function phaseOperation(statePath, phase, cachePreparation, clock = systemClock) {
+  try {
+    return await locked(statePath, async () => {
+      if (!phases.includes(phase)) throw new Error();
+      const { state, previous, now } = await loaded(statePath, clock);
+      if (state.report || state.transitions >= transitionLimit) throw new Error();
+      advance(state, now);
+      state.activePhase = phase;
+      state.phaseNs[phase] ??= "0";
+      state.transitions++;
+      if (cachePreparation !== void 0) state.preparation = preparation(cachePreparation);
+      await writePrivate(statePath, stateBytes(state), previous);
+      return state.operationId;
+    });
+  } catch {
+    throw new Error(errorMessage);
+  }
+}
+async function finishOperation(statePath, status, outputPath, cachePreparation, clock = systemClock) {
+  try {
+    return await locked(statePath, async () => {
+      if (!["success", "failed", "cancelled", "unknown"].includes(status) || outputPath === statePath || outputPath === statePath + ".lock") throw new Error();
+      const { state, previous, now } = await loaded(statePath, clock);
+      if (outputPath === state.contextPath) throw new Error();
+      if (state.report) {
+        if (state.report.status !== status || cachePreparation !== void 0 && state.preparation !== preparation(cachePreparation) || JSON.stringify(reportFor(state, status)) !== JSON.stringify(state.report)) throw new Error();
+      } else {
+        advance(state, now);
+        if (cachePreparation !== void 0) state.preparation = preparation(cachePreparation);
+        state.report = reportFor(state, status);
+        state.reportSha256 = hash(JSON.stringify(state.report));
+        await writePrivate(statePath, stateBytes(state), previous);
+      }
+      const bytes = JSON.stringify(state.report) + "\n";
+      try {
+        await writePrivate(outputPath, bytes);
+      } catch (error) {
+        const output = await readPrivate(outputPath);
+        if (output.bytes !== bytes) throw error;
+      }
+      return state.report;
+    });
+  } catch {
+    throw new Error(errorMessage);
+  }
+}
+async function compareOperations(baselinePath, candidatePath, clock = systemClock) {
+  try {
+    const baseline = (await loaded(baselinePath, clock)).state, candidate = (await loaded(candidatePath, clock)).state;
+    if (!baseline.report || !candidate.report || JSON.stringify(reportFor(baseline, baseline.report.status)) !== JSON.stringify(baseline.report) || JSON.stringify(reportFor(candidate, candidate.report.status)) !== JSON.stringify(candidate.report)) throw new Error();
+    const a = baseline.context, b2 = candidate.context, x = baseline.report, y = candidate.report, reasons = [];
+    if (a.project !== b2.project) reasons.push("projectMismatch");
+    if (a.integration !== b2.integration) reasons.push("integrationMismatch");
+    if (a.compatibility !== b2.compatibility) reasons.push("profileMismatch");
+    if (!a.sourceCommit || !b2.sourceCommit) reasons.push("sourceMissing");
+    else if (a.sourceCommit !== b2.sourceCommit) reasons.push("sourceMismatch");
+    if (x.status !== "success" || y.status !== "success") reasons.push("unsuccessfulOperation");
+    if (!x.sessionId || !y.sessionId) reasons.push("sessionMissing");
+    else if (x.sessionId !== y.sessionId) reasons.push("sessionMismatch");
+    if (x.workloadDigest !== y.workloadDigest) reasons.push("workloadMismatch");
+    if (x.coverageDigest !== y.coverageDigest) reasons.push("coverageMismatch");
+    if (!x.environmentDigest || !y.environmentDigest) reasons.push("environmentMissing");
+    else if (x.environmentDigest !== y.environmentDigest) reasons.push("environmentMismatch");
+    if (!x.otherCachesDigest || !y.otherCachesDigest) reasons.push("otherCachesMissing");
+    else if (x.otherCachesDigest !== y.otherCachesDigest) reasons.push("otherCachesMismatch");
+    if (x.outputState !== "fresh" || y.outputState !== "fresh") reasons.push("outputNotFresh");
+    if (Date.parse(x.finishedAt) > Date.parse(y.startedAt) || x.operationId === y.operationId) reasons.push("operationOrderMismatch");
+    if (Date.parse(y.startedAt) - Date.parse(x.finishedAt) > limitMs) reasons.push("comparisonWindowExceeded");
+    let method = x.cachePolicy === "bypass" && x.cachePreparation === "bypassed" && y.cachePolicy === "enabled" ? "bypassToEnabled" : x.cachePolicy === "enabled" && x.cachePreparation === "miss" && y.cachePolicy === "enabled" && ["hit", "mixed"].includes(y.cachePreparation) ? "coldToWarm" : "unmatched";
+    if (method === "unmatched") reasons.push("cachePolicyMismatch");
+    if (reasons.length) method = "unmatched";
+    const fullPhases = (report) => phases.every((phase) => report.phaseTimingMs[phase] !== null) && report.elapsedMs - phases.reduce((sum, phase) => sum + report.phaseTimingMs[phase], 0) <= 5;
+    const complete = fullPhases(x) && fullPhases(y);
+    const overhead = (report) => phases.filter((phase) => phase !== "work").reduce((sum, phase) => sum + report.phaseTimingMs[phase], 0);
+    return {
+      selection: "explicitLocalPair",
+      localBaselineReportSHA256: baseline.reportSha256,
+      localCandidateReportSHA256: candidate.reportSha256,
+      method,
+      matched: reasons.length === 0,
+      reasons,
+      baselineElapsedMs: x.elapsedMs,
+      candidateElapsedMs: y.elapsedMs,
+      observedDifferenceMs: reasons.length ? null : x.elapsedMs - y.elapsedMs,
+      observedWorkDifferenceMs: reasons.length || x.phaseTimingMs.work === null || y.phaseTimingMs.work === null ? null : x.phaseTimingMs.work - y.phaseTimingMs.work,
+      observedOverheadDifferenceMs: reasons.length || !complete ? null : overhead(x) - overhead(y),
+      assumptions: ["callerDeclaredContext", "sameSessionWarmthMayDiffer", "observedNotCausal", "cpuAndCostUnknown"]
+    };
+  } catch {
+    throw new Error(errorMessage);
+  }
+}
+async function measureOperationCLI(operation, args) {
+  const allowed = {
+    "measure-start": ["--context-file", "--state-file"],
+    "measure-phase": ["--state-file", "--phase", "--cache-preparation"],
+    "measure-finish": ["--state-file", "--status", "--output", "--cache-preparation"],
+    "measure-compare": ["--baseline-state", "--candidate-state", "--json"]
+  };
+  const flags = allowed[operation];
+  if (!flags) throw new Error("Invalid operation measurement arguments");
+  const values = /* @__PURE__ */ new Map();
+  for (let index = 0; index < args.length; index++) {
+    const flag = args[index];
+    if (!flag || !flags.includes(flag) || values.has(flag)) throw new Error("Invalid operation measurement arguments");
+    if (flag === "--json") {
+      values.set(flag, "true");
+      continue;
+    }
+    const value = args[++index];
+    if (!value || value.startsWith("--")) throw new Error("Invalid operation measurement arguments");
+    values.set(flag, value);
+  }
+  const required = (flag) => {
+    const value = values.get(flag);
+    if (!value) throw new Error("Invalid operation measurement arguments");
+    return value;
+  };
+  if (operation === "measure-start") console.log(JSON.stringify({ version: 1, operationId: await startOperation(required("--context-file"), required("--state-file")), state: "open" }));
+  else if (operation === "measure-phase") console.log(JSON.stringify({ version: 1, operationId: await phaseOperation(required("--state-file"), required("--phase"), values.get("--cache-preparation")), state: "open" }));
+  else if (operation === "measure-finish") {
+    const report = await finishOperation(required("--state-file"), required("--status"), required("--output"), values.get("--cache-preparation"));
+    console.log(JSON.stringify({ version: 1, operationId: report.operationId, state: "sealed" }));
+  } else {
+    const result = await compareOperations(required("--baseline-state"), required("--candidate-state"));
+    console.log(values.has("--json") ? JSON.stringify(result) : result.matched ? `Observed operation difference: ${result.observedDifferenceMs} ms (${result.method}); CPU and cost unknown` : `Operation comparison unavailable: ${result.reasons.join(", ")}`);
+  }
+}
+
 // native/cli.ts
 async function main() {
   const [operation, ...args] = process.argv.slice(2);
+  if (operation?.startsWith("measure-")) {
+    await measureOperationCLI(operation, args);
+    return;
+  }
   if (operation === "xcode-report") {
     await exportXcodeReport(args);
     return;
@@ -4250,7 +4751,7 @@ async function main() {
     values[flag] = value;
   }
   if (operation === "expo-key") {
-    const projectRoot = resolve3(values["--root"] ?? ".");
+    const projectRoot = resolve4(values["--root"] ?? ".");
     const target = values["--target"] ? parseSimulatorTarget(values["--target"]) : await detectSimulatorTarget(projectRoot);
     console.log(JSON.stringify(await planExpoSimulator({ projectRoot, project: values["--project"] ?? "", app: values["--app"] ?? "", scheme: values["--scheme"], target })));
     return;

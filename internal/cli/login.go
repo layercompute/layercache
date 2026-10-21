@@ -32,6 +32,7 @@ type capabilityExchange struct {
 	WorkspaceID           string                `json:"workspaceId,omitempty"`
 	NativeTokens          map[string]string     `json:"nativeTokens,omitempty"`
 	NativeReports         *nativeReportFeature  `json:"nativeReports,omitempty"`
+	OperationReports      *nativeReportFeature  `json:"operationReports,omitempty"`
 	ExecutionObservations *execution.Capability `json:"executionObservations,omitempty"`
 }
 

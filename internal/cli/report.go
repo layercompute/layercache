@@ -20,6 +20,9 @@ func runReport(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if len(args) > 0 && args[0] == "native" {
 		return runNativeReport(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "operation" {
+		return runOperationReport(ctx, args[1:], stdout, stderr)
+	}
 	defaultPath, err := config.DefaultPath()
 	if err != nil {
 		return err
