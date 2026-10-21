@@ -70,6 +70,7 @@ type Server struct {
 	actionsHandler    *actionscache.Handler
 	measurements      measurementRepository
 	nativeReports     measurement.NativeRepository
+	operationReports  measurement.OperationRepository
 	executions        execution.Repository
 	uploads           *uploadqueue.Queue
 	uploadContext     context.Context
@@ -214,6 +215,13 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 	}); ok {
 		reportContext, cancelReports := context.WithTimeout(ctx, 3*time.Second)
 		server.nativeReports, _ = provider.NativeRepository(reportContext, cfg.ProjectID)
+		cancelReports()
+	}
+	if provider, ok := server.measurements.(interface {
+		OperationRepository(context.Context, string) (measurement.OperationRepository, error)
+	}); ok {
+		reportContext, cancelReports := context.WithTimeout(ctx, 3*time.Second)
+		server.operationReports, _ = provider.OperationRepository(reportContext, cfg.ProjectID)
 		cancelReports()
 	}
 	if cfg.Role == "local" && cfg.TeamURL != "" && cfg.TeamToken != "" {
@@ -420,6 +428,7 @@ func (server *Server) routes() {
 	server.mux.Handle("GET /v1/reports/{runID}", server.requireToken(http.HandlerFunc(server.runReport)))
 	server.mux.Handle("POST /v1/reports/turbo", server.requireToken(http.HandlerFunc(server.reconcileTurboReport)))
 	server.mux.Handle("POST "+measurement.NativePath, server.nativeReportAccess(http.HandlerFunc(server.recordNativeReport)))
+	server.mux.Handle("POST "+measurement.OperationPath, server.nativeReportAccess(http.HandlerFunc(server.recordOperationReport)))
 	server.executionRoutes()
 	server.mux.Handle("POST /v1/sync/turbo", server.requireToken(http.HandlerFunc(server.syncTurbo)))
 	server.cloudRoutes()
@@ -470,6 +479,9 @@ func (server *Server) status(writer http.ResponseWriter, request *http.Request) 
 	}
 	if feature := server.nativeReportCapability(); feature != nil {
 		result["nativeReports"] = feature
+	}
+	if feature := server.operationReportCapability(); feature != nil {
+		result["operationReports"] = feature
 	}
 	result["metadataBytes"] = stats.MetadataBytes
 	claims, authenticated := access.ClaimsFromContext(request.Context())

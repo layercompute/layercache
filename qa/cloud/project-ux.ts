@@ -9,6 +9,8 @@ import path from 'node:path';
 import type {ExecutionEntry, ExecutionInventory} from '../../dashboard/execution-view.js';
 import type {Snapshot} from '../../cloud/types.js';
 import type {NativeIntegrationReport} from '../../dashboard/cache-view.js';
+import {operationFixture} from '../dashboard/operation-fixtures.ts';
+import type {OperationPeriodReport} from '../../dashboard/operation-view.js';
 
 declare global {interface Window {uxDocument?: string; uxSidebar?: Element | null; uxPeriod?: Element | null;}}
 const engine=process.env.DASHBOARD_BROWSER||'chromium';
@@ -37,6 +39,7 @@ assert.ok(baseSnapshot.cache.report);baseSnapshot.cache.report.nativeReports=[gr
 let origin='';
 const snapshots:{project:string;period:string;method:string}[]=[],held:{response:ServerResponse;period:string}[]=[];
 let hold=false,capacityBytes=5*1024**3,failNextCapacityWrite=false,capacityCanChange=true,largeInfrastructure=false,signedIn=true,alternateAccount=false,completeCompiler=false,mixedTimedTurbo=false,nativeReportsUnavailable=false;
+let operationReports:OperationPeriodReport|undefined,operationReportsUnavailable=false;
 const capacityChanges:unknown[]=[],mutations:{method:string;path:string}[]=[];
 function capacity(){return {state:'connected',maxBytes:capacityBytes,usedBytes:512*1024**2,reservedBytes:0,retainedBytes:0,retainedStagingBytes:0,softTargetBytes:1024**3,minimumBytes:1024**3,ceilingBytes:5*1024**3,canChange:capacityCanChange,limitSource:'operator',...(capacityCanChange?{}:{reason:'An administrator can adjust this limit.'})};}
 function json(response:ServerResponse,value:unknown,status=200){if(response.destroyed)return;response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(value));}
@@ -58,6 +61,8 @@ function snapshot(period:string){
  }
  if(mixedTimedTurbo){report.eligible=4;report.hits=2;report.misses=2;report.runs=1;report.integrations=[{integration:'turbo',eligible:4,hits:2,grossAvoidedTaskTime:{milliseconds:180000,known:2,total:2,confidence:'high'}}];report.grossAvoidedTaskTime={milliseconds:180000,known:2,total:2,confidence:'high'};report.netEstimatedBuildTimeSaved={milliseconds:120000,known:1,total:1,confidence:'high'};report.nativeReports=[structuredClone(xcode)];}
  if(nativeReportsUnavailable){report.nativeReportsUnavailable=true;delete report.nativeReports;}
+ if(operationReports)report.operationReports=structuredClone(operationReports);
+ if(operationReportsUnavailable){report.operationReportsUnavailable=true;delete report.operationReports;}
  return data;
 }
 const server=createServer(async(request,response)=>{
@@ -89,15 +94,31 @@ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const add
 const browser=await {chromium,firefox,webkit}[engine].launch({headless:true,...(engine==='chromium'?{executablePath:process.env.CHROMIUM_PATH||undefined,args:['--no-sandbox']}:{})});
 const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
 const errors:string[]=[],results:{name:string;passed:boolean;error?:string}[]=[];
-const nativeFailureOnly=process.env.QA_PROJECT_NATIVE_FAILURE_ONLY==='1',focusedChecks=new Set(['mixed timed Turbo and Xcode evidence preserves the scoped generic build estimate','native reporting outage preserves generic metrics without claiming absent native use','no browser exceptions']);
+const nativeFailureOnly=process.env.QA_PROJECT_NATIVE_FAILURE_ONLY==='1',operationsOnly=process.env.QA_PROJECT_OPERATIONS_ONLY==='1',focusedChecks=new Set(operationsOnly?['operation overview stays concise and Activity shows the same complete pair once','operation refresh preserves the page and unknown phases without savings credit','operation reporting outage preserves native and generic metrics','no browser exceptions']:['mixed timed Turbo and Xcode evidence preserves the scoped generic build estimate','native reporting outage preserves generic metrics without claiming absent native use','no browser exceptions']);
 page.on('pageerror',error=>errors.push(error.message));
 await page.addInitScript(()=>{window.uxDocument=crypto.randomUUID();});
-async function check(name:string,run:()=>Promise<void>){if(nativeFailureOnly&&!focusedChecks.has(name))return;try{await run();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error instanceof Error?error.message:String(error)});await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true});throw error;}}
+async function check(name:string,run:()=>Promise<void>){if((nativeFailureOnly||operationsOnly)&&!focusedChecks.has(name))return;try{await run();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error instanceof Error?error.message:String(error)});await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true});throw error;}}
 const summary=()=>page.getByRole('region',{name:'Project overview',exact:true});
 const metric=(name:string)=>summary().locator(`[data-metric="${name}"] .stat-value`);
 async function navigate(name:'Overview'|'Activity'|'Infrastructure'|'Storage'|'Settings'){await page.getByRole('navigation',{name:'Project pages'}).getByRole('link',{name,exact:true}).click();await page.waitForURL(url=>url.pathname.endsWith('/'+name.toLowerCase()));}
 try{
- if(nativeFailureOnly){await page.goto(origin+'/projects/phone/overview?period=7d');await summary().waitFor();}
+ if(nativeFailureOnly||operationsOnly){await page.goto(origin+'/projects/phone/overview?period=7d');await summary().waitFor();}
+ await check('operation overview stays concise and Activity shows the same complete pair once',async()=>{
+  operationReports=operationFixture();await page.goto(origin+'/projects/phone/overview?period=7d');await summary().waitFor();
+  const overview=summary().getByRole('region',{name:'Operation timings',exact:true});await expect(overview).toBeVisible();assert.equal(await overview.locator('.operation-observation').count(),0);assert.match(await overview.innerText(),/Latest Gradle operation[\s\S]*1\.3 min[\s\S]*20\.0 s · shorter/);await expect(metric('hit-rate')).toHaveText('80%');
+  await navigate('Activity');await expect(page.getByRole('region',{name:'Operation timings',exact:true})).toHaveCount(1);const section=page.getByRole('region',{name:'Operation timings',exact:true});await section.locator('.operation-observation summary').first().click();assert.match(await section.innerText(),/Baseline complete operation[\s\S]*1\.7 min[\s\S]*Current complete operation[\s\S]*1\.3 min/);
+  assert.match(await section.innerText(),/Observed elapsed difference[\s\S]*20\.0 s · shorter/);assert.match(await page.getByRole('region',{name:'Gradle task outcomes',exact:true}).innerText(),/3 native cache hits/);
+ });
+ await check('operation refresh preserves the page and unknown phases without savings credit',async()=>{
+  assert.ok(operationReports);operationReports.observations[0]!.report.phaseTimingMs.restore=null;operationReports.comparisons[0]!.observedOverheadDifferenceMs=null;
+  const documentId=await page.evaluate(()=>window.uxDocument);await page.getByRole('button',{name:'Refresh',exact:true}).click();await page.locator('.page-content:not([aria-busy="true"])').waitFor();const section=page.getByRole('region',{name:'Operation timings',exact:true});await expect(section.locator('.operation-observation').first().locator('summary')).toContainText('20.0 s · shorter');await section.locator('.operation-observation summary').first().click();
+  assert.deepEqual(await section.getByRole('table',{name:'Operation phase timings'}).first().locator('tr[data-phase="restore"] td').allTextContents(),['0.0 s','Unknown']);assert.match(await section.innerText(),/Observed cache-phase difference[\s\S]*Unknown/);assert.equal(await page.evaluate(()=>window.uxDocument),documentId);
+  assert.match(await section.locator('.operation-no-total').innerText(),/Pairs are not added together/);for(const width of [320,1440]){await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+ });
+ await check('operation reporting outage preserves native and generic metrics',async()=>{
+  operationReportsUnavailable=true;await navigate('Overview');await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(summary().getByRole('region',{name:'Operation timings',exact:true})).toContainText('Operation reporting unavailable');await expect(metric('hit-rate')).toHaveText('80%');await expect(metric('time-saved')).toHaveText('−0.5 s');
+  await navigate('Activity');await expect(page.getByRole('region',{name:'Operation timings',exact:true})).toContainText('Other cache and native results remain available');assert.equal(await page.getByRole('region',{name:'Gradle task outcomes',exact:true}).count(),1);operationReports=undefined;operationReportsUnavailable=false;
+ });
  await check('entry opens its default project with cache metrics above setup and inventory',async()=>{
   await page.goto(origin);await summary().waitFor();await expect(metric('hit-rate')).toHaveText('70%');
   assert.equal(new URL(page.url()).pathname,'/projects/phone/overview');
@@ -346,4 +367,4 @@ try{
  });
  await check('no browser exceptions',async()=>assert.deepEqual(errors,[]));
 }catch(error){console.error(error);process.exitCode=1;}
-finally{if(nativeFailureOnly&&results.length!==focusedChecks.size){results.push({name:'focused native failure checks completed',passed:false,error:'Unexpected focused check count'});process.exitCode=1;}writeFileSync(path.join(output,'results.json'),JSON.stringify({browser:engine,results,pageErrors:errors,syntheticAPIs:true},null,2)+'\n');console.log(JSON.stringify({browser:engine,projectUXPassed:results.filter(result=>result.passed).length,projectUXTotal:results.length,output}));await context.close();await browser.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+finally{if((nativeFailureOnly||operationsOnly)&&results.length!==focusedChecks.size){results.push({name:'focused presentation checks completed',passed:false,error:'Unexpected focused check count'});process.exitCode=1;}writeFileSync(path.join(output,'results.json'),JSON.stringify({browser:engine,results,pageErrors:errors,syntheticAPIs:true},null,2)+'\n');console.log(JSON.stringify({browser:engine,projectUXPassed:results.filter(result=>result.passed).length,projectUXTotal:results.length,output}));await context.close();await browser.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}

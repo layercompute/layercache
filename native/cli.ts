@@ -7,11 +7,13 @@ import { authenticateSnapshot, SnapshotAuthenticationError } from './snapshot-au
 import { snapshotArchiveErrorMessage } from './snapshot-error.ts';
 import { exportXcodeReport } from './xcode-report.ts';
 import { exportGradleReport } from './gradle-report.ts';
+import { measureOperationCLI } from './operation.ts';
 
 // Deliberately uses the same key and transport as CI. No checkout path or runner
 // identity is included, so compatible worktrees can share outputs.
 async function main(): Promise<void> {
   const [operation, ...args] = process.argv.slice(2);
+  if (operation?.startsWith('measure-')) {await measureOperationCLI(operation, args); return;}
   if (operation === 'xcode-report') {await exportXcodeReport(args); return;}
   if (operation === 'gradle-report') {await exportGradleReport(args); return;}
   if (operation === 'key' && args.length === 0) { console.log(await sourceKey(process.cwd())); return; }

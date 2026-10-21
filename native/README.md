@@ -28,6 +28,12 @@ See [native measurement](../docs/native-metering.md) for completed task/compiler
 offline report export and import, hit-rate coverage, and the limits of elapsed,
 compute and cost estimates. Native cache transport alone is insufficient.
 
+For a complete prepare/work/update interval, use the offline `measure-start`,
+`measure-phase` and `measure-finish` commands. `measure-compare` selects two
+sealed observations explicitly. See the [operation workflow](../docs/operation-measurement.md)
+for context, phase boundaries and hosted import. It never runs a build twice
+or turns a wall-time difference into measured CPU or billed savings.
+
 ## Expo development clients
 
 Set the build cache provider in app configuration:

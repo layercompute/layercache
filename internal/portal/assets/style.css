@@ -484,3 +484,25 @@ input[type="checkbox"] { width: 16px; min-height: 16px; accent-color: var(--teal
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* Complete operation observations stay separate from native outcomes and savings. */
+.operation-results { min-width: 0; margin-top: 22px; padding: 20px; border: 1px solid #dde5df; border-radius: 10px; background: #fff; }
+.operation-results > h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.operation-observation { min-width: 0; padding: 15px 0; border-top: 1px solid #edf1f3; }
+.operation-observation > summary { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 18px; list-style-position: inside; }
+.operation-result { color: #405966; font-size: 12px; font-variant-numeric: tabular-nums; }
+.operation-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.operation-metrics > div { min-width: 0; }
+.operation-metrics dt { color: #61717d; font-size: 11px; line-height: 1.6; }
+.operation-metrics dd { margin: 6px 0 0; color: #405966; font-size: 15px; line-height: 1.6; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.operation-method, .operation-latest { color: #405966; font-size: 12px; line-height: 1.7; }
+.operation-reasons { padding-left: 18px; color: #61717d; font-size: 12px; line-height: 1.7; }
+.operation-phases { width: 100%; min-width: 280px; border-collapse: collapse; font-size: 12px; text-align: left; }
+.operation-phases th, .operation-phases td { padding: 10px 6px; border-bottom: 1px solid #edf1f3; font-weight: 400; }
+.operation-phases thead th { color: #61717d; font-size: 11px; }
+.operation-phases td, .operation-phases thead th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.operation-overhead th, .operation-overhead td { font-weight: 600; }
+.operation-identity { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.operation-unavailable, .operation-truncated { border-left: 3px solid #b89d6a; padding-left: 10px; }
+.operation-compact .operation-latest { margin-bottom: 0; }
+@media (max-width: 600px) { .operation-results { padding: 16px; } .operation-metrics { grid-template-columns: 1fr; gap: 12px; } .operation-metrics dd { margin-top: 3px; } }

@@ -161,6 +161,9 @@ func (server *Server) githubCapabilityExchange(writer http.ResponseWriter, reque
 		if feature := server.nativeReportCapability(); feature != nil {
 			result["nativeReports"] = feature
 		}
+		if feature := server.operationReportCapability(); feature != nil {
+			result["operationReports"] = feature
+		}
 	}
 	if server.config.Role == "team" {
 		result["teamToken"] = token
@@ -315,6 +318,9 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	if claims.Integration == "gradle" {
 		if feature := server.nativeReportCapability(); feature != nil {
 			result["nativeReports"] = feature
+		}
+		if feature := server.operationReportCapability(); feature != nil {
+			result["operationReports"] = feature
 		}
 	}
 	writeJSON(writer, http.StatusOK, result)

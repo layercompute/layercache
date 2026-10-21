@@ -29,7 +29,7 @@ try {
   browser=spawn(process.execPath,[resolve('qa/dashboard/browser.ts')],{env:{...process.env,DASHBOARD_LINK_FILE:links.linkFile,DASHBOARD_MAINTENANCE_LINK_FILE:links.maintenanceLinkFile},stdio:'inherit'});
   const code=await new Promise<number>((resolveExit,reject)=>{browser!.once('error',reject);browser!.once('exit',code=>resolveExit(code??1));});
   process.exitCode=code;
-  if(code===0&&process.env.QA_DASHBOARD_NATIVE_ONLY!=='1'){
+  if(code===0&&process.env.QA_DASHBOARD_NATIVE_ONLY!=='1'&&process.env.QA_DASHBOARD_OPERATIONS_ONLY!=='1'){
     browser=spawn(process.execPath,[resolve('qa/executions/run.mjs')],{env:{...process.env,EXECUTION_QA_BROWSERS:process.env.DASHBOARD_BROWSER||'chromium',...(process.env.QA_OUTPUT?{QA_OUTPUT:resolve(process.env.QA_OUTPUT,'executions')}:{})},stdio:'inherit'});
     process.exitCode=await new Promise<number>((resolveExit,reject)=>{browser!.once('error',reject);browser!.once('exit',code=>resolveExit(code??1));});
   }

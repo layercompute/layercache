@@ -15,6 +15,26 @@ workspaces and filesystem migration are outside the current product scope.
 
 ## P0: reliable compute and storage reuse
 
+- [ ] **Repair native cache preparation and measure complete operations.**
+  Owner: LayerCache measurement/native integrations, coordinated with the
+  application CI owners. October 21 user outcome: prepare the cache, run the
+  intended build or tests once, then close and update the cache. Record the
+  complete monotonic elapsed interval and disjoint setup, restore, work, close
+  and publication phases. Compare an explicitly selected equivalent bypass or
+  cold observation with a cache-enabled observation, retaining negative results
+  and unmatched-context reasons. Keep task/compiler counts separate and do not
+  infer CPU consumption or billed savings from elapsed time. Never trigger an
+  extra native run automatically to fill a measurement gap.
+  Repair the reproducible macOS canonical-path reader bug and preserve bounded
+  preparation failures through later hooks. Qualify the archive failure itself
+  separately from that path bug. Acceptance: protected local receipt lifecycle,
+  strict immutable hosted reporting, restart/quota/concurrency controls,
+  standalone/hosted comparison UI, failure/privacy checks, independent reviews,
+  normal green main CI and coordinated application adoption. Existing native
+  compatibility, publication authority and required artifact handoffs stay
+  unchanged. [Workflow and measurement limits](docs/operation-measurement.md)
+  track source qualification separately from live application acceptance.
+
 - [x] **Make the hosted dashboard useful for an active project.**
   Owner: LayerCache dashboard. October 20 user outcome: open Phone App directly,
   see stored artifacts, effective hit rate and cache types first, then navigate

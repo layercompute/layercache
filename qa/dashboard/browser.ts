@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import type {NativeIntegrationReport} from '../../dashboard/cache-view.js';
+import {operationFixture} from './operation-fixtures.ts';
 (async () => {
   const link = fs.readFileSync(process.env.DASHBOARD_LINK_FILE!, 'utf8').trim();
   const output = process.env.QA_OUTPUT || fs.mkdtempSync('/tmp/layercache-browser-');
@@ -18,10 +19,12 @@ import type {NativeIntegrationReport} from '../../dashboard/cache-view.js';
   const page = await context.newPage();
   const errors: string[] = []; const results: {name: string; passed: boolean; error?: string}[] = []; const requests: string[] = [];
   const nativeOnly=process.env.QA_DASHBOARD_NATIVE_ONLY==='1';
+  const operationsOnly=process.env.QA_DASHBOARD_OPERATIONS_ONLY==='1';
+  const operationChecks=new Set(['operation observations preserve unknown phases without a selected baseline','operation comparisons show complete elapsed and disjoint phases without changing native totals','negative differences and reused baselines never create an additive savings total','operation context mismatches hide difference credit and use fixed refusal text','operation history and reporting outages preserve other results']);
   const nativeChecks=new Set(['old servers without native reports keep the compact dashboard clean','native task results separate eligible hits from source and producer evidence','native Xcode RPC counts and zero phase timings never become compiler replay','complete scoped compiler rates preserve generic and native-task coverage']);
   page.on('request', r => requests.push(r.url()));
   page.on('pageerror', e => errors.push(e.message));
-  async function check(name: string, fn: () => Promise<void>) { if(nativeOnly&&!nativeChecks.has(name))return; try { await fn(); results.push({name,passed:true}); } catch (e) { results.push({name,passed:false,error:e instanceof Error ? e.message : String(e)}); await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true}); } }
+  async function check(name: string, fn: () => Promise<void>) { if(nativeOnly&&!nativeChecks.has(name)||operationsOnly&&!operationChecks.has(name))return; try { await fn(); results.push({name,passed:true}); } catch (e) { results.push({name,passed:false,error:e instanceof Error ? e.message : String(e)}); await page.screenshot({path:path.join(output,name.replace(/\W/g,'-')+'.png'),fullPage:true}); } }
   async function finish(){fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify({browser:browserName,output,results},null,2));await browser.close();if(results.some(r=>!r.passed))process.exitCode=1;}
   async function settled() { await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#refresh')!.disabled); }
   async function refresh() { await page.locator('#refresh').click(); await settled(); }
@@ -174,6 +177,42 @@ import type {NativeIntegrationReport} from '../../dashboard/cache-view.js';
     delete mocked.projects[0].local.report.nativeReportsUnavailable;await refresh();assert.equal(await cache.locator('details.native-results').count(),0);
   });
   if(nativeOnly){assert.equal(results.length,nativeChecks.size);assert.deepEqual(errors,[]);await finish();return;}
+  function operationSnapshot(){mocked=clone();mocked.projects=mocked.projects.slice(0,1);mocked.projects[0].local.report={eligible:10,hits:7,misses:3,runs:13,degraded:false,netEstimatedBuildTimeSaved:{milliseconds:null,known:0,total:0,confidence:'unknown'},integrations:[{integration:'turbo',hits:7,eligible:10}],operationReports:operationFixture()};return mocked.projects[0].local.report;}
+  await check('operation observations preserve unknown phases without a selected baseline',async()=>{
+    const report=operationSnapshot();delete report.operationReports;await refresh();assert.equal(await page.locator('.cache').first().locator('.operation-results').count(),0);
+    report.operationReports={observations:[],comparisons:[],storedObservations:0,historyTruncated:false};await refresh();assert.match(await page.locator('.cache').first().locator('.operation-empty').innerText(),/No operation timings[\s\S]*hit alone does not measure/);assert.equal(await page.locator('.cache').first().locator('.stats .value').nth(1).innerText(),'70%');
+    report.operationReports=operationFixture();const operations=report.operationReports;operations.observations=operations.observations.slice(0,1);operations.comparisons=[];operations.storedObservations=1;
+    delete operations.observations[0].report.baselineReceiptId;operations.observations[0].report.phaseTimingMs.restore=null;await refresh();
+    const section=page.locator('.cache').first().getByRole('region',{name:'Operation timings',exact:true});await section.locator('.operation-observation summary').click();
+    assert.match(await section.innerText(),/No selected baseline[\s\S]*does not establish time saved/);assert.match(await section.innerText(),/Current complete operation[\s\S]*1\.3 min/);
+    const phases=section.getByRole('table',{name:'Operation phase timings'});assert.deepEqual(await phases.locator('tr[data-phase="restore"] td').allTextContents(),['Unknown','Unknown']);assert.deepEqual(await phases.locator('.operation-overhead td').allTextContents(),['Unknown','Unknown']);
+    assert.match(await section.innerText(),/Source dddddddddddd/);assert.match(await section.innerText(),/session does not attest to one physical machine/);
+    for(const width of [320,1440]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}await page.setViewportSize({width:390,height:844});
+  });
+  await check('operation comparisons show complete elapsed and disjoint phases without changing native totals',async()=>{
+    operationSnapshot();await refresh();const cache=page.locator('.cache').first(),section=cache.getByRole('region',{name:'Operation timings',exact:true});await section.locator('.operation-observation summary').first().click();
+    const current=section.locator('.operation-observation').first();assert.match(await current.innerText(),/Baseline complete operation[\s\S]*1\.7 min[\s\S]*Current complete operation[\s\S]*1\.3 min[\s\S]*Observed elapsed difference[\s\S]*20\.0 s · shorter/);
+    assert.match(await current.innerText(),/Observed work difference[\s\S]*25\.0 s · shorter[\s\S]*Observed cache-phase difference[\s\S]*−5\.0 s · longer/);
+    const phases=current.getByRole('table',{name:'Operation phase timings'});assert.deepEqual(await phases.locator('tr[data-phase="restore"] td').allTextContents(),['0.0 s','6.0 s']);assert.deepEqual(await phases.locator('.operation-overhead td').allTextContents(),['5.0 s','10.0 s']);
+    assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');assert.equal(await cache.locator('.metrics .value').nth(1).innerText(),'Unknown');assert.match(await section.innerText(),/do not measure CPU usage, provider charges/);
+  });
+  await check('negative differences and reused baselines never create an additive savings total',async()=>{
+    const report=operationSnapshot(),operations=report.operationReports;const slow=structuredClone(operations.observations[0]);slow.receiptId='c'.repeat(64);slow.report.operationId='run-slower-operation';slow.report.elapsedMs=110000;slow.report.phaseTimingMs.work=100000;
+    const comparison={...operations.comparisons[0],candidateReceiptId:slow.receiptId,candidateElapsedMs:110000,observedDifferenceMs:-10000,observedWorkDifferenceMs:-5000};operations.observations.unshift(slow);operations.comparisons.unshift(comparison);operations.storedObservations=3;await refresh();
+    const cache=page.locator('.cache').first(),section=cache.getByRole('region',{name:'Operation timings',exact:true});assert.match(await section.innerText(),/3 recorded operations · 2 matched comparisons in returned observations/);assert.match(await section.innerText(),/−10\.0 s · longer/);
+    assert.match(await section.locator('.operation-no-total').innerText(),/Pairs are not added together[\s\S]*Reused baselines and overlapping observations/);assert.equal(await cache.locator('.metrics .value').nth(1).innerText(),'Unknown');
+  });
+  await check('operation context mismatches hide difference credit and use fixed refusal text',async()=>{
+    const report=operationSnapshot(),comparison=report.operationReports.comparisons[0];comparison.matched=false;comparison.method='unmatched';comparison.reasons=['sourceMismatch','environmentMismatch','<img src=x onerror=alert(1)>'];await refresh();
+    const section=page.locator('.cache').first().getByRole('region',{name:'Operation timings',exact:true});await section.locator('.operation-observation summary').first().click();const text=await section.innerText();assert.match(text,/Comparison unavailable[\s\S]*source revisions differ[\s\S]*environments differ[\s\S]*context could not be verified/);assert.doesNotMatch(text,/20\.0 s · shorter|onerror/);assert.equal(await section.locator('img').count(),0);
+    assert.equal(await section.locator('.operation-metrics').first().locator('dd').last().innerText(),'Unknown');
+  });
+  await check('operation history and reporting outages preserve other results',async()=>{
+    const report=operationSnapshot();report.operationReports.observations=report.operationReports.observations.slice(0,1);report.operationReports.storedObservations=40;report.operationReports.historyTruncated=true;await refresh();
+    const cache=page.locator('.cache').first();let section=cache.getByRole('region',{name:'Operation timings',exact:true});await section.locator('.operation-observation summary').click();assert.match(await section.innerText(),/outside the returned observations[\s\S]*phase details are unavailable/);assert.match(await section.innerText(),/Showing 1 recent observations[\s\S]*history is incomplete/);
+    delete report.operationReports;report.operationReportsUnavailable=true;report.nativeReports=[native('gradle')];await refresh();section=cache.getByRole('region',{name:'Operation timings',exact:true});assert.match(await section.innerText(),/reporting unavailable[\s\S]*Other cache and native results remain available/);assert.equal(await cache.locator('details.native-results').count(),1);assert.equal(await cache.locator('.stats .value').nth(1).innerText(),'70%');
+  });
+  if(operationsOnly){assert.equal(results.length,operationChecks.size);assert.deepEqual(errors,[]);await finish();return;}
   await check('unavailable source evidence and missing cost stay unknown',async()=>{
     mocked=clone();mocked.projects=mocked.projects.slice(0,1);delete mocked.projects[0].local.report.sources;mocked.projects[0].cost={state:'unknown',complete:false,knownSubtotalMinor:0,totalMinor:null};
     await refresh();const cache=page.locator('.cache').first();

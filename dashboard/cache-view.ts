@@ -1,4 +1,5 @@
 import {compilerScopeLabel, integrationLabel, nativeSourceLabel, projectInsights, scopedCompilerRate} from './insights.js';
+import {renderOperations, type OperationPeriodReport} from './operation-view.js';
 
 export type Scope = 'personal' | 'team' | 'public' | 'unknown';
 export type Estimate = {milliseconds: number | null; known: number; total: number; confidence: string};
@@ -44,6 +45,8 @@ export type Report = {
   integrations: IntegrationReport[] | null;
   nativeReports?: NativeIntegrationReport[];
   nativeReportsUnavailable?: boolean;
+  operationReports?: OperationPeriodReport;
+  operationReportsUnavailable?: boolean;
   topArtifacts?: ArtifactReport[]; topArtifactsTruncated?: boolean; activity?: ActivityBucket[];
 };
 export type Cache = {
@@ -221,6 +224,7 @@ export function renderCache(name: string, cache: Cache, options: CacheOptions = 
   if (report) integrations.append(el('span', 'integration', `${report.runs} observed runs · Turbo, Actions and BuildKit coverage`));
   node.append(integrations, el('p', 'coverage-note integration-coverage', 'Task, archive and vertex totals cover only clients that submit outcome reports. Native task outcomes and protocol activity have separate coverage.'));
   const native = options.showNative === false ? null : nativeResults(cache, scope); if (native) node.append(native);
+  const operations = options.showNative === false ? null : renderOperations(report?.operationReports, report?.operationReportsUnavailable); if (operations) node.append(operations);
   if ((options.canPrune ?? cache.pruneAllowed) === true && options.onPrune && scope !== 'public') {
     const controls = el('div', 'cache-maintenance'), button = el('button', '', `Prune ${name}`); button.type = 'button'; button.onclick = () => pruneDialog(name, status.usageBytes, options.onPrune!, button);
     controls.append(button, el('span', 'coverage-note', 'Only eligible artifacts can be removed.')); node.append(controls);
