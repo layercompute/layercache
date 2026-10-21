@@ -85,8 +85,15 @@ workspaces and filesystem migration are outside the current product scope.
   for future reports, without rewriting the accepted report. The 147 ambiguous
   source joins have multiple matching deliveries, rather than missing transport
   or proven local reuse. [Native log coverage](docs/evidence/native-log-coverage-20261020.md)
-  records this diagnosis and retained Xcode compiler-log qualification. The Xcode
-  controller import and corrected application client adoption remain open.
+  records this diagnosis and retained Xcode compiler-log qualification. Both
+  retained Xcode observations are now imported and independently verified.
+  Another 63 live checks passed against the combined Gradle/Xcode dashboard.
+  Their mixed, partial compiler coverage and the reader's absent RPC statistics
+  remain explicit. A normal application PR job on the corrected action now
+  has an independently verified 331/337 eligible task hit rate, with zero
+  unknown executed-task eligibilities. Corrected application adoption is landed
+  after normal Check, APK/Kotlin and fresh-device gates passed. Old immutable
+  reports keep their original coverage.
   A private operator ledger now shows partial
   provider-reported GitHub charges with an explicit UTC watermark, excluding
   other providers. Automatic job-allocation/billing ingestion, complete native
@@ -99,7 +106,9 @@ workspaces and filesystem migration are outside the current product scope.
   root/multi/composite/buildSrc and parallel tasks, configuration-cache reuse,
   restores and disabled/failed/shared-key behavior. Strict malformed and
   unsupported-version refusal and packaged offline export also pass.
-  Application action adoption and normal-run receipts remain separate gates.
+  Action adoption, exact main qualification and receipt acceptance remain
+  distinct. [Unknown-value guidance](docs/native-metering.md#why-values-stay-unknown)
+  names the evidence needed for each remaining dashboard value.
   Historical timing is unavailable through the current observed producer join,
   rather than inherently unrecoverable. Qualify Gradle's archive-declared
   `METADATA.executionTime` as a separate work-plus-output-snapshot estimate.
