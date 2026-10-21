@@ -1,6 +1,6 @@
 # LayerCache TODOs
 
-Last strategic review: 2026-10-20. This file owns outstanding work. Checkboxes
+Last strategic review: 2026-10-21. This file owns outstanding work. Checkboxes
 mean that every acceptance target is satisfied, not that a prototype exists.
 [Launch status](docs/launch-plan.md) records delivered/deployed qualification;
 [roadmap review](docs/roadmap-review.md) explains how to reprioritize.
@@ -34,6 +34,24 @@ workspaces and filesystem migration are outside the current product scope.
   compatibility, publication authority and required artifact handoffs stay
   unchanged. [Workflow and measurement limits](docs/operation-measurement.md)
   track source qualification separately from live application acceptance.
+  Reviewed [PR #87](https://github.com/ziahamza/layercache/pull/87) merged as
+  `cb254e9af694f6fe25f5a0ad416456174bda3e44`; all thirteen PR gates and exact-main
+  normal workflows passed, including sixteen source and sixteen packaged macOS
+  recorder controls and real PostgreSQL normal/race qualification. That source is
+  deployed, authenticated feature checks and thirteen actual-account dashboard
+  checks passed, and the source-pinned local native CLI passed its offline
+  lifecycle smoke. A final packaged Gradle fixture pair observed 6,303 ms cold
+  versus 4,485 ms warm, with two matching native-key restores, zero warm executions
+  or PUTs and equal output/assertion digests. Separate transfer overhead, application,
+  causal, CPU and cost savings remain unqualified. The application reader code
+  repair is merged with green normal main Check and seventy-two hook controls;
+  hosted replay remains coordinated behind its owner's reserved provider slot.
+  Application timer adoption and actual operation reports remain open. Immutable
+  [beta.9](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.9)
+  is published after all three native package/provenance checks passed; the
+  verified Linux amd64 Go CLI is installed separately from the source-pinned
+  recorder. Normal three-platform installed-release checks are pinned to that
+  release. No optional native jobs are started to populate charts.
 
 - [x] **Make the hosted dashboard useful for an active project.**
   Owner: LayerCache dashboard. October 20 user outcome: open Phone App directly,

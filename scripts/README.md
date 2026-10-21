@@ -1,9 +1,12 @@
 # Install a release
 
-The latest CLI beta is [v0.1.0-beta.8](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.8),
-pinned to protected main commit `9c071a6e94aa7a173a810165020c6f3eaedda01e`.
-It adds authenticated native Gradle/Xcode reporting, offline report exporters
-and dashboard coverage explanations. Original producer timing requires matched
+The latest CLI beta is [v0.1.0-beta.9](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.9),
+pinned to protected main commit `cb254e9af694f6fe25f5a0ad416456174bda3e44`.
+It adds immutable operation reports and explicit complete-interval comparisons.
+The separate [native recorder](../docs/operation-measurement.md) runs offline;
+the Go CLI imports its sealed report. Native Gradle/Xcode reporting, offline
+report exporters and dashboard coverage explanations remain available.
+Original producer timing requires matched
 native keys, immutable bytes and execution windows. Native task elapsed time,
 whole-job allocation, CPU use and billing remain separate measurements. See the
 [native metering contract](../docs/native-metering.md). It retains native Bazel
@@ -21,7 +24,7 @@ prerelease; a hosted self-serve cloud requires separate deployment. Run the
 installer from an inspected checkout pinned to that source commit:
 
 ```sh
-bash scripts/install.sh --repository ziahamza/layercache --version v0.1.0-beta.8 \
+bash scripts/install.sh --repository ziahamza/layercache --version v0.1.0-beta.9 \
   --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
@@ -46,10 +49,10 @@ An old `gh` without the required verification flags fails rather than weakening
 the policy. The Node test uses a local fake GitHub client to exercise policy
 failures and target preservation.
 
-The [beta.8 release workflow](https://github.com/ziahamza/layercache/actions/runs/39505501404)
+The [beta.9 release workflow](https://github.com/ziahamza/layercache/actions/runs/39584178827)
 qualifies native release candidates before immutable publication. The
 [published installer workflow](../.github/workflows/beta-release-install.yml)
-pins beta.8 and its exact source commit. It checks the locked tag, attestations,
+pins beta.9 and its exact source commit. It checks the locked tag, attestations,
 checksum, binary source/platform metadata, installation into an empty prefix,
 `help`, and setup preview on Linux x64, Linux arm64, and macOS arm64. Each job runs
 the [17-scenario real Turbo acceptance](../qa/local-ci-reuse/README.md) using the

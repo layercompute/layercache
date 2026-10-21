@@ -16,6 +16,19 @@ The lifecycle is **start → prepare → work → update → finish**. Start and
 never launch a build. Each phase marker starts the named interval; run that
 phase's existing command after its marker.
 
+The recorder is a separate Node.js 24+ package; installing the Go CLI does not
+install `layercache-native`. Install the pinned package before the measured
+operation, rather than adding a dependency installation to cache setup:
+
+```sh
+pnpm add -D '@layercache/native@github:ziahamza/layercache#cb254e9af694f6fe25f5a0ad416456174bda3e44'
+```
+
+Invoke it with `pnpm exec layercache-native` from that project, or use its
+resolved executable on `PATH` for the commands below. This is a source-pinned
+JavaScript package, not an npm release or an attested Go binary. Keep that same
+recorder pin throughout the lifecycle.
+
 Use the offline native CLI with a protected context file and an absolute private
 state path. Its ancestors must also be trusted directories: a group-writable
 home/cache parent is rejected even when the final directory is private. For a
@@ -26,6 +39,10 @@ immutable source, integration, session and opaque workload/coverage digests.
 It also declares fresh versus incremental outputs, the cache policy, compatible
 execution context and other-cache policy. Raw paths, commands, environment maps
 and credentials do not belong in that context or the uploaded report.
+Declare and protect the context before begin, and pin the same recorder version
+for start, every phase and finish. If discovering the native profile or preparing
+that context requires work before start, record that bootstrap time separately.
+An interval that excludes it does not establish complete setup time.
 
 ```sh
 layercache-native measure-start --context-file /absolute/private/context.json \
@@ -52,6 +69,13 @@ layercache report operation --integration gradle \
   --config /absolute/private/project.json --source-commit IMMUTABLE_COMMIT \
   --input /absolute/private/operation-report.json --json
 ```
+
+This example assumes the native operation succeeded. Read preparation and reuse
+outcomes from the native client; an existing archive or directory does not prove
+a hit. Keep preparation unknown until its result is available, then record the
+observed outcome at a phase marker or finish. Finish with the actual operation
+status and preserve its exit code. Optional measurement or upload failures must
+neither hide a build/test failure nor rerun the work.
 
 Use a canonical absolute path: on macOS `/tmp` and `/var` can resolve through
 `/private`. The context, state and output must be owned regular files with mode
@@ -87,9 +111,9 @@ local context support local comparison; hosted imports use the configuration
 and authenticated execution authority instead. Supply the producing source and
 profile when importing, rather than the machine's current checkout context.
 The Go import command requires a declared `sessionId`; operations from the same
-installation and session share a 32-observation quota per integration. Changing operation IDs,
-source or profile does not create another session bucket. This is member/local
-session grouping, not proof of a physical machine or GitHub job. Direct reports
+installation and session share a 32-observation quota per integration. Changing
+operation IDs, source or profile does not create another session bucket. This is
+member/local session grouping, not proof of a physical machine or GitHub job. Direct reports
 under verified Actions authority retain their authenticated job grouping; the
 independent 4,096-observation/project and 8 MiB document limits apply as well.
 
@@ -152,34 +176,53 @@ usage counters; billed savings need provider pricing and billing evidence.
 
 ## Qualification
 
-The current repair work separately covers a canonical-path containment failure
-after a successful restore and safe reporting of an earlier archive failure.
-Retained logs alone do not establish why that historical archive transfer failed.
+Reviewed [PR #87](https://github.com/ziahamza/layercache/pull/87) merged as
+[`cb254e9`](https://github.com/ziahamza/layercache/commit/cb254e9af694f6fe25f5a0ad416456174bda3e44).
+All thirteen PR gates and the normal workflows on that exact main source passed.
+The final macOS job passed sixteen source and sixteen packaged recorder controls,
+including split-process monotonic timing, a killed child, immutable output repair
+and overlapping owners. The Linux/PostgreSQL jobs passed the real persistence
+contract and race suite, including late exact retry, concurrent admission and
+restart recovery. Independent reviews covered the protected recorder, read-scoped
+report endpoint, explicit pairing, strict decoding, independent quotas and
+dashboard. Full Go and JavaScript checks passed.
+
 A real dependency-free Gradle fixture exercised the packaged recorder, local
 HTTP cache, Go import and SQL reporting in one declared session. The cold
-operation took 6,562 ms; after removing native outputs, the warm operation took
-4,772 ms. Both cold tasks executed and published; both warm tasks restored from
-HTTP with zero executions or writes, and class/assertion-output digests matched.
-Local and hosted-format comparisons agreed on the observed 1,790 ms difference.
-An exact import retry returned the same receipt. This is one fixture pair with
-shared OS/bootstrap warmth, not an application or billing benchmark.
+operation took 6,303 ms; after removing native outputs, the warm operation took
+4,485 ms. Both cold tasks executed and published; both warm tasks restored the
+same native keys over HTTP with zero executions or PUTs. Class and assertion-output
+digests matched. Local and stored comparisons agreed on the observed 1,818 ms
+difference. An exact import retry returned the same receipt; an independent SQL
+and session audit confirmed the stored pair. This is one fixture pair with shared
+OS/bootstrap warmth. It establishes no application, causal, CPU or cost saving.
 
 Gradle owned its HTTP transfers inside the measured work interval, so separate
 restore/publication phases stayed unknown. Their overhead was not invented or
-subtracted. Independent reviews covered the protected recorder, read-scoped
-report endpoint, explicit pairing, independent quotas and dashboard. Full Go and
-JavaScript checks passed. The required macOS job passed all twelve original
-recorder controls, including real split-process monotonic timing. The required
-Linux/PostgreSQL job ran the real PostgreSQL contract and race suite, including
-late exact retry, concurrent admission and restart recovery. Review also caught
-interrupted-recorder lock recovery and stable import-session quota gaps. Their
-corrections passed an independent follow-up review, focused/race import controls,
-and sixteen source plus sixteen packaged recorder controls. These include a real
-killed child, immutable output repair and deterministically overlapping owners.
-The final required macOS and full PostgreSQL gates remain separate CI outcomes.
+subtracted.
 
-Application/provider acceptance is coordinated with its CI owner. The reader
-repair and the operation recorder are separate changes: the repaired reader
-still needs a compatible hosted restore/readiness/replay receipt, and adoption
-must place the timer around the actual application lifecycle. No cache-dependent
-native run is started automatically to obtain measurement evidence.
+The exact merged source is deployed. Fresh authenticated exchange and status
+checks advertise the operation-report feature. Thirteen actual-account dashboard
+checks passed, preserving access to all five projects and their native and cost
+projections. No synthetic operation reports were uploaded. Generic rolling-window
+counts can change as their time window moves; this comparison is not proof of
+immutable generic history. The source-pinned native CLI is installed locally,
+and its offline start/phase/finish, exact sealed retry and unmatched-comparison
+smoke checks passed. The immutable
+[beta.9 release](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.9)
+publishes this source as native Linux amd64/arm64 and macOS arm64 Go binaries.
+All three packages passed independent checksum, build-metadata and source-bound
+attestation verification. The verified Linux amd64 release is installed locally;
+the separate native recorder remains a source-pinned JavaScript package. Fresh
+three-platform installed-release acceptance is tracked by the
+[published installer workflow](../.github/workflows/beta-release-install.yml).
+
+The application reader repair is merged and its normal main Check passed, with
+seventy-two local hook controls. It fixes canonical-path containment after a
+successful restore and preserves bounded diagnostics for earlier archive
+failures. Retained logs alone do not establish why the historical archive
+transfer failed. A compatible hosted restore/readiness/replay receipt is still
+coordinated behind the application owner's reserved provider slot. Operation
+timer adoption must also surround the actual application lifecycle; the deployed
+application currently has no operation reports. No optional native run is started
+to fill the dashboard or a measurement gap.
