@@ -77,7 +77,7 @@ test('private files refuse permissive modes, links, symlink parents, oversized i
   await assert.rejects(startOperation(f.input, join(parentAlias, 'state.json'), clock), refusal);
   await chmod(parent, 0o755); await assert.rejects(startOperation(f.input, join(parent, 'state.json'), clock), refusal);
   const large = join(f.root, 'large.json'); await writeFile(large, '{}', {mode: 0o600}); await truncate(large, 32769); await assert.rejects(startOperation(large, f.state, clock), refusal);
-  await assert.rejects(startOperation(f.input, join(f.root, '..', 'unsafe.json'), clock), refusal);
+  await assert.rejects(startOperation(f.input, `${f.root}/../unsafe.json`, clock), refusal);
   await startOperation(f.input, f.state, clock); const before = await readFile(f.state, 'utf8');
   await writeFile(f.input, JSON.stringify({...declared, sourceCommit: 'b'.repeat(40)}));
   await assert.rejects(phaseOperation(f.state, 'work', undefined, clock), refusal); assert.equal(await readFile(f.state, 'utf8'), before);
