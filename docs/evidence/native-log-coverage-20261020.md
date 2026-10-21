@@ -49,8 +49,9 @@ before export. Each produces zero observed replay hits and 2,935 observed
 terminal misses, with mixed, partial coverage and an unknown complete
 denominator. These are two observations, not a controlled performance comparison.
 The publisher independently retained 2,935 action reads, zero action hits and
-zero service errors. The reader failed before service readiness, so its absent
-RPC statistics stay unknown. Protocol requests and compiler observations remain
+zero service errors. The reader's optional cache preparation failed before
+service readiness; its native build and tests succeeded. Its absent RPC
+statistics stay unknown. Protocol requests and compiler observations remain
 separate, and neither establishes saved time, CPU or money.
 
 ## Hosted coverage audit
@@ -74,4 +75,45 @@ billing each need their own evidence; a cache hit count does not fill them in.
 Sixty focused source/action checks and twenty packaged offline CLI checks passed,
 with no failures or skips. Native bundle generation, full TypeScript checks and
 whitespace checks passed. Independent Standards and Spec reviews found no
-actionable issues. Hosted CI and application adoption are subsequent gates.
+actionable issues. [PR #85](https://github.com/ziahamza/layercache/pull/85)
+passed all eighteen PR checks and merged as
+[`2e00779`](https://github.com/ziahamza/layercache/commit/2e00779c3fa10ba57ccd2812a4f45d6e567891e1).
+All four workflows on that main commit passed.
+
+## Hosted acceptance, October 21 UTC
+
+A normal application PR job using the qualified Gradle action submitted one
+completed invocation with 862 tasks. An independent exact-job read verified
+862 persisted rows, outcomes, opaque artifact identities and signed source.
+It recorded 331 restores from 337 eligible tasks, with six eligible misses.
+Its per-invocation eligible hit rate is 98.22%. All 30 no-actions lifecycle tasks
+are now ineligible, leaving zero unknown executed-task eligibilities. The other
+198 tasks with unknown eligibility are up-to-date, no-source or skipped, and
+remain outside this denominator. Its signed source matches the actual checkout,
+and the action post confirms one recorded invocation. Normal application Check,
+APK/Kotlin and fresh-device gates passed before the adoption landed. Exact main
+qualification remains distinct from accepting this report.
+
+An authorized controller imported both retained Xcode observations with the
+qualified exporter and beta.8 Go CLI. The builds produced their logs on
+October 20 UTC; the imports occurred on October 21 UTC. Independent read-only
+verification matched both accepted immutable receipts to their exact input,
+producing profile, declared source and compiler counters. The controller did
+not inject its hardware as the producer's hardware. These member observations
+remain distinct from Apple workload attestation.
+
+A further 63 authenticated live checks across Chromium, Firefox and WebKit
+passed against the combined Gradle/Xcode projection. The two Xcode observations
+show zero terminal replay hits and 5,870 terminal misses, with mixed, partial
+coverage and an unknown full rate. Complete RPC totals stay unknown because
+one observation lacks final service statistics. The dashboard currently has
+no per-invocation RPC coverage count or subtotal for the known subset. All six
+optional phase timings remain unknown. Neither absent input becomes zero.
+
+Historical Gradle reports keep their original partial eligibility. A later
+complete invocation cannot repair an older immutable report or make a selected
+period complete while that older report is included. Known task and restore
+counts stay visible. Producer timing/resource matches, native graph coverage,
+measured CPU and provider-complete billing remain separate acceptance gaps.
+The [coverage audit](../native-metering.md#coverage-audit) lists every currently
+supported integration and the remaining reporter or adoption work.

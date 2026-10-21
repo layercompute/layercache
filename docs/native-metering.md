@@ -227,6 +227,31 @@ Gradle/Xcode coverage then says reporting is unavailable rather than implying
 zero work. Generic Turbo, Actions and BuildKit estimates retain their own scope;
 native evidence neither erases them nor qualifies whole-project savings.
 
+## Why values stay unknown
+
+An unknown value names an evidence gap. It does not establish zero usage or a
+failed cache. Check the selected period and integration before interpreting it.
+Accepted reports are immutable, so upgrading a client does not fill older gaps.
+
+| Value | Missing evidence | What closes the gap |
+| --- | --- | --- |
+| Gradle eligible hit rate | At least one executed task has unknown eligibility | A qualified completed-task report and exact info log for that invocation; the no-actions correction applies to future reports |
+| Restore source | More than one compatible delivery matches the task, or no unique delivery matches | An unambiguous native task/key and authenticated delivery join; request order is insufficient |
+| Avoided task elapsed time | Original committed bytes have no uniquely matched producer duration | Original producer reports, or a separately qualified archive-declared estimate; a duplicate upload cannot replace origin |
+| Whole native build time saved | No complete task/dependency graph or compatible baseline | Native graph and overhead coverage that accounts for parallel work and restoration |
+| Allocated compute saved | Original compatible allocation or complete job overhead is missing | Matched producer/reader allocation and job intervals; current runner size alone is insufficient |
+| CPU consumed or saved | No measured CPU usage for the relevant execution | Actual CPU counters or samples with explicit coverage; elapsed time times vCPUs measures allocation |
+| Money saved | Provider identity, dated price, billing rules or comparable charges are missing | Matched provider/SKU and rates, rounding, allowances and a billing comparison across the relevant providers |
+| Xcode full compiler hit rate | Observed verdicts cover only part of the compiler work | Complete eligible verdicts in a declared scope; Swift-driver notes can include Clang module jobs |
+| Complete Xcode RPC totals | At least one selected invocation lacks final service statistics | A final closed-service sample for every included invocation; the current UI has no known-subset RPC subtotal |
+| Xcode lifecycle phase time | A phase was not measured | Explicit phase receipts; a log-record interval or entire workflow step is not a substitute |
+| Integration usage | Its completed-outcome reporter is absent or not adopted | The integration-specific reporter listed below; archive GETs do not establish native acceptance |
+
+Partial provider-reported charges can still be displayed with their UTC
+watermark and exclusions. They do not establish total project cost or savings.
+Retained artifacts and cache bytes also have different availability contracts;
+storage totals alone measure neither transfer latency nor avoided compilation.
+
 ## Coverage audit
 
 These are independent units. Combining their counts would produce a misleading
