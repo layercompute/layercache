@@ -11,7 +11,7 @@ evidence exporter. Source qualification, published client versions, deployed
 servers and application adoption are separate gates. The Go import command is
 in immutable [beta.8](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.8).
 Use the offline Node exporter from its exact source
-[`466b0f2`](https://github.com/ziahamza/layercache/tree/466b0f21d4485709405bac9093ded0de6de0f221/native);
+[`48e4208`](https://github.com/ziahamza/layercache/tree/48e420868b4250c9176ae5aa48127f1456e97208/native);
 that bundle is a separate source artifact. Earlier beta.7 clients do not contain
 these commands. See [TODOs](../TODOs.md) for application rollout status.
 
@@ -32,6 +32,13 @@ Otherwise eligibility remains unknown. Up-to-date, no-source and skipped tasks
 are shown separately. A zero eligible denominator has no hit percentage.
 If executed-task eligibility is incomplete, the whole reported-task hit rate
 remains unknown; known counts remain visible.
+
+The qualified native "Skipping task ... as it has no actions" diagnostic also
+marks an executed lifecycle task ineligible. Gradle can report that task as
+executed because a dependency ran; it has no own cacheable work. The reporter
+preserves the native outcome and excludes only its eligibility. A conflicting
+key or malformed marker keeps the mapping unknown. This correction applies to
+future reports; accepted immutable reports are not rewritten.
 
 Supply one Gradle 9.3.1 or 9.4.1 `--info` log per action instance through
 `native-info-log` to correlate task paths with native keys. The parser keeps
@@ -161,6 +168,17 @@ notes are not counted twice. Swift batch headers are not a compiler denominator.
 Malformed, truncated, ambiguous or unsupported input retains explicit coverage
 limits. A scoped compiler-verdict percentage is available only with complete
 eligible verdicts in that scope; it is not a whole-build Xcode hit rate.
+
+The rendered-log qualification also accepts exact `TEST BUILD` completion,
+bounded target/project diagnostic suffixes, and the observed SGR formatting
+codes `0`, `1`, `33` and `36`. Other terminal controls remain unsupported, and
+input bounds apply before formatting removal. Native module and bridging-header
+tasks use their existing replay actions. The `swift` scope means Swift-driver
+replay observations, which can include Clang module jobs; it does not establish
+Swift-language external replay. Apple artifact logs may add a leading UTC
+timestamp and tab to each record. Preserve the original and remove only that
+verified record prefix before offline export; do not rewrite diagnostics or
+synthesize completion. See the [native log qualification](evidence/native-log-coverage-20261020.md).
 
 Action-index reads/hits, CAS reads/hits and writes are protocol counters.
 Compiler verdicts are a separate unit. An action lookup hit does not prove a

@@ -64,12 +64,12 @@ export async function parseXcodeCompilerLog(log: LogInput | undefined, format: s
     operation = undefined;
   };
   const consume = (line: string) => {
-    if (/^\*\* (?:BUILD|TEST|ARCHIVE) (?:SUCCEEDED|FAILED) \*\*$/.test(line)) {finishOperation(); finished = true; return;}
+    if (/^\*\* (?:BUILD|TEST(?: BUILD)?|ARCHIVE) (?:SUCCEEDED|FAILED) \*\*$/.test(line)) {finishOperation(); finished = true; return;}
     // The same replay is also rendered as this bare result line. It is not
     // another job, and it must not reset the current task's context.
     if (/^Cache (?:hit|miss)$/.test(line) || /^(?:note|remark): (?:[Ll]ocal cache miss for key:|cache key query (?:hit|miss)\b|cache (?:hit|miss)$)/.test(line)) return;
-    const kind = /^(?:CompileC|ProcessPCH|ProcessPCH\+\+)\s/.test(line) ? 'clang-pch'
-      : /^(?:SwiftCompile|SwiftEmitModule|SwiftDriver\sCompilation(?:\s|$)|SwiftDriver\sCompilation\sRequirements(?:\s|$))/.test(line) ? 'swift' : undefined;
+    const kind = /^(?:CompileC|ProcessPCH|ProcessPCH\+\+|PrecompileModule)\s/.test(line) ? 'clang-pch'
+      : /^(?:(?:SwiftCompile|SwiftEmitModule|SwiftGeneratePch|SwiftExplicitDependencyGeneratePcm|SwiftExplicitDependencyCompileModuleFromInterface)(?:\s|$)|SwiftDriver\sCompilation(?:\s|$)|SwiftDriver\sCompilation\sRequirements(?:\s|$))/.test(line) ? 'swift' : undefined;
     if (kind) {
       finishOperation();
       if (finished) ambiguous = true;
@@ -79,8 +79,11 @@ export async function parseXcodeCompilerLog(log: LogInput | undefined, format: s
       return;
     }
     if (/^[A-Z][A-Za-z0-9+]*\s/.test(line)) {finishOperation(); return;}
-    const clangFinal = /^(?:note|remark): (replayed cache hit|cache miss): (\S{1,8192})$/.exec(line);
-    const swiftFinal = /^(?:note|remark): [Rr]eplay cache (hit|miss)$/.exec(line);
+    // Xcode's rendered task log can append target context to the same terminal
+    // diagnostic. Keep that private envelope out of observations and identity.
+    const diagnostic = line.replace(/ \(in target '[^'\r\n]{1,1024}' from project '[^'\r\n]{1,1024}'\)$/, '');
+    const clangFinal = /^(?:note|remark): (replayed cache hit|cache miss): (\S{1,8192})$/.exec(diagnostic);
+    const swiftFinal = /^(?:note|remark): [Rr]eplay cache (hit|miss)$/.exec(diagnostic);
     if (clangFinal || swiftFinal) {
       const expected = clangFinal ? 'clang-pch' : 'swift';
       if (!operation || operation.kind !== expected) {ambiguous = true; return;}
@@ -89,7 +92,7 @@ export async function parseXcodeCompilerLog(log: LogInput | undefined, format: s
         // Two terminal messages in one unstructured task block cannot prove
         // two native jobs. Suppress this block instead of inflating its rate.
         operation.ambiguous = true;
-      } else {operation.diagnostic = line; operation.outcome = outcome;}
+      } else {operation.diagnostic = diagnostic; operation.outcome = outcome;}
       return;
     }
     if (/^(?:note|remark): .*cache (?:hit|miss|skipped)\b/i.test(line)) {
@@ -114,8 +117,9 @@ export async function parseXcodeCompilerLog(log: LogInput | undefined, format: s
       pending += decoder.decode(boundedChunk, {stream: true});
       let newline: number;
       while ((newline = pending.indexOf('\n')) >= 0) {
-        const line = pending.slice(0, newline).replace(/\r$/, '');
-        if (++lines > linesLimit || Buffer.byteLength(line, 'utf8') > lineLimit) {truncated = true; break outer;}
+        const rawLine = pending.slice(0, newline).replace(/\r$/, '');
+        if (++lines > linesLimit || Buffer.byteLength(rawLine, 'utf8') > lineLimit) {truncated = true; break outer;}
+        const line = rawLine.replace(/\x1b\[(?:0|1|33|36)m/g, '');
         if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(line)) {unsupported = true; break outer;}
         consume(line); pending = pending.slice(newline + 1);
       }
@@ -126,8 +130,11 @@ export async function parseXcodeCompilerLog(log: LogInput | undefined, format: s
       pending += decoder.decode();
       if (pending !== '') {
         if (++lines > linesLimit || Buffer.byteLength(pending, 'utf8') > lineLimit) truncated = true;
-        else if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(pending)) unsupported = true;
-        else consume(pending.replace(/\r$/, ''));
+        else {
+          const line = pending.replace(/\r$/, '').replace(/\x1b\[(?:0|1|33|36)m/g, '');
+          if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(line)) unsupported = true;
+          else consume(line);
+        }
       }
     }
   } catch {unsupported = true;}

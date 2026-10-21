@@ -6,10 +6,12 @@ const first = 'a'.repeat(32);
 const second = 'b'.repeat(32);
 const third = 'c'.repeat(32);
 const keyLine = (path, key = first) => `Build cache key for task '${path}' is ${key}\n`;
+const noActionsLine = path => `Skipping task '${path}' as it has no actions.\n`;
 const sorted = values => [...values].sort();
 
 function unavailable(result, reason) {
   assert.equal(result.keys.size, 0);
+  assert.equal(result.ineligiblePaths.size, 0);
   assert.equal(result.ambiguousPaths.size, 0);
   assert.equal(result.duplicateKeys.size, 0);
   assert.equal(result.reason, reason);
@@ -81,6 +83,52 @@ test('explicit native disabled markers establish ineligibility without retaining
   const conflict = parseGradleInfo(keyLine(':conflict') + "Caching disabled for task ':conflict' because:\n");
   assert.equal(conflict.keys.size, 0);assert.equal(conflict.ineligiblePaths.size, 0);assert.ok(conflict.ambiguousPaths.has(':conflict'));
   unavailable(parseGradleInfo("prefix Caching disabled for task ':x' because:\n"), 'unrecognized-key-line');
+});
+
+test('qualified no-actions markers exclude lifecycle tasks without changing native key mappings', () => {
+  for (const gradleVersion of ['9.3.1', '9.4.1']) {
+    const lines = [noActionsLine(':buildSrc:classes'), noActionsLine(':included:assemble'), keyLine(':app:compile')];
+    for (const text of [lines.join(''), lines.toReversed().join('').replaceAll('\n', '\r\n')]) {
+      const result = parseGradleInfo(text, {gradleVersion});
+      assert.deepEqual(sorted(result.ineligiblePaths), [':buildSrc:classes', ':included:assemble']);
+      assert.deepEqual([...result.keys], [[':app:compile', first]]);
+      assert.equal(result.reason, undefined);
+    }
+    assert.deepEqual([...parseGradleInfo(noActionsLine(':classes').repeat(2), {gradleVersion}).ineligiblePaths], [':classes']);
+    for (const text of [keyLine(':same') + noActionsLine(':same'), noActionsLine(':same') + keyLine(':same')]) {
+      const conflict = parseGradleInfo(text, {gradleVersion});
+      assert.equal(conflict.keys.size, 0);assert.equal(conflict.ineligiblePaths.size, 0);
+      assert.deepEqual([...conflict.ambiguousPaths], [':same']);
+      assert.equal(conflict.reason, 'ambiguous-key-mapping');
+    }
+  }
+});
+
+test('no-actions candidates keep strict line, path, version and collection bounds', () => {
+  for (const gradleVersion of ['9.3.1', '9.4.1']) {
+    const parse = text => parseGradleInfo(text, {gradleVersion});
+    for (const malformed of [
+      'prefix ' + noActionsLine(':classes'), '\x1b[32m' + noActionsLine(':classes'),
+      noActionsLine(':classes').trimEnd() + '\x1b[0m\n',
+      noActionsLine(':classes').replace('.\n', '\n'), noActionsLine(':classes').replace('.\n', '. extra\n'),
+      "Skipping task ':classes as it has no actions.\n", "Skipping task 'classes' as it has no actions.\n",
+    ]) unavailable(parse(keyLine(':valid') + malformed), 'unrecognized-key-line');
+    const path = ':' + 'a'.repeat(1023);
+    assert.ok(parse(noActionsLine(path)).ineligiblePaths.has(path));
+    unavailable(parse(noActionsLine(path + 'b')), 'invalid-task-path');
+    for (const control of ['\0', '\t', '\x1b', '\x7f', '\x85', '\u202e', '\u2028', '\u2029']) {
+      unavailable(parse(noActionsLine(`:app:${control}classes`)), 'invalid-task-path');
+    }
+    unavailable(parse(noActionsLine(':classes').trimEnd()), 'truncated-info-log');
+    assert.equal(parse(noActionsLine(':classes').repeat(8192)).ineligiblePaths.size, 1);
+    unavailable(parse(noActionsLine(':classes').repeat(8193)), 'too-many-key-lines');
+    const paths = Array.from({length: 4096}, (_, i) => noActionsLine(`:task${i}`)).join('');
+    assert.equal(parse(paths).ineligiblePaths.size, 4096);
+    unavailable(parse(paths + keyLine(':overflow')), 'too-many-task-paths');
+  }
+  for (const gradleVersion of ['9.3.0', '9.3.2', '9.4.0', '9.4.2', '9.4.1-custom']) {
+    unavailable(parseGradleInfo(noActionsLine(':classes'), {gradleVersion}), 'unsupported-gradle-version');
+  }
 });
 
 test('prefixed, ANSI, noncanonical hashes and incomplete task-key messages fail closed', () => {

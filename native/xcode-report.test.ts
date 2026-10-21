@@ -14,6 +14,54 @@ const pch = 'ProcessPCH++ /private/secret/prefix.pch normal arm64\n';
 const completed = '** BUILD SUCCEEDED **\n';
 const parse = (log: string) => parseXcodeCompilerLog(log, xcodeReportFormat);
 
+test('build-for-testing terminals complete compiler capture without creating test verdicts', async () => {
+  const observed = clang + 'note: replayed cache hit: private-key\n';
+  for (const outcome of ['SUCCEEDED', 'FAILED']) {
+    assert.deepEqual(await parse(observed + `** TEST BUILD ${outcome} **\n`),
+      {scope: 'clang-pch', coverage: 'complete', reason: 'none', hits: 1, misses: 0, skipped: null, unknown: 0});
+  }
+  for (const terminal of ['** TEST BUILDING SUCCEEDED **', '** TEST BUILD SUCCEEDED ** extra', '** TEST  BUILD SUCCEEDED **']) {
+    assert.equal((await parse(observed + terminal + '\n')).coverage, 'partial');
+  }
+  const repeated = await parse(observed + '** TEST BUILD SUCCEEDED **\n' + observed + completed);
+  assert.equal(repeated.coverage, 'partial');
+  assert.equal(repeated.reason, 'ambiguous');
+});
+
+test('qualified task-context suffixes and SGR formatting preserve terminal verdicts and privacy', async () => {
+  const suffix = " (in target 'private-target' from project 'private-project')";
+  const log = '\x1b[36m' + clang.trimEnd() + '\x1b[0m\n' +
+    '\x1b[1mnote: replayed cache hit: private-key' + suffix + '\x1b[0m\n' +
+    pch + '\x1b[33mnote: cache miss: private-miss' + suffix + '\x1b[0m\n' + '** TEST BUILD SUCCEEDED **\n';
+  const parsed = await parse(log);
+  assert.deepEqual(parsed, {scope: 'clang-pch', coverage: 'complete', reason: 'none', hits: 1, misses: 1, skipped: null, unknown: 0});
+  assert.doesNotMatch(JSON.stringify(parsed), /private|target|project|key|\x1b/);
+  const swift = await parse('SwiftCompile normal arm64 private.swift\nnote: Replay cache miss' + suffix + '\n** TEST BUILD SUCCEEDED **');
+  assert.equal(swift.misses, 1); assert.equal(swift.coverage, 'partial'); assert.equal(swift.unknown, null);
+  for (const change of ['\x1b[2J', '\x1b[31m', '\x1b]0;private\x07']) {
+    assert.equal((await parse(clang + change + 'note: cache miss: private-key\n' + completed)).reason, 'unsupported');
+  }
+  for (const badSuffix of [" (in target 'private' from project 'unterminated)", suffix + ' extra']) {
+    assert.notEqual((await parse(clang + 'note: cache miss: private-key' + badSuffix + '\n' + completed)).coverage, 'complete');
+  }
+  assert.equal((await parseXcodeCompilerLog(log, xcodeReportFormat, {bytes: Buffer.byteLength(log) - 1})).reason, 'truncated');
+});
+
+test('module and bridging-header replay observations keep Swift-driver denominator unknown', async () => {
+  const log = 'PrecompileModule /private/module.pcm\nnote: cache miss: private-clang-key\n' +
+    'SwiftGeneratePch normal arm64\nnote: Replay cache miss\n' +
+    'SwiftExplicitDependencyGeneratePcm normal arm64 /private/clang.pcm\nnote: replay cache hit\n' +
+    'SwiftExplicitDependencyCompileModuleFromInterface normal arm64 /private/module.swiftinterface\nnote: replay cache miss\n' +
+    '** TEST BUILD SUCCEEDED **\n';
+  assert.deepEqual(await parse(log), {scope: 'mixed', coverage: 'partial', reason: 'ambiguous', hits: 1, misses: 3, skipped: null, unknown: null});
+  assert.deepEqual(await parse('PrecompileModule /private/module.pcm\nnote: replayed cache hit: private-key\n' + completed),
+    {scope: 'clang-pch', coverage: 'complete', reason: 'none', hits: 1, misses: 0, skipped: null, unknown: 0});
+  for (const header of ['SwiftGeneratePchUnknown', 'PrecompileModuleUnknown', 'SwiftExplicitDependencyGeneratePcmUnknown']) {
+    const unknown = await parse(header + ' /private/module\nnote: replay cache hit\n' + completed);
+    assert.equal(unknown.hits, null); assert.notEqual(unknown.coverage, 'complete');
+  }
+});
+
 test('Clang and PCH terminal replay counts ignore intermediate queries and duplicate result lines', async () => {
   const log = 'ClangCachingKeyQuery /private/lookup\nnote: cache hit\n' + clang +
     'note: local cache miss for key: private-intermediate-key\nnote: cache miss: private-miss-key\nCache miss\n' +

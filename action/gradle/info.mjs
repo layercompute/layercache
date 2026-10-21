@@ -5,6 +5,7 @@ const maximumPathCharacters = 1024;
 const qualifiedVersions = new Set(['9.3.1', '9.4.1']);
 const taskKeyLine = /^Build cache key for task '(:[^'\r\n]*)' is ([a-f0-9]{32})$/;
 const disabledLine = /^Caching disabled for task '(:[^'\r\n]*)' because:$/;
+const noActionsLine = /^Skipping task '(:[^'\r\n]*)' as it has no actions\.$/;
 const pathControls = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
 function unavailable(reason) {
@@ -16,6 +17,11 @@ function unavailable(reason) {
 // https://github.com/gradle/gradle/blob/v9.3.1/platforms/core-execution/execution/src/main/java/org/gradle/internal/execution/steps/AbstractResolveCachingStateStep.java#L113
 // https://github.com/gradle/gradle/blob/v9.4.1/platforms/core-execution/execution/src/main/java/org/gradle/internal/execution/steps/AbstractResolveCachingStateStep.java#L109
 // TaskExecution.getDisplayName uses task.toString() for the task label.
+// SkipTaskWithNoActionsExecuter reports no own actions/outputs even when a
+// dependency makes the public task outcome EXECUTED. Preserve that outcome,
+// but exclude the task from cache eligibility using this exact native marker:
+// https://github.com/gradle/gradle/blob/v9.3.1/subprojects/core/src/main/java/org/gradle/api/internal/tasks/execution/SkipTaskWithNoActionsExecuter.java#L38-L50
+// https://github.com/gradle/gradle/blob/v9.4.1/subprojects/core/src/main/java/org/gradle/api/internal/tasks/execution/SkipTaskWithNoActionsExecuter.java#L38-L50
 // Exact text is a local correlation hint, not authenticated Gradle provenance.
 // The caller must separately establish that the log belongs to its completed
 // invocation. A parser cannot detect a file truncated exactly at a line boundary.
@@ -41,9 +47,10 @@ export function parseGradleInfo(text, { gradleVersion = '9.3.1' } = {}) {
     // contain millions of irrelevant short lines. Transform keys are unrelated.
     const keyCandidate = line.includes('Build cache key for task');
     const disabledCandidate = line.includes('Caching disabled for task');
-    if (!keyCandidate && !disabledCandidate) continue;
-    const keyMatch = taskKeyLine.exec(line), disabledMatch = disabledLine.exec(line);
-    const match = keyMatch ?? disabledMatch;
+    const noActionsCandidate = line.includes('as it has no actions');
+    if (!keyCandidate && !disabledCandidate && !noActionsCandidate) continue;
+    const keyMatch = taskKeyLine.exec(line), disabledMatch = disabledLine.exec(line), noActionsMatch = noActionsLine.exec(line);
+    const match = keyMatch ?? disabledMatch ?? noActionsMatch;
     if (!match) return unavailable('unrecognized-key-line');
     const [, path, key] = match;
     if (path.length > maximumPathCharacters || pathControls.test(path)) {
@@ -55,7 +62,7 @@ export function parseGradleInfo(text, { gradleVersion = '9.3.1' } = {}) {
       if (pathKeys.size === maximumPaths) return unavailable('too-many-task-paths');
       pathKeys.set(path, new Set());
     }
-    if (disabledMatch) {ineligiblePaths.add(path);continue;}
+    if (disabledMatch || noActionsMatch) {ineligiblePaths.add(path);continue;}
     pathKeys.get(path).add(key);
     if (!keyPaths.has(key)) keyPaths.set(key, new Set());
     keyPaths.get(key).add(path);
