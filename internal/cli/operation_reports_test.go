@@ -78,8 +78,8 @@ func TestOperationImportHostedAndLocalReconcileWithoutWorkOrConfigMutation(t *te
 			}
 			defer runtime.Close()
 			report := cliOperationFixture()
-			wantRun, wantWorkspace := operationReportContext(backend.ProjectID, backend.CompatibilityID, "xcode", report.OperationID)
-			nativeRun, nativeWorkspace := nativeReportContext(backend.ProjectID, backend.CompatibilityID, "xcode", report.OperationID)
+			wantRun, wantWorkspace := operationReportContext(backend.InstallationID, report.SessionID)
+			nativeRun, nativeWorkspace := nativeReportContext(backend.ProjectID, backend.CompatibilityID, "xcode", report.SessionID)
 			if wantRun == nativeRun || wantWorkspace == nativeWorkspace {
 				t.Fatal("operation imports reuse the native invocation identity domain")
 			}
@@ -162,7 +162,7 @@ func TestOperationImportHostedAndLocalReconcileWithoutWorkOrConfigMutation(t *te
 
 func TestOperationImportRejectsUnsafeInputBeforeCredentials(t *testing.T) {
 	root := t.TempDir()
-	for _, kind := range []string{"unknown-field", "duplicate", "oversize", "public-mode", "hardlink", "symlink", "interval-too-long", "invalid-duration", "source"} {
+	for _, kind := range []string{"unknown-field", "duplicate", "oversize", "public-mode", "hardlink", "symlink", "interval-too-long", "invalid-duration", "source", "missing-session"} {
 		t.Run(kind, func(t *testing.T) {
 			input := filepath.Join(root, kind+".json")
 			report := cliOperationFixture()
@@ -171,6 +171,9 @@ func TestOperationImportRejectsUnsafeInputBeforeCredentials(t *testing.T) {
 			}
 			if kind == "invalid-duration" {
 				report.ElapsedMS = 10000
+			}
+			if kind == "missing-session" {
+				report.SessionID = ""
 			}
 			writeCLIOperationFixture(t, input, report)
 			source := strings.Repeat("a", 40)
@@ -209,7 +212,118 @@ func TestOperationImportRejectsUnsafeInputBeforeCredentials(t *testing.T) {
 			if err == nil || strings.Contains(err.Error(), "configuration") || strings.Contains(output+diagnostics+err.Error(), "PRIVATE-CANARY") {
 				t.Fatal("unsafe operation was not rejected before configuration/credentials")
 			}
+			if kind == "missing-session" && !strings.Contains(err.Error(), "declared sessionId") {
+				t.Fatal("missing session was not rejected before configuration/credentials")
+			}
 		})
+	}
+}
+
+func TestOperationImportDeclaredSessionSharesQuotaAndPreservesExactRetry(t *testing.T) {
+	root := t.TempDir()
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Role, cfg.DataDir, cfg.MaxBytes = "local", filepath.Join(root, "backend"), 1<<20
+	cfg.ProjectID, cfg.CompatibilityID = "github.com/acme/widgets", "native-profile-v1"
+	runtime, err := server.New(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	endpoint := httptest.NewServer(runtime.Handler())
+	defer endpoint.Close()
+	cfg.Listen = strings.TrimPrefix(endpoint.URL, "http://")
+	path, input := filepath.Join(root, "config.json"), filepath.Join(root, "operation.json")
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	source := strings.Repeat("a", 40)
+	base := cliOperationFixture()
+	var first measurement.OperationReceipt
+	var firstReport measurement.OperationReport
+	importReport := func(report measurement.OperationReport, source string) (measurement.OperationReceipt, error) {
+		t.Helper()
+		writeCLIOperationFixture(t, input, report)
+		output, _, err := callCLI("report", "operation", "--config", path, "--input", input, "--integration", "gradle", "--source-commit", source, "--json")
+		var receipt measurement.OperationReceipt
+		if err == nil && json.Unmarshal([]byte(output), &receipt) != nil {
+			t.Fatal("invalid operation acknowledgement")
+		}
+		return receipt, err
+	}
+	for i := range measurement.OperationMaximumPerJob {
+		report := base
+		report.OperationID = fmt.Sprintf("run-session-quota-operation-%04d", i)
+		receipt, err := importReport(report, source)
+		if err != nil || !receipt.Recorded || receipt.Repeated {
+			t.Fatalf("operation %d refused before session limit: %+v %v", i, receipt, err)
+		}
+		if i == 0 {
+			first, firstReport = receipt, report
+		}
+	}
+	extra := base
+	extra.OperationID = "run-session-quota-extra-000000000000"
+	for _, value := range []string{source, strings.Repeat("b", 40)} {
+		if _, err := importReport(extra, value); err == nil || !strings.Contains(err.Error(), "429") {
+			t.Fatalf("distinct operation/source rotated a full session bucket: %v", err)
+		}
+	}
+	profile := cfg.CompatibilityID
+	cfg.CompatibilityID = "another-native-profile-v1"
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := importReport(extra, source); err == nil || !strings.Contains(err.Error(), "429") {
+		t.Fatalf("profile change rotated a full session bucket: %v", err)
+	}
+	if _, err := importReport(firstReport, source); err == nil || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("changed profile escaped immutable operation authority: %v", err)
+	}
+	cfg.CompatibilityID = profile
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := importReport(firstReport, source)
+	if err != nil || !retry.Repeated || retry.ReceiptID != first.ReceiptID {
+		t.Fatalf("full session blocked exact reconciliation: %+v %v", retry, err)
+	}
+	extra.SessionID = "run-next-declared-session-000000000000"
+	next, err := importReport(extra, source)
+	if err != nil || !next.Recorded || next.Repeated {
+		t.Fatalf("explicit next session did not get its own bucket: %+v %v", next, err)
+	}
+}
+
+func TestOperationImportRequiresStableInstallationBeforeCredentials(t *testing.T) {
+	root := t.TempDir()
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RemoteOnly, cfg.DataDir = true, filepath.Join(root, "no-local-store")
+	cfg.TeamURL = "http://127.0.0.1:1"
+	gh, called := filepath.Join(root, "gh"), filepath.Join(root, "credential-read")
+	if err := os.WriteFile(gh, []byte("#!/bin/sh\ntouch "+shellQuote(called)+"\nexit 99\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cfg.GitHubCLIPath = gh
+	path, input := filepath.Join(root, "config.json"), filepath.Join(root, "operation.json")
+	writeCLIOperationFixture(t, input, cliOperationFixture())
+	for _, identity := range []string{"", "machine-name", "install-" + strings.Repeat("a", 23), "install-" + strings.Repeat("a", 24) + "/"} {
+		cfg.InstallationID = identity
+		if err := config.Save(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := callCLI("report", "operation", "--config", path, "--input", input, "--integration", "gradle")
+		if err == nil || !strings.Contains(err.Error(), "stable installation identity") {
+			t.Fatal("missing/malformed installation did not stop before credentials")
+		}
+	}
+	if _, err := os.Stat(called); !os.IsNotExist(err) {
+		t.Fatal("invalid installation read a credential")
 	}
 }
 
@@ -235,7 +349,7 @@ func TestOperationImportReconcilesRetainedReportAfterNewAdmissionWindow(t *testi
 	}
 	report := cliOperationFixture()
 	report.StartedAt, report.FinishedAt = report.StartedAt.Add(-48*time.Hour), report.FinishedAt.Add(-48*time.Hour)
-	runID, workspaceID := operationReportContext(cfg.ProjectID, cfg.CompatibilityID, "gradle", report.OperationID)
+	runID, workspaceID := operationReportContext(cfg.InstallationID, report.SessionID)
 	owner, err := measurement.OpenSQLiteRepository(filepath.Join(cfg.DataDir, "measurements.db"))
 	if err != nil {
 		t.Fatal(err)

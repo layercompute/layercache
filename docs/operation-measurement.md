@@ -78,11 +78,20 @@ constants does not establish equivalent work.
 }
 ```
 
+The recorder supports Linux and macOS; Windows clock/filesystem support is not
+qualified. It runs offline and needs no cloud account.
+
 The recorder hashes neither your source nor these recipes automatically. An
 integration owns their completeness. `sourceCommit`, project and profile in the
 local context support local comparison; hosted imports use the configuration
 and authenticated execution authority instead. Supply the producing source and
 profile when importing, rather than the machine's current checkout context.
+The Go import command requires a declared `sessionId`; operations from the same
+installation and session share a 32-observation quota per integration. Changing operation IDs,
+source or profile does not create another session bucket. This is member/local
+session grouping, not proof of a physical machine or GitHub job. Direct reports
+under verified Actions authority retain their authenticated job grouping; the
+independent 4,096-observation/project and 8 MiB document limits apply as well.
 
 The phase commands mark boundaries; they do not run the commented work. An
 adapter must finish with the native operation's real status, preserve a compiler
@@ -94,6 +103,10 @@ unknown. The measurement upload occurs after the observed operation.
 The state is private, local and bound to its monotonic clock. Moving it to a
 different machine or boot cannot produce a valid elapsed interval. Finishing
 seals it; retrying the same final report reconciles an unknown acknowledgement.
+Recorder leases recover only after proving the recorded owner process is gone
+in the same boot and process namespace. A live owner, unknown boot, legacy or
+malformed lease is refused. Recovery neither reruns work nor guesses its status.
+A sealed report with a missing output file can be exported again byte-for-byte.
 Changing a previously accepted report conflicts. New admissions must begin
 within the previous 24 hours. Exact accepted retries reconcile during their
 original 30-day retention without extending it; expired reports cannot be
@@ -155,9 +168,15 @@ Gradle owned its HTTP transfers inside the measured work interval, so separate
 restore/publication phases stayed unknown. Their overhead was not invented or
 subtracted. Independent reviews covered the protected recorder, read-scoped
 report endpoint, explicit pairing, independent quotas and dashboard. Full Go and
-JavaScript checks passed. Source/packaged recorder controls also exercise
-split-process monotonic timing; the normal macOS CI job qualifies the Darwin
-clock and private filesystem behavior.
+JavaScript checks passed. The required macOS job passed all twelve original
+recorder controls, including real split-process monotonic timing. The required
+Linux/PostgreSQL job ran the real PostgreSQL contract and race suite, including
+late exact retry, concurrent admission and restart recovery. Review also caught
+interrupted-recorder lock recovery and stable import-session quota gaps. Their
+corrections passed an independent follow-up review, focused/race import controls,
+and sixteen source plus sixteen packaged recorder controls. These include a real
+killed child, immutable output repair and deterministically overlapping owners.
+The final required macOS and full PostgreSQL gates remain separate CI outcomes.
 
 Application/provider acceptance is coordinated with its CI owner. The reader
 repair and the operation recorder are separate changes: the repaired reader

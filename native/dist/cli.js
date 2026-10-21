@@ -4360,7 +4360,7 @@ var import_secure_json_parse = __toESM(require_secure_json_parse(), 1);
 import { createHash as createHash7, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { constants as constants5 } from "node:fs";
-import { lstat as lstat4, open as open4, readFile as readFile3, realpath, rename as rename2, unlink, link } from "node:fs/promises";
+import { lstat as lstat4, open as open4, readFile as readFile3, readlink as readlink2, opendir, realpath, rename as rename2, unlink, link, mkdir as mkdir3, rmdir } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname as dirname2, isAbsolute as isAbsolute2, join as join7, resolve as resolve3 } from "node:path";
 var phases = ["setup", "restore", "work", "close", "publish"];
@@ -4390,12 +4390,15 @@ function ns2(value) {
 }
 var systemClock = {
   async sample() {
-    let boot;
-    if (process.platform === "linux") boot = await readFile3("/proc/sys/kernel/random/boot_id", "utf8");
-    else if (process.platform === "darwin") boot = execFileSync2("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], { encoding: "utf8", timeout: 2e3, maxBuffer: 1024, stdio: ["ignore", "pipe", "ignore"] });
+    let boot, namespace = "";
+    if (process.platform === "linux") {
+      boot = await readFile3("/proc/sys/kernel/random/boot_id", "utf8");
+      namespace = await readlink2("/proc/self/ns/pid");
+      if (!/^pid:\[[1-9][0-9]{0,20}\]$/.test(namespace)) throw new Error();
+    } else if (process.platform === "darwin") boot = execFileSync2("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], { encoding: "utf8", timeout: 2e3, maxBuffer: 1024, stdio: ["ignore", "pipe", "ignore"] });
     else throw new Error();
     if (!/^[a-f0-9-]{36}\s*$/i.test(boot)) throw new Error();
-    return { wallMs: Date.now(), monotonicNs: process.hrtime.bigint(), binding: hash(`${process.platform}\0${hostname()}\0${boot.trim()}`) };
+    return { wallMs: Date.now(), monotonicNs: process.hrtime.bigint(), binding: hash(`${process.platform}\0${hostname()}\0${boot.trim()}\0${namespace}`) };
   }
 };
 function context(value) {
@@ -4478,23 +4481,111 @@ async function writePrivate(path, bytes, previous) {
     });
   }
 }
-async function locked(path, action) {
-  await trustedPath(path);
-  const lockPath = path + ".lock";
-  let lock;
-  let identity;
+function privateDirectory(info) {
+  return info.isDirectory() && info.uid === process.geteuid?.() && (info.mode & 4095) === 448;
+}
+function sameInode(a, b2) {
+  return a.dev === b2.dev && a.ino === b2.ino;
+}
+function missing(error) {
+  return plain(error) && error.code === "ENOENT";
+}
+function notEmpty(error) {
+  return plain(error) && ["EEXIST", "ENOTEMPTY"].includes(String(error.code));
+}
+async function clearOwner(directory, name, identity) {
+  let current;
   try {
-    lock = await open4(lockPath, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL | constants5.O_NOFOLLOW, 384);
-    await lock.writeFile(randomBytes(16).toString("hex"));
-    identity = await lock.stat();
+    current = await lstat4(directory);
+  } catch (error) {
+    if (missing(error)) return;
+    throw error;
+  }
+  if (!privateDirectory(current) || !sameInode(current, identity)) return;
+  try {
+    await unlink(join7(directory, name));
+  } catch (error) {
+    if (!missing(error)) throw error;
+  }
+  try {
+    await rmdir(directory);
+  } catch (error) {
+    if (!missing(error) && !notEmpty(error)) throw error;
+  }
+}
+async function recoverLock(path, binding) {
+  let directory;
+  try {
+    directory = await lstat4(path);
+  } catch (error) {
+    if (missing(error)) return;
+    throw error;
+  }
+  if (!privateDirectory(directory)) throw new Error();
+  const entries = await opendir(path);
+  let names;
+  try {
+    const first = await entries.read(), second = first ? await entries.read() : null;
+    names = [first?.name, second?.name].filter((name2) => name2 !== void 0);
+  } finally {
+    await entries.close();
+  }
+  if (names.length === 0) return;
+  const name = names[0];
+  if (names.length !== 1 || !name || !/^owner-[a-f0-9]{32}\.json$/.test(name)) throw new Error();
+  let record;
+  try {
+    record = await readPrivate(join7(path, name));
+  } catch (error) {
+    if (missing(error)) return;
+    throw error;
+  }
+  const owner2 = (0, import_secure_json_parse.parse)(record.bytes, void 0, { protoAction: "error", constructorAction: "error" });
+  if (!plain(owner2)) throw new Error();
+  keys(owner2, ["version", "pid", "binding", "nonce"]);
+  if (owner2.version !== 1 || !integer2(owner2.pid, 2147483647) || owner2.pid === 0 || owner2.binding !== binding || typeof owner2.nonce !== "string" || name !== `owner-${owner2.nonce}.json`) throw new Error();
+  try {
+    process.kill(owner2.pid, 0);
+    throw new Error();
+  } catch (error) {
+    if (!plain(error) || error.code !== "ESRCH") throw error;
+  }
+  let current;
+  try {
+    current = await readPrivate(join7(path, name));
+  } catch (error) {
+    if (missing(error)) return;
+    throw error;
+  }
+  if (!sameInfo(record.info, current.info) || record.bytes !== current.bytes) throw new Error();
+  await clearOwner(path, name, directory);
+}
+async function locked(path, clock, action) {
+  await trustedPath(path);
+  const binding = (await clock.sample()).binding;
+  if (!receiptPattern.test(binding) || !integer2(process.pid, 2147483647) || process.pid === 0) throw new Error();
+  const lockPath = path + ".lock", nonce = randomBytes(16).toString("hex"), name = `owner-${nonce}.json`;
+  const candidate = join7(dirname2(path), `.measurement-lock-${nonce}`);
+  let identity, acquired = false;
+  try {
+    await mkdir3(candidate, { mode: 448 });
+    identity = await lstat4(candidate);
+    if (!privateDirectory(identity)) throw new Error();
+    await writePrivate(join7(candidate, name), JSON.stringify({ version: 1, pid: process.pid, binding, nonce }) + "\n");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await recoverLock(lockPath, binding);
+      try {
+        await rename2(candidate, lockPath);
+        acquired = true;
+        break;
+      } catch (error) {
+        if (!notEmpty(error)) throw error;
+      }
+    }
+    if (!acquired) throw new Error();
     return await action();
   } finally {
-    await lock?.close();
-    if (identity) {
-      const current = await lstat4(lockPath);
-      if (current.dev !== identity.dev || current.ino !== identity.ino) throw new Error();
-      await unlink(lockPath);
-    }
+    if (identity) await clearOwner(acquired ? lockPath : candidate, name, identity);
   }
 }
 function stateBytes(value) {
@@ -4563,7 +4654,7 @@ function reportFor(state, status) {
 }
 async function startOperation(contextPath, statePath, clock = systemClock) {
   try {
-    return await locked(statePath, async () => {
+    return await locked(statePath, clock, async () => {
       if (contextPath === statePath || contextPath === statePath + ".lock") throw new Error();
       const source = await readPrivate(contextPath), declared = context((0, import_secure_json_parse.parse)(source.bytes, void 0, { protoAction: "error", constructorAction: "error" })), now = await clock.sample();
       if (!receiptPattern.test(now.binding) || !integer2(now.wallMs, Number.MAX_SAFE_INTEGER) || now.monotonicNs < 0n) throw new Error();
@@ -4592,7 +4683,7 @@ async function startOperation(contextPath, statePath, clock = systemClock) {
 }
 async function phaseOperation(statePath, phase, cachePreparation, clock = systemClock) {
   try {
-    return await locked(statePath, async () => {
+    return await locked(statePath, clock, async () => {
       if (!phases.includes(phase)) throw new Error();
       const { state, previous, now } = await loaded(statePath, clock);
       if (state.report || state.transitions >= transitionLimit) throw new Error();
@@ -4610,7 +4701,7 @@ async function phaseOperation(statePath, phase, cachePreparation, clock = system
 }
 async function finishOperation(statePath, status, outputPath, cachePreparation, clock = systemClock) {
   try {
-    return await locked(statePath, async () => {
+    return await locked(statePath, clock, async () => {
       if (!["success", "failed", "cancelled", "unknown"].includes(status) || outputPath === statePath || outputPath === statePath + ".lock") throw new Error();
       const { state, previous, now } = await loaded(statePath, clock);
       if (outputPath === state.contextPath) throw new Error();

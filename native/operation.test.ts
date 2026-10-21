@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmod, link, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, truncate, writeFile } from 'node:fs/promises';
+import { chmod, link, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { compareOperations, finishOperation, phaseOperation, startOperation } from './operation.ts';
@@ -97,10 +97,120 @@ test('exclusive lock, state checksum and mode checks prevent concurrent or repla
 
 test('two concurrent phase markers admit one atomic transition and leave a readable state', async t => {
   const f = await files(t), clock = new Clock(); await startOperation(f.input, f.state, clock); clock.tick(10);
-  const results = await Promise.allSettled([phaseOperation(f.state, 'work', undefined, clock), phaseOperation(f.state, 'restore', undefined, clock)]);
-  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1); assert.equal(results.filter(result => result.status === 'rejected').length, 1);
+  let release!: () => void, announced!: () => void, samples = 0;
+  const gate = new Promise<void>(done => {release = done;}), held = new Promise<void>(done => {announced = done;});
+  const holdingClock: OperationClock = {async sample() {if (++samples === 2) {announced(); await gate;} return await clock.sample();}};
+  const first = phaseOperation(f.state, 'work', undefined, holdingClock);
+  try {
+    await Promise.race([held, first.then(() => {throw new Error('First marker did not hold its lock');})]);
+    const before = await readFile(f.state, 'utf8'), names = await readdir(f.state + '.lock'), owner = join(f.state + '.lock', names[0]!);
+    const ownerBefore = await readFile(owner, 'utf8');
+    await assert.rejects(phaseOperation(f.state, 'restore', undefined, clock), refusal);
+    assert.equal(await readFile(f.state, 'utf8'), before); assert.equal(await readFile(owner, 'utf8'), ownerBefore);
+  } finally {release();}
+  await first;
   clock.tick(20); const report = await finishOperation(f.state, 'success', f.output, undefined, clock);
-  assert.equal(report.elapsedMs, 30); assert.equal(report.phaseTimingMs.setup, 10); assert.equal((report.phaseTimingMs.work ?? 0) + (report.phaseTimingMs.restore ?? 0), 20);
+  assert.equal(report.elapsedMs, 30); assert.equal(report.phaseTimingMs.setup, 10); assert.equal(report.phaseTimingMs.work, 20); assert.equal(report.phaseTimingMs.restore, null);
+});
+
+async function killedLockHolder(t: {after: (fn: () => Promise<void>) => void}, statePath: string) {
+  const script = `
+    import {readFile} from 'node:fs/promises';
+    const {phaseOperation} = await import(process.argv[1]);
+    const state = JSON.parse(await readFile(process.argv[2], 'utf8')).state;
+    let samples = 0;
+    const keepAlive = setInterval(() => {}, 1000);
+    await phaseOperation(process.argv[2], 'work', undefined, {async sample() {
+      if (++samples === 2) {process.stdout.write('locked\\n'); await new Promise(() => {});}
+      return {wallMs: state.lastWallMs, monotonicNs: BigInt(state.lastNs), binding: state.binding};
+    }});
+    clearInterval(keepAlive);
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script, new URL('./operation.ts', import.meta.url).href, statePath], {stdio: ['ignore', 'pipe', 'pipe']});
+  const terminal = new Promise<{code: number | null; signal: NodeJS.Signals | null}>(done => child.once('close', (code, signal) => done({code, signal})));
+  t.after(async () => {if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); await terminal;});
+  await new Promise<void>((ready, reject) => {
+    const timer = setTimeout(() => {child.kill('SIGKILL'); reject(new Error('Lock holder did not reach its protected phase'));}, 10000);
+    child.stdout.once('data', bytes => {clearTimeout(timer); if (bytes.toString() === 'locked\n') ready(); else reject(new Error('Unexpected lock holder output'));});
+    child.once('error', error => {clearTimeout(timer); reject(error);});
+    child.once('close', () => {clearTimeout(timer); reject(new Error('Lock holder exited before interruption'));});
+  });
+  const names = await readdir(statePath + '.lock'); assert.equal(names.length, 1); assert.match(names[0]!, /^owner-[a-f0-9]{32}\.json$/);
+  const owner = JSON.parse(await readFile(join(statePath + '.lock', names[0]!), 'utf8')); assert.equal(owner.pid, child.pid);
+  child.kill('SIGKILL'); const result = await terminal; assert.equal(result.signal, 'SIGKILL');
+  assert.throws(() => process.kill(child.pid!, 0), {code: 'ESRCH'});
+  return {owner, path: join(statePath + '.lock', names[0]!)};
+}
+
+test('SIGKILL recovery repairs a sealed report with exactly the original final bytes', async t => {
+  const f = await files(t), clock = new Clock(); await startOperation(f.input, f.state, clock); clock.tick(35);
+  const occupied = join(f.root, 'occupied.json'); await writeFile(occupied, 'caller output', {mode: 0o600});
+  await assert.rejects(finishOperation(f.state, 'failed', occupied, 'unavailable', clock), refusal);
+  const sealed = await readFile(f.state, 'utf8'), expected = JSON.parse(sealed).state.report;
+  await killedLockHolder(t, f.state); const lockInfo = await stat(f.state + '.lock'); assert.equal(lockInfo.mode & 0o7777, 0o700);
+  clock.tick(100); const report = await finishOperation(f.state, 'failed', f.output, 'unavailable', clock);
+  assert.deepEqual(report, expected); assert.equal(report.elapsedMs, 35); assert.equal(await readFile(f.state, 'utf8'), sealed);
+  assert.equal(await readFile(f.output, 'utf8'), JSON.stringify(expected) + '\n'); assert.equal(await readFile(occupied, 'utf8'), 'caller output');
+  await assert.rejects(stat(f.state + '.lock'), {code: 'ENOENT'}); assert.ok((await readdir(f.root)).every(name => !name.startsWith('.measurement-lock-')));
+});
+
+test('concurrent dead-owner recovery cannot remove the new live owner', async t => {
+  const f = await files(t), clock = new Clock(); await startOperation(f.input, f.state, clock); await killedLockHolder(t, f.state); clock.tick(10);
+  let release!: () => void, announced!: () => void;
+  const gate = new Promise<void>(done => {release = done;}), held = new Promise<void>(done => {announced = done;});
+  const holdingClock = (): OperationClock => {let samples = 0; return {async sample() {if (++samples === 2) {announced(); await gate;} return await clock.sample();}};};
+  const attempts = [phaseOperation(f.state, 'work', undefined, holdingClock()), phaseOperation(f.state, 'restore', undefined, holdingClock())]
+    .map(attempt => attempt.then(value => ({status: 'fulfilled' as const, value}), reason => ({status: 'rejected' as const, reason})));
+  try {
+    await Promise.race([held, new Promise<void>((_done, reject) => {const timer = setTimeout(() => reject(new Error('Recovery did not acquire a lock')), 5000); timer.unref();})]);
+    const loser = await Promise.race(attempts); assert.equal(loser.status, 'rejected');
+    const names = await readdir(f.state + '.lock'); assert.equal(names.length, 1);
+    const owner = JSON.parse(await readFile(join(f.state + '.lock', names[0]!), 'utf8')); assert.equal(owner.pid, process.pid);
+  } finally {release();}
+  const results = await Promise.all(attempts); assert.equal(results.filter(result => result.status === 'fulfilled').length, 1); assert.equal(results.filter(result => result.status === 'rejected').length, 1);
+  clock.tick(20); assert.equal((await finishOperation(f.state, 'success', f.output, undefined, clock)).elapsedMs, 30);
+});
+
+test('live, foreign-clock, malformed and unsafe owners stay untouched; empty interrupted release is recoverable', async t => {
+  const variants = [
+    {version: 1, pid: process.pid, binding: 'a'.repeat(64)},
+    {version: 1, pid: process.pid, binding: 'b'.repeat(64)},
+    {version: 2, pid: process.pid, binding: 'a'.repeat(64)},
+    ...[0, -1, 1.5, 2147483648].map(pid => ({version: 1, pid, binding: 'a'.repeat(64)})),
+  ];
+  const invalidPids: number[] = [], originalKill = process.kill;
+  process.kill = ((pid, signal) => {if (!Number.isSafeInteger(pid) || pid <= 0 || pid > 0x7fffffff) invalidPids.push(pid); return originalKill(pid, signal);}) as typeof process.kill;
+  try {
+    for (const variant of variants) {
+      const f = await files(t), clock = new Clock(); await startOperation(f.input, f.state, clock); const before = await readFile(f.state, 'utf8');
+      const lock = f.state + '.lock', nonce = 'd'.repeat(32); await mkdir(lock, {mode: 0o700});
+      const owner = join(lock, `owner-${nonce}.json`), bytes = JSON.stringify({...variant, nonce}); await writeFile(owner, bytes, {mode: 0o600});
+      await assert.rejects(phaseOperation(f.state, 'work', undefined, clock), refusal); assert.equal(await readFile(f.state, 'utf8'), before); assert.equal(await readFile(owner, 'utf8'), bytes);
+      assert.ok((await readdir(f.root)).every(name => !name.startsWith('.measurement-lock-')));
+    }
+  } finally {process.kill = originalKill;}
+  assert.deepEqual(invalidPids, []);
+  for (const kind of ['unknown', 'hardlink', 'symlink', 'directory-mode', 'lock-symlink']) {
+    const f = await files(t), clock = new Clock(); await startOperation(f.input, f.state, clock); const before = await readFile(f.state, 'utf8');
+    const lock = f.state + '.lock', nonce = 'd'.repeat(32), target = join(f.root, 'protected-target.json'); await mkdir(lock, {mode: 0o700});
+    const owner = join(lock, `owner-${nonce}.json`); await writeFile(target, JSON.stringify({version: 1, pid: process.pid, binding: clock.binding, nonce}), {mode: 0o600});
+    if (kind === 'unknown') await writeFile(join(lock, 'future-owner'), 'preserve', {mode: 0o600});
+    else if (kind === 'hardlink') await link(target, owner);
+    else if (kind === 'symlink') await symlink(target, owner);
+    else if (kind === 'directory-mode') {await writeFile(owner, await readFile(target), {mode: 0o600}); await chmod(lock, 0o755);}
+    else {await rm(lock, {recursive: true}); await symlink(f.root, lock);}
+    const targetBefore = await readFile(target, 'utf8'); await assert.rejects(phaseOperation(f.state, 'work', undefined, clock), refusal);
+    assert.equal(await readFile(f.state, 'utf8'), before); assert.equal(await readFile(target, 'utf8'), targetBefore);
+  }
+  const empty = await files(t), clock = new Clock(); await startOperation(empty.input, empty.state, clock); await mkdir(empty.state + '.lock', {mode: 0o700});
+  clock.tick(10); await phaseOperation(empty.state, 'work', undefined, clock); await assert.rejects(stat(empty.state + '.lock'), {code: 'ENOENT'});
+});
+
+test('a clock failure after lock acquisition removes only its own prepared owner', async t => {
+  const f = await files(t), clock = new Clock(); await startOperation(f.input, f.state, clock); const before = await readFile(f.state, 'utf8'); let samples = 0;
+  const unavailable: OperationClock = {async sample() {if (++samples === 2) throw new Error('fixture clock unavailable'); return await clock.sample();}};
+  await assert.rejects(phaseOperation(f.state, 'work', undefined, unavailable), refusal); assert.equal(await readFile(f.state, 'utf8'), before);
+  await assert.rejects(stat(f.state + '.lock'), {code: 'ENOENT'}); assert.ok((await readdir(f.root)).every(name => !name.startsWith('.measurement-lock-')));
 });
 
 test('boot/host changes, monotonic rewind, wall jumps and intervals over one day are refused without modifying state', async t => {

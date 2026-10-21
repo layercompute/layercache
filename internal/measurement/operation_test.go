@@ -37,6 +37,7 @@ func TestOperationDecoderStrictBoundsAndTiming(t *testing.T) {
 		"oversized":         bytes.Repeat([]byte(" "), OperationMaximumBytes+1),
 		"unknown authority": bytes.Replace(encoded, []byte(`"version":1`), []byte(`"version":1,"project":"foreign"`), 1),
 		"duplicate value":   bytes.Replace(encoded, []byte(`"elapsedMs":1000`), []byte(`"elapsedMs":1,"elapsedMs":1000`), 1),
+		"case alias":        bytes.Replace(encoded, []byte(`"version":1`), []byte(`"version":1,"VERSION":1`), 1),
 		"duplicate phase":   bytes.Replace(encoded, []byte(`"setup":100`), []byte(`"setup":0,"setup":100`), 1),
 		"missing elapsed":   bytes.Replace(encoded, []byte(`"elapsedMs":1000,`), nil, 1),
 		"missing phase":     bytes.Replace(encoded, []byte(`"restore":0,`), nil, 1),

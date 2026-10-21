@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
-import { lstat, open, readFile, realpath, rename, unlink, link } from 'node:fs/promises';
+import { lstat, open, readFile, readlink, opendir, realpath, rename, unlink, link, mkdir, rmdir } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -43,13 +43,17 @@ export interface OperationReport {
 export interface OperationClock {sample(): Promise<{wallMs: number; monotonicNs: bigint; binding: string}>;}
 const systemClock: OperationClock = {
   async sample() {
-    let boot: string;
-    if (process.platform === 'linux') boot = await readFile('/proc/sys/kernel/random/boot_id', 'utf8');
+    let boot: string, namespace = '';
+    if (process.platform === 'linux') {
+      boot = await readFile('/proc/sys/kernel/random/boot_id', 'utf8');
+      namespace = await readlink('/proc/self/ns/pid');
+      if (!/^pid:\[[1-9][0-9]{0,20}\]$/.test(namespace)) throw new Error();
+    }
     else if (process.platform === 'darwin') boot = execFileSync('/usr/sbin/sysctl', ['-n', 'kern.bootsessionuuid'], {encoding: 'utf8', timeout: 2000, maxBuffer: 1024, stdio: ['ignore', 'pipe', 'ignore']});
     else throw new Error();
     if (!/^[a-f0-9-]{36}\s*$/i.test(boot)) throw new Error();
     // Private only. A report never contains the boot token, hostname or binding.
-    return {wallMs: Date.now(), monotonicNs: process.hrtime.bigint(), binding: hash(`${process.platform}\0${hostname()}\0${boot.trim()}`)};
+    return {wallMs: Date.now(), monotonicNs: process.hrtime.bigint(), binding: hash(`${process.platform}\0${hostname()}\0${boot.trim()}\0${namespace}`)};
   },
 };
 interface State {
@@ -121,16 +125,69 @@ async function writePrivate(path: string, bytes: string, previous?: {bytes: stri
     try {await directory.sync();} finally {await directory.close();}
   } finally {await file?.close(); await unlink(temporary).catch(error => {if (error.code !== 'ENOENT') throw error;});}
 }
-async function locked<T>(path: string, action: () => Promise<T>): Promise<T> {
-  await trustedPath(path);
-  const lockPath = path + '.lock'; let lock: FileHandle | undefined; let identity: Stats | undefined;
+function privateDirectory(info: Stats): boolean {return info.isDirectory() && info.uid === process.geteuid?.() && (info.mode & 0o7777) === 0o700;}
+function sameInode(a: Stats, b: Stats): boolean {return a.dev === b.dev && a.ino === b.ino;}
+function missing(error: unknown): boolean {return plain(error) && error.code === 'ENOENT';}
+function notEmpty(error: unknown): boolean {return plain(error) && ['EEXIST', 'ENOTEMPTY'].includes(String(error.code));}
+
+async function clearOwner(directory: string, name: string, identity: Stats): Promise<void> {
+  let current: Stats;
   try {
-    lock = await open(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    await lock.writeFile(randomBytes(16).toString('hex')); identity = await lock.stat();
+    current = await lstat(directory);
+  } catch (error) {if (missing(error)) return; throw error;}
+  if (!privateDirectory(current) || !sameInode(current, identity)) return;
+  // Every acquired lock already contains its unguessable owner file. Another
+  // recoverer cannot remove a new owner's different filename; rmdir also
+  // refuses a nonempty replacement directory after our unlink.
+  try {await unlink(join(directory, name));} catch (error) {if (!missing(error)) throw error;}
+  try {await rmdir(directory);} catch (error) {if (!missing(error) && !notEmpty(error)) throw error;}
+}
+
+async function recoverLock(path: string, binding: string): Promise<void> {
+  let directory: Stats;
+  try {directory = await lstat(path);} catch (error) {if (missing(error)) return; throw error;}
+  if (!privateDirectory(directory)) throw new Error();
+  const entries = await opendir(path); let names: string[];
+  try {
+    const first = await entries.read(), second = first ? await entries.read() : null;
+    names = [first?.name, second?.name].filter((name): name is string => name !== undefined);
+  } finally {await entries.close();}
+  // An interrupted release may leave an empty directory. Replacing that empty
+  // owned directory is safe because a live lock is published only when full.
+  if (names.length === 0) return;
+  const name = names[0];
+  if (names.length !== 1 || !name || !/^owner-[a-f0-9]{32}\.json$/.test(name)) throw new Error();
+  let record: Awaited<ReturnType<typeof readPrivate>>;
+  try {record = await readPrivate(join(path, name));} catch (error) {if (missing(error)) return; throw error;}
+  const owner: unknown = parse(record.bytes, undefined, {protoAction: 'error', constructorAction: 'error'});
+  if (!plain(owner)) throw new Error(); keys(owner, ['version', 'pid', 'binding', 'nonce']);
+  if (owner.version !== 1 || !integer(owner.pid, 0x7fffffff) || owner.pid === 0 || owner.binding !== binding || typeof owner.nonce !== 'string' || name !== `owner-${owner.nonce}.json`) throw new Error();
+  try {process.kill(owner.pid, 0); throw new Error();} catch (error) {
+    if (!plain(error) || error.code !== 'ESRCH') throw error;
+  }
+  let current: Awaited<ReturnType<typeof readPrivate>>;
+  try {current = await readPrivate(join(path, name));} catch (error) {if (missing(error)) return; throw error;}
+  if (!sameInfo(record.info, current.info) || record.bytes !== current.bytes) throw new Error();
+  await clearOwner(path, name, directory);
+}
+
+async function locked<T>(path: string, clock: OperationClock, action: () => Promise<T>): Promise<T> {
+  await trustedPath(path);
+  const binding = (await clock.sample()).binding;
+  if (!receiptPattern.test(binding) || !integer(process.pid, 0x7fffffff) || process.pid === 0) throw new Error();
+  const lockPath = path + '.lock', nonce = randomBytes(16).toString('hex'), name = `owner-${nonce}.json`;
+  const candidate = join(dirname(path), `.measurement-lock-${nonce}`); let identity: Stats | undefined, acquired = false;
+  try {
+    await mkdir(candidate, {mode: 0o700}); identity = await lstat(candidate); if (!privateDirectory(identity)) throw new Error();
+    await writePrivate(join(candidate, name), JSON.stringify({version: 1, pid: process.pid, binding, nonce}) + '\n');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await recoverLock(lockPath, binding);
+      try {await rename(candidate, lockPath); acquired = true; break;} catch (error) {if (!notEmpty(error)) throw error;}
+    }
+    if (!acquired) throw new Error();
     return await action();
   } finally {
-    await lock?.close();
-    if (identity) {const current = await lstat(lockPath); if (current.dev !== identity.dev || current.ino !== identity.ino) throw new Error(); await unlink(lockPath);}
+    if (identity) await clearOwner(acquired ? lockPath : candidate, name, identity);
   }
 }
 function stateBytes(value: State): string {return JSON.stringify({version: 1, state: value, sha256: hash(JSON.stringify(value))}) + '\n';}
@@ -177,7 +234,7 @@ function reportFor(state: State, status: Status): OperationReport {
     phaseTimingMs: Object.fromEntries(phases.map(phase => [phase, state.phaseNs[phase] === null ? null : Number(ns(state.phaseNs[phase]) / 1000000n)])) as OperationReport['phaseTimingMs']};
 }
 export async function startOperation(contextPath: string, statePath: string, clock: OperationClock = systemClock): Promise<string> {
-  try {return await locked(statePath, async () => {
+  try {return await locked(statePath, clock, async () => {
     if (contextPath === statePath || contextPath === statePath + '.lock') throw new Error();
     const source = await readPrivate(contextPath), declared = context(parse(source.bytes, undefined, {protoAction: 'error', constructorAction: 'error'})), now = await clock.sample();
     if (!receiptPattern.test(now.binding) || !integer(now.wallMs, Number.MAX_SAFE_INTEGER) || now.monotonicNs < 0n) throw new Error();
@@ -188,7 +245,7 @@ export async function startOperation(contextPath: string, statePath: string, clo
   });} catch {throw new Error(errorMessage);}
 }
 export async function phaseOperation(statePath: string, phase: Phase, cachePreparation?: Preparation, clock: OperationClock = systemClock): Promise<string> {
-  try {return await locked(statePath, async () => {
+  try {return await locked(statePath, clock, async () => {
     if (!phases.includes(phase)) throw new Error();
     const {state, previous, now} = await loaded(statePath, clock);
     if (state.report || state.transitions >= transitionLimit) throw new Error();
@@ -198,7 +255,7 @@ export async function phaseOperation(statePath: string, phase: Phase, cachePrepa
   });} catch {throw new Error(errorMessage);}
 }
 export async function finishOperation(statePath: string, status: Status, outputPath: string, cachePreparation?: Preparation, clock: OperationClock = systemClock): Promise<OperationReport> {
-  try {return await locked(statePath, async () => {
+  try {return await locked(statePath, clock, async () => {
     if (!['success', 'failed', 'cancelled', 'unknown'].includes(status) || outputPath === statePath || outputPath === statePath + '.lock') throw new Error();
     const {state, previous, now} = await loaded(statePath, clock);
     if (outputPath === state.contextPath) throw new Error();

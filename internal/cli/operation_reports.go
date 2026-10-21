@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"github.com/layercache/layercache/internal/config"
 	"github.com/layercache/layercache/internal/measurement"
 )
+
+var operationInstallationPattern = regexp.MustCompile(`^install-[A-Za-z0-9_-]{24}$`)
 
 // Operation imports carry an already sealed elapsed-time observation. Importing
 // does not run the workload, sample the importer's hardware, or mutate its config.
@@ -48,6 +51,9 @@ func runOperationReport(ctx context.Context, args []string, stdout, stderr io.Wr
 	if err != nil || measurement.ValidateOperationReportShape(report) != nil {
 		return errors.New("invalid bounded operation report; no report was sent")
 	}
+	if report.SessionID == "" {
+		return errors.New("operation report import requires a declared sessionId; no report was sent")
+	}
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return errors.New("load operation report project configuration")
@@ -55,7 +61,10 @@ func runOperationReport(ctx context.Context, args []string, stdout, stderr io.Wr
 	if cfg.ProjectID == "" || cfg.CompatibilityID == "" {
 		return errors.New("operation report requires the producing project's exact compatibility profile")
 	}
-	runID, workspaceID := operationReportContext(cfg.ProjectID, cfg.CompatibilityID, *integration, report.OperationID)
+	if !operationInstallationPattern.MatchString(cfg.InstallationID) {
+		return errors.New("operation report import requires a stable installation identity; rerun layercache setup")
+	}
+	runID, workspaceID := operationReportContext(cfg.InstallationID, report.SessionID)
 	endpoint, token := localRuntimeURL(cfg.Listen), ""
 	client := newLocalCLIHTTPClient(controlRequestTimeout)
 	if cfg.RemoteOnly {
@@ -91,10 +100,12 @@ func runOperationReport(ctx context.Context, args []string, stdout, stderr io.Wr
 	return printResult(stdout, *jsonOutput, receipt, "Operation observation recorded. A paired elapsed difference does not establish compute or billed savings.")
 }
 
-// Use a separate identity domain from native invocation imports, even if a
-// caller accidentally reuses the same operation/invocation string.
-func operationReportContext(project, profile, integration, operation string) (string, string) {
-	digest := sha256.Sum256([]byte("layercache-operation-import-v1\x00" + project + "\x00" + profile + "\x00" + integration + "\x00" + operation))
+// Imports in one declared session share an execution bucket. Operation identity
+// belongs to the immutable report, while source/profile remain signed authority;
+// changing them cannot rotate the session's operation quota. This local/member
+// grouping does not attest to a CI job or a physical machine.
+func operationReportContext(installation, session string) (string, string) {
+	digest := sha256.Sum256([]byte("layercache-operation-import-v1\x00" + installation + "\x00" + session))
 	value := hex.EncodeToString(digest[:])
 	return "run-operation-" + value, "sha256:" + value
 }

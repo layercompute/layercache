@@ -110,6 +110,15 @@ func DecodeOperationReport(reader io.Reader) (OperationReport, error) {
 	if json.Unmarshal(data, &fields) != nil {
 		return OperationReport{}, ErrOperationInvalid
 	}
+	// encoding/json accepts case-insensitive field aliases. The wire contract
+	// uses exact property names, so aliases must not bypass strict decoding.
+	for field := range fields {
+		switch field {
+		case "version", "operationId", "sessionId", "workloadDigest", "coverageDigest", "environmentDigest", "otherCachesDigest", "outputState", "cachePolicy", "cachePreparation", "baselineReceiptId", "startedAt", "finishedAt", "elapsedMs", "status", "phaseTimingMs":
+		default:
+			return OperationReport{}, ErrOperationInvalid
+		}
+	}
 	for _, field := range []string{"version", "operationId", "workloadDigest", "coverageDigest", "outputState", "cachePolicy", "cachePreparation", "startedAt", "finishedAt", "elapsedMs", "status", "phaseTimingMs"} {
 		if raw, ok := fields[field]; !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return OperationReport{}, ErrOperationInvalid
