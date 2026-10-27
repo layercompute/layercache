@@ -23,13 +23,13 @@ func discoverConfiguredProject(ctx context.Context, cfg config.Config, directory
 	if err != nil && !errors.Is(err, project.ErrNoRemote) {
 		return project.Identity{}, fmt.Errorf("cannot establish current project identity: %w", err)
 	}
-	if discovered.Project != "" && (discovered.Project == cfg.ProjectID || strings.HasPrefix(cfg.ProjectID, "github.com/") && strings.EqualFold(discovered.Project, cfg.ProjectID)) {
+	repositoryMismatch := discovered.ActionsRepository != "" && cfg.ActionsRepository != "" && !strings.EqualFold(discovered.ActionsRepository, cfg.ActionsRepository)
+	if !repositoryMismatch && discovered.Project != "" && (discovered.Project == cfg.ProjectID || strings.HasPrefix(cfg.ProjectID, "github.com/") && strings.EqualFold(discovered.Project, cfg.ProjectID)) {
 		return discovered, nil
 	}
-	// Team-issued project IDs may be opaque. In that case the saved repository
-	// binding, rather than an absolute path, identifies matching clones.
-	if err == nil && !strings.HasPrefix(cfg.ProjectID, "github.com/") &&
-		!strings.HasPrefix(cfg.ProjectID, "local-") &&
+	// A project's stable cache identity can retain its old GitHub spelling after
+	// a repository transfer. The explicit repository binding identifies its clones.
+	if err == nil && !strings.HasPrefix(cfg.ProjectID, "local-") &&
 		discovered.ActionsRepository != "" && strings.EqualFold(discovered.ActionsRepository, cfg.ActionsRepository) {
 		return discovered, nil
 	}

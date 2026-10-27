@@ -66,18 +66,19 @@ func selectCloudProject(list cloudProjects, team, project string) (portal.Projec
 		return portal.Project{}, errors.New("multiple projects match; use --team and --project with IDs from --list")
 	}
 	p := matches[0]
-	if !validCloudProjectID(p.ID, p.Repository) || !validCloudRepository(p.Repository) || !strings.HasPrefix(p.DefaultRef, "refs/heads/") {
+	if !validCloudProjectID(p.ID) || !validCloudRepository(p.Repository) || !strings.HasPrefix(p.DefaultRef, "refs/heads/") {
 		return portal.Project{}, errors.New("cloud returned invalid project metadata")
 	}
 	return p, nil
 }
 
-func validCloudProjectID(id, repository string) bool {
+// Project IDs retain their provisioned spelling when a repository is transferred.
+// The service returns the current repository binding separately.
+func validCloudProjectID(id string) bool {
 	if strings.HasPrefix(id, "github.com/") {
-		selected := strings.TrimPrefix(id, "github.com/")
-		return validCloudRepository(selected) && validCloudRepository(repository) && strings.EqualFold(selected, repository)
+		return validCloudRepository(strings.TrimPrefix(id, "github.com/"))
 	}
-	return id != "" && len(id) <= 128 && !strings.ContainsAny(id, "/\\. \t\r\n\x00")
+	return id != "" && len(id) <= 128 && !strings.ContainsAny(id, "/\\. %?#:\t\r\n\x00")
 }
 
 // GitHub treats ASCII repository spelling case-insensitively. Validate only

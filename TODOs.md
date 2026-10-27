@@ -322,6 +322,22 @@ workspaces and filesystem migration are outside the current product scope.
   [migration guide](docs/cloud-migration.md) records the reusable checks.
   This completes the bounded operator cohort, not public signup or paid plans.
 
+- [ ] **Keep existing cache projects usable after a GitHub repository transfer.**
+  Owner: LayerCache CLI with the cloud/operator and application CI owners.
+  October 28 user outcome: keep a project's original cache identity while its
+  explicit repository binding follows the transferred repository. Let CLI
+  discovery match that binding independently of a GitHub-shaped project ID;
+  retain unrelated-repository, missing-binding, local-project and untrusted-origin
+  refusal. Acceptance: focused repository-scope regression tests, guarded hosted
+  binding migration and application callers retaining the original project ID.
+  CLI [discovery](internal/cli/repository_scope.go),
+  [connection metadata](internal/cli/cloud_connect.go) and
+  [VM routing](internal/cli/vm_route.go) now preserve that separation. Focused
+  Go CLI regression tests pass normally and with the race detector for transferred
+  connect/run and VM routes, old-name and unrelated checkouts, invalid metadata
+  and local/origin controls. Installed
+  clients, hosted migration and application adoption remain separate outcomes.
+
 - [x] **Retire verified legacy cache storage after recovery and dependency checks.**
   Owner: LayerCache cloud/operator. October 20 retirement followed a full R2
   recovery download, authenticated decryption and complete archive/hash
