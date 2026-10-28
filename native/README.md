@@ -14,7 +14,7 @@ build. Local engineers use the same client and keys from fresh worktrees.
 Until releases are versioned, install the repository's checked-in, built package:
 
 ```sh
-pnpm add -D '@layercache/native@github:ziahamza/layercache#main'
+pnpm add -D '@layercache/native@github:layercompute/layercache#main'
 ```
 
 The lockfile pins the resolved commit. Update the dependency explicitly to move
@@ -78,7 +78,7 @@ the daemon handles authenticated team-cache access. No token-copy script is need
 
 ## CI before a Mac is allocated
 
-Use `ziahamza/layercache/action/native@main` in a Linux job after checkout.
+Use `layercompute/layercache/action/native@main` in a Linux job after checkout.
 Grant `contents: read` and `id-token: write`. Inputs:
 
 - `team-url`, `project`, `compatibility`: same endpoint and identities used locally.
@@ -118,7 +118,7 @@ without Xcode. macOS verifies all fields against its actual toolchain before
 restore or save; simulator saves cannot run on Linux.
 
 ```yaml
-- uses: ziahamza/layercache/action/native@main
+- uses: layercompute/layercache/action/native@main
   id: native
   env:
     NODE_ENV: development

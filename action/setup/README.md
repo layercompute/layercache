@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: ziahamza/layercache/action/setup@cb254e9af694f6fe25f5a0ad416456174bda3e44
+  - uses: layercompute/layercache/action/setup@b7b7d34eedd2e3b3cbd7565505049f1fe48f3061
     id: layercache
     with:
-      repository: ziahamza/layercache
+      repository: layercompute/layercache
       version: v0.1.0-beta.9
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: ziahamza/layercache/action/cache@cb254e9af694f6fe25f5a0ad416456174bda3e44
+  - uses: layercompute/layercache/action/cache@b7b7d34eedd2e3b3cbd7565505049f1fe48f3061
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,8 +30,9 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The action and release are pinned to CLI beta.9. It includes complete operation
-reporting and explicit cold/warm comparisons, confirmed Turbo
+The actions are pinned to the reviewed repository-transfer installer source;
+the binary release stays pinned to CLI beta.9. The release includes complete
+operation reporting and explicit cold/warm comparisons, confirmed Turbo
 publication, permanent-conflict pin retirement, owner-only Personal projects,
 native Nx Local/direct private endpoints, native Bazel HTTP integration, storage
 inspection and standalone Xcode cache lifecycle with scoped snapshot access.

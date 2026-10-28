@@ -21,7 +21,7 @@ install `layercache-native`. Install the pinned package before the measured
 operation, rather than adding a dependency installation to cache setup:
 
 ```sh
-pnpm add -D '@layercache/native@github:ziahamza/layercache#cb254e9af694f6fe25f5a0ad416456174bda3e44'
+pnpm add -D '@layercache/native@github:layercompute/layercache#cb254e9af694f6fe25f5a0ad416456174bda3e44'
 ```
 
 Invoke it with `pnpm exec layercache-native` from that project, or use its

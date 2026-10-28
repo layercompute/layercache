@@ -17,7 +17,7 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@v4
-  - uses: ziahamza/layercache/action/turbo@9c071a6e94aa7a173a810165020c6f3eaedda01e
+  - uses: layercompute/layercache/action/turbo@7b5861df3db72882b4122dd66af5e87bb37a625e
     with:
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
@@ -61,7 +61,7 @@ Required PR checks can keep running their Turbo commands while reusing matching
 results. To force fresh tasks on main, choose a policy in the workflow:
 
 ```yaml
-- uses: ziahamza/layercache/action/turbo@9c071a6e94aa7a173a810165020c6f3eaedda01e
+- uses: layercompute/layercache/action/turbo@7b5861df3db72882b4122dd66af5e87bb37a625e
   with:
     team-url: https://cache.example.com
     compatibility: linux-amd64-node24-schema1

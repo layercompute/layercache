@@ -11,7 +11,7 @@ permissions:
 steps:
   - uses: actions/checkout@v5
   - uses: docker/setup-buildx-action@v3
-  - uses: ziahamza/layercache/action/buildkit@main
+  - uses: layercompute/layercache/action/buildkit@main
     id: cache
     with:
       team-url: https://layer-cache.ziahamza.com

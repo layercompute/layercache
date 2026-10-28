@@ -55,7 +55,7 @@ const integrationNames: Record<string, string> = {
   gradle: 'Gradle', xcode: 'Xcode', bazel: 'Bazel', nx: 'Nx', expo: 'Expo',
 };
 type IntegrationGuide = Pick<IntegrationCoverage, 'support' | 'action' | 'documentation'> & {units: string; missingReason: string};
-const docs = 'https://github.com/ziahamza/layercache/blob/main/';
+const docs = 'https://github.com/layercompute/layercache/blob/main/';
 const integrationGuides: Record<string, IntegrationGuide> = {
   turbo: {support: 'outcomes', units: 'tasks', missingReason: 'No completed Turborepo task summaries were recorded in this period.', action: 'Enable summaries in the LayerCache Turbo action or CLI. Artifact requests alone do not establish task outcomes.', documentation: docs + 'action/turbo/README.md#build-time-reports'},
   actions: {support: 'outcomes', units: 'archive outcomes', missingReason: 'No GitHub Actions cache archive outcomes were recorded in this period.', action: 'Connect the workflow to the LayerCache Actions cache endpoint. Other GitHub artifact transfers are separate.', documentation: docs + 'docs/actions-cache-contract.md'},
