@@ -310,13 +310,14 @@ transfer speedup or cause for issue #34's historical miss.
 
 ## Current source qualification
 
-The immutable action pin is:
+The current immutable action pin includes the canonical GitHub OIDC audience:
 
 ```yaml
-uses: ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858
+uses: layercompute/layercache/action/retained@7b5861df3db72882b4122dd66af5e87bb37a625e
 ```
 
-That reviewed source has the same Git tree as merged main
+The original retained-service implementation at
+`29489e8e9b132df4cf2f9625ea49cb7c3150e858` has the same Git tree as merged main
 `b0d39011fa703944b4f7cd9c7936f067db1347ed`. All fourteen PR checks,
 independent Standards/Spec reviews and the external review passed.
 Post-merge [CI](https://github.com/ziahamza/layercache/actions/runs/39028098237),

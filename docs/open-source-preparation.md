@@ -6,7 +6,7 @@ visibility change.
 
 ## Direct action imports
 
-Consumers use `ziahamza/layercache/action/turbo@main`. There is no actions mirror,
+Consumers use `layercompute/layercache/action/turbo@main`. There is no actions mirror,
 consumer authentication script, or consumer dependency to maintain. The action
 and its tests are TypeScript, executed by Node 24 with separate typechecking.
 The action imports shared helpers from `action/setup`, so keep both directories

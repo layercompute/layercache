@@ -33,7 +33,7 @@ and direct private endpoints; remote read-through and queued Nx publication are
 not implemented.
 It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
 signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest
-CLI beta, [v0.1.0-beta.9](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.9),
+CLI beta, [v0.1.0-beta.9](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.9),
 adds complete operation timing and explicit cold/warm comparisons through the
 [operation workflow](docs/operation-measurement.md). Setup, restore, work and
 publication contribute to the observed interval; elapsed differences remain
@@ -53,15 +53,17 @@ Actions cache v2, and a general adapter SDK remain out of scope.
 
 Release and deployment instructions are in the [verified installer](scripts/README.md), [GitHub runner setup](action/setup/README.md), and [Team Cache deployment guide](docs/deployment.md). See [quota administration](docs/cache-administration.md), [retention policies](docs/retention.md), [trust-key rotation](docs/public-trust.md), and [performance qualification](docs/performance.md) for operations. The beta release qualifies native Local/Team Cache clients; it does not establish a hosted cloud service or qualify Public Builds.
 
-To install the beta from an inspected checkout of commit `cb254e9af694f6fe25f5a0ad416456174bda3e44`:
+To install the beta, run the verified installer from an inspected current
+checkout. The release binary is pinned to source
+`cb254e9af694f6fe25f5a0ad416456174bda3e44`:
 
 ```bash
-bash scripts/install.sh --repository ziahamza/layercache \
+bash scripts/install.sh --repository layercompute/layercache \
   --version v0.1.0-beta.9 --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
 
-The installer requires `gh`, `jq`, `tar`, and `shasum`; it checks the immutable release, attestations, and archive checksum before replacing a binary. See the [installation guide](scripts/README.md) for supported platforms and authentication.
+The installer requires `gh`, `jq`, `tar`, and `shasum`; it checks the immutable release, attestations, and archive checksum before replacing a binary. The current installer preserves beta.9's original signing identity after the repository transfer. See the [installation guide](scripts/README.md) for supported platforms and authentication.
 
 ## Cache model
 
@@ -196,7 +198,7 @@ permissions:
   id-token: write
 steps:
   # Check out the project, configure Node/pnpm, and install dependencies first.
-  - uses: ziahamza/layercache/action/turbo@cb254e9af694f6fe25f5a0ad416456174bda3e44
+  - uses: layercompute/layercache/action/turbo@7b5861df3db72882b4122dd66af5e87bb37a625e
     with:
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1

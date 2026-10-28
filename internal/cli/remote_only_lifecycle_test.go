@@ -338,9 +338,6 @@ func TestRemoteOnlyConnectPreservesMixedCaseImportedRepositoryIdentity(t *testin
 	if _, scopeErr := discoverConfiguredProject(context.Background(), cfg, "", false); scopeErr == nil {
 		t.Fatal("case-insensitive binding accepted a different checkout")
 	}
-	if validCloudProjectID(projectID, "other/repository") {
-		t.Fatal("case-insensitive binding accepted a different repository")
-	}
 }
 
 func TestRemoteOnlySetupRejectsOwnedAndPartialLocalIntegrations(t *testing.T) {
@@ -696,7 +693,21 @@ func TestCloudProjectSelectionPreservesASCIIRepositorySpellingAndRejectsFoldAlia
 		{name: "mixed repository", id: "github.com/exampleorg/widgets", repository: "ExampleOrg/Widgets", valid: true},
 		{name: "mixed preserved project ID", id: "github.com/ExampleOrg/Widgets", repository: "exampleorg/widgets", valid: true},
 		{name: "opaque ID mixed repository", id: "project-one", repository: "ExampleOrg/Widgets", valid: true},
-		{name: "foreign ASCII repository", id: "github.com/other/widgets", repository: "ExampleOrg/Widgets"},
+		{name: "transferred repository", id: "github.com/other/widgets", repository: "ExampleOrg/Widgets", valid: true},
+		{name: "missing project ID", repository: "ExampleOrg/Widgets"},
+		{name: "missing repository", id: "github.com/other/widgets"},
+		{name: "dot project ID", id: ".", repository: "ExampleOrg/Widgets"},
+		{name: "parent project ID", id: "..", repository: "ExampleOrg/Widgets"},
+		{name: "opaque project slash", id: "project/one", repository: "ExampleOrg/Widgets"},
+		{name: "opaque project query", id: "project?one", repository: "ExampleOrg/Widgets"},
+		{name: "project URL", id: "https://github.com/other/widgets", repository: "ExampleOrg/Widgets"},
+		{name: "project URL query", id: "github.com/other/widgets?token=x", repository: "ExampleOrg/Widgets"},
+		{name: "project URL fragment", id: "github.com/other/widgets#fragment", repository: "ExampleOrg/Widgets"},
+		{name: "project URL encoding", id: "github.com/other/%77idgets", repository: "ExampleOrg/Widgets"},
+		{name: "project URL extra slash", id: "github.com/other/widgets/extra", repository: "ExampleOrg/Widgets"},
+		{name: "project URL parent", id: "github.com/../widgets", repository: "ExampleOrg/Widgets"},
+		{name: "repository URL", id: "project-one", repository: "https://github.com/ExampleOrg/Widgets"},
+		{name: "repository URL query", id: "project-one", repository: "ExampleOrg/Widgets?token=x"},
 		{name: "Unicode repository Kelvin fold", id: "github.com/exampleorg/kwidgets", repository: "ExampleOrg/KWidgets"},
 		{name: "Unicode ID Kelvin fold", id: "github.com/exampleorg/Kwidgets", repository: "ExampleOrg/KWidgets"},
 		{name: "Unicode repository long s fold", id: "github.com/ask/widgets", repository: "aſk/widgets"},

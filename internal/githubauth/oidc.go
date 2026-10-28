@@ -48,8 +48,15 @@ type OIDCVerifier struct {
 }
 
 func (verifier *OIDCVerifier) Verify(ctx context.Context, rawToken, audience string, now time.Time) (ActionsIdentity, error) {
+	if audience == "" {
+		return ActionsIdentity{}, errors.New("invalid GitHub Actions OIDC token")
+	}
+	return verifier.verify(ctx, rawToken, []string{audience}, now)
+}
+
+func (verifier *OIDCVerifier) verify(ctx context.Context, rawToken string, audiences []string, now time.Time) (ActionsIdentity, error) {
 	parts := strings.Split(rawToken, ".")
-	if len(parts) != 3 || audience == "" {
+	if len(parts) != 3 || len(audiences) == 0 {
 		return ActionsIdentity{}, errors.New("invalid GitHub Actions OIDC token")
 	}
 	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
@@ -89,7 +96,11 @@ func (verifier *OIDCVerifier) Verify(ctx context.Context, rawToken, audience str
 	if issuer == "" {
 		issuer = DefaultOIDCIssuer
 	}
-	if stringClaim(claims, "iss") != issuer || !audienceClaim(claims["aud"], audience) {
+	matchedAudience := false
+	for _, audience := range audiences {
+		matchedAudience = matchedAudience || audienceClaim(claims["aud"], audience)
+	}
+	if stringClaim(claims, "iss") != issuer || !matchedAudience {
 		return ActionsIdentity{}, errors.New("GitHub Actions OIDC issuer or audience does not match")
 	}
 	expiresAt, ok := numericDate(claims["exp"])

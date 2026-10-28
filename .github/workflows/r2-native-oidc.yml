@@ -57,7 +57,7 @@ jobs:
         id: prepare
         run: node qa/r2-native-oidc/run.mjs prepare
       - name: Exchange real GitHub OIDC through the pinned native action
-        uses: ziahamza/layercache/action/turbo@170582ba6caccb5f5dcdf60171d8d65196075993
+        uses: layercompute/layercache/action/turbo@7b5861df3db72882b4122dd66af5e87bb37a625e
         with:
           team-url: ${{ vars.LAYERCACHE_R2_QA_ORIGIN }}
           project: ${{ secrets.LAYERCACHE_R2_QA_PROJECT }}

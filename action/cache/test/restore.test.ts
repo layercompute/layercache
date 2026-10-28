@@ -32,7 +32,7 @@ describe("restore action", () => {
     try {
       const env: NodeJS.ProcessEnv = { GITHUB_JOB: "public-cache" };
       await runRestore({ core, cache, env });
-      expect(core.oidcAudiences).toEqual(["layercache:github.com/acme/widget"]);
+      expect(core.oidcAudiences).toEqual(["https://layercache.dev/oidc/projects/8ac5bc08a41714b439de011cd921e0dddce459b45787709cfa4e295aa228f879"]);
       expect(exchange).toHaveBeenCalledWith(
         new URL("https://cache.layercache.example/layercache/v1/auth/github-oidc/exchange"),
 		expect.objectContaining({ method: "POST", redirect: "error" }),

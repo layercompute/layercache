@@ -75,7 +75,7 @@ steps:
     shell: bash
     run: |
       node -e 'console.log("until=" + new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString())' >> "$GITHUB_OUTPUT"
-  - uses: ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858
+  - uses: layercompute/layercache/action/retained@7b5861df3db72882b4122dd66af5e87bb37a625e
     id: retained
     with:
       mode: publish
@@ -105,7 +105,7 @@ job label. Do not take the remaining expected context from an arbitrary
 downloaded receipt.
 
 ```yaml
-- uses: ziahamza/layercache/action/retained@29489e8e9b132df4cf2f9625ea49cb7c3150e858
+- uses: layercompute/layercache/action/retained@7b5861df3db72882b4122dd66af5e87bb37a625e
   id: retained
   with:
     mode: read

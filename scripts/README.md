@@ -1,6 +1,6 @@
 # Install a release
 
-The latest CLI beta is [v0.1.0-beta.9](https://github.com/ziahamza/layercache/releases/tag/v0.1.0-beta.9),
+The latest CLI beta is [v0.1.0-beta.9](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.9),
 pinned to protected main commit `cb254e9af694f6fe25f5a0ad416456174bda3e44`.
 It adds immutable operation reports and explicit complete-interval comparisons.
 The separate [native recorder](../docs/operation-measurement.md) runs offline;
@@ -21,10 +21,11 @@ replay under quota pressure; managed Xcode Cloud builds, external Swift replay
 and application savings need separate qualification. Nx Local-to-private
 forwarding remains future work. Public Builds are not qualified by this
 prerelease; a hosted self-serve cloud requires separate deployment. Run the
-installer from an inspected checkout pinned to that source commit:
+installer from an inspected current checkout. The binary remains pinned to the
+release source above:
 
 ```sh
-bash scripts/install.sh --repository ziahamza/layercache --version v0.1.0-beta.9 \
+bash scripts/install.sh --repository layercompute/layercache --version v0.1.0-beta.9 \
   --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
@@ -42,6 +43,13 @@ with GitHub's attestation verifier. Verification binds the publishing repository
 archive checksum and permits exactly one regular binary member. Only a verified
 binary that passes `help` replaces the installed executable, using an atomic
 rename. Symlink targets are refused. There is no skip-verification option.
+
+The repository moved to `layercompute/layercache`. Beta.9 retains its original
+`ziahamza/layercache` signing identity. The current installer verifies preserved
+public attestation bundles only for that exact release and source commit; all
+other releases require attestations from the requested repository. It never
+retries verification against a different signer. See the
+[transfer provenance policy](provenance/README.md).
 
 The signing policy uses the official
 [GitHub attestation verifier](https://cli.github.com/manual/gh_attestation_verify).
@@ -70,7 +78,9 @@ credential helper are compiled. The retained JSON contains task execution,
 restore, changed-input and offline-recovery evidence; it contains no daemon
 configuration or credentials.
 
-The installer and acceptance fixtures come from that same exact release source.
+The acceptance fixtures come from the exact release source. The installer and
+its provenance policy come from the reviewed current checkout so that historical
+releases can be verified after a repository transfer.
 The Turbo acceptance uses production metadata deadlines and deterministic delayed
 responses, and requires permanent conflict pins to retire. Nx acceptance proves
 Local/restart replay, a fresh read-only direct consumer with zero task executions,

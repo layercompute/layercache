@@ -322,6 +322,63 @@ workspaces and filesystem migration are outside the current product scope.
   [migration guide](docs/cloud-migration.md) records the reusable checks.
   This completes the bounded operator cohort, not public signup or paid plans.
 
+- [ ] **Finish the LayerCache move to `layercompute/layercache`.**
+  Owner: LayerCache source, release and cloud/operator, coordinated with the
+  application CI owner. October 29 user outcome: make the transferred repository
+  the source of current Actions, installation, documentation and dashboard links,
+  while existing cache identities and historical signed releases stay verifiable.
+  Update local remotes and active consumers without changing native keys, stored
+  objects, signing keys or project membership. Verify GitHub Actions can execute
+  again, qualify exact PR #89 source, land through protected checks, verify normal
+  main CI, and publish and install the next immutable CLI beta. Qualify historical
+  beta.9 against its original signer identity rather than relabeling its provenance.
+  Source qualification, release, installed CLI and service deployment are distinct
+  gates. Keep credentials and operational receipts outside this public repository.
+  The restored hosted checks caught a stale packaged Native action that still
+  requested the old audience. Its bundle is regenerated from the pinned source;
+  a regression now runs the actual CJS action and rejects the historical bundle's
+  legacy audience before accepting the corrected artifact. Protected checks must
+  qualify this final source before landing or publishing.
+
+- [ ] **Keep existing cache projects usable after a GitHub repository transfer.**
+  Owner: LayerCache CLI with the cloud/operator and application CI owners.
+  October 28 user outcome: keep a project's original cache identity while its
+  explicit repository binding follows the transferred repository. Let CLI
+  discovery match that binding independently of a GitHub-shaped project ID;
+  retain unrelated-repository, missing-binding, local-project and untrusted-origin
+  refusal. Acceptance: focused repository-scope regression tests, guarded hosted
+  binding migration and application callers retaining the original project ID.
+  CLI [discovery](internal/cli/repository_scope.go),
+  [connection metadata](internal/cli/cloud_connect.go) and
+  [VM routing](internal/cli/vm_route.go) now preserve that separation. Focused
+  Go CLI regression tests pass normally and with the race detector for transferred
+  connect/run and VM routes, old-name and unrelated checkouts, invalid metadata
+  and local/origin controls. October 28 follow-up acceptance adds actual
+  GitHub OIDC admission after transfer: clients request the canonical HTTPS
+  audience `https://layercache.dev/oidc/projects/<sha256-of-project-utf8>`.
+  The verifier accepts only that project's canonical or exact legacy audience,
+  retaining signature, issuer, expiry and repository guards. A hosted isolation
+  check rejected the legacy opaque audience and accepted the canonical audience
+  on both GitHub and Ubicloud runners. Focused action and service regressions
+  cover the new audience and cross-project/default-audience denials.
+  Source qualification, installed clients, deployed backend, actual remote reuse
+  and a new immutable CLI release remain separate gates. Required hosted CI was
+  initially prevented from starting by a GitHub account billing lock. The
+  October 29 organization transfer restored execution of the Linux lint check;
+  preserve protected-main checks and publish only after exact-source qualification.
+  Published-beta qualification now accepts validated explicit tag, source commit
+  and native-bundle digest inputs before checkout; PR checks retain the existing
+  fixed beta.9 fixture. Qualify the next release using its actual merged source.
+  The reviewed OIDC runtime/client source at `7b5861d` is deployed for the managed
+  cohort. Actual hosted qualification now passes a main-ref native producer and
+  independent non-default-ref consumer: two remote task hits, zero executions,
+  matching output digests and denied reader writes. Changed source, environment
+  and compatibility miss; failed tasks execute twice without publication. A
+  separate real-project typecheck pair restores all nine selected tasks remotely
+  on a fresh runner, with zero local hits. These establish bounded cache reuse,
+  not required-artifact retention or monthly savings. Protected source CI and
+  the immutable CLI release remain open after the organization transfer.
+
 - [x] **Retire verified legacy cache storage after recovery and dependency checks.**
   Owner: LayerCache cloud/operator. October 20 retirement followed a full R2
   recovery download, authenticated decryption and complete archive/hash

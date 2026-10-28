@@ -135,7 +135,7 @@ test('coverage gives each integration an explanation, a next step and public doc
     assert.ok(coverage.action.trim().length > 0, `${integration.id} next step`);
     const documentation = new URL(coverage.documentation);
     assert.equal(documentation.origin, 'https://github.com', integration.id);
-    assert.match(documentation.pathname, /^\/ziahamza\/layercache\/blob\/main\/(?:action\/|docs\/|native\/)/, integration.id);
+    assert.match(documentation.pathname, /^\/layercompute\/layercache\/blob\/main\/(?:action\/|docs\/|native\/)/, integration.id);
     assert.equal(documentation.username, '', integration.id);
     assert.equal(documentation.password, '', integration.id);
     assert.equal(documentation.search, '', integration.id);

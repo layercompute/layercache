@@ -17,7 +17,6 @@ import (
 	"github.com/layercache/layercache/internal/access"
 	"github.com/layercache/layercache/internal/compatibility"
 	"github.com/layercache/layercache/internal/config"
-	"github.com/layercache/layercache/internal/project"
 )
 
 const maximumVMRouteLifetime = time.Hour
@@ -268,12 +267,11 @@ func resolveVMActionsScope(
 		return explicit, nil
 	}
 
-	discovered, err := project.Discover(ctx, "")
+	discovered, err := discoverConfiguredProject(ctx, cfg, "", false)
 	if err != nil {
 		return vmActionsScope{}, actionsScopeDiscoveryError(err)
 	}
-	if discovered.Project != cfg.ProjectID ||
-		!strings.EqualFold(discovered.ActionsRepository, cfg.ActionsRepository) {
+	if !strings.EqualFold(discovered.ActionsRepository, cfg.ActionsRepository) {
 		return vmActionsScope{}, actionsScopeDiscoveryError(fmt.Errorf(
 			"checkout project %q does not match configured project %q", discovered.Project, cfg.ProjectID,
 		))

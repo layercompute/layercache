@@ -70,7 +70,7 @@ async function provider(options = {}) {
     requests.push({ method: request.method, route });
     if (route === '/token') {
       assert.equal(request.headers.authorization, 'Bearer fixture-request-secret');
-      assert.equal(new URL(request.url, 'http://fixture').searchParams.get('audience'), `layercache:${baseProducer.project}`);
+      assert.equal(new URL(request.url, 'http://fixture').searchParams.get('audience'), 'https://layercache.dev/oidc/projects/66d8209746b8e59fd6ac2748db407e7dbc93a70c97c3bfa3e2183fe129b91059');
       send(response, 200, { value: jwt({ repository: baseProducer.repository, repository_id: baseProducer.repositoryId,
         sha: sourceCommit, workflow_ref: baseProducer.workflowRef, run_id: baseProducer.runId, run_attempt: runAttempt, check_run_id: jobId }) });
       return;

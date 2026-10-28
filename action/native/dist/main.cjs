@@ -3421,7 +3421,7 @@ async function archiveBound(path) {
 
 // action/setup/auth.ts
 var import_node_fs8 = require("node:fs");
-var import_node_crypto4 = require("node:crypto");
+var import_node_crypto5 = require("node:crypto");
 
 // action/setup/execution.ts
 var import_node_child_process = require("node:child_process");
@@ -3549,6 +3549,12 @@ async function reportExecutionObservation({ endpoint, project, exchange, env = p
   }
 }
 
+// action/setup/oidc.ts
+var import_node_crypto4 = require("node:crypto");
+function projectAudience(project) {
+  return `https://layercache.dev/oidc/projects/${(0, import_node_crypto4.createHash)("sha256").update(project, "utf8").digest("hex")}`;
+}
+
 // action/setup/auth.ts
 var escape = (value) => value.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
 var defaultLog = (value) => {
@@ -3561,7 +3567,7 @@ function fileCommands(path, values, append = import_node_fs8.appendFileSync) {
   if (!path) throw new Error("Invalid GitHub file command");
   const records = Object.entries(values).map(([name, value]) => {
     if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(name)) throw new Error("Invalid GitHub file command");
-    const delimiter = `layercache_${(0, import_node_crypto4.randomUUID)()}`;
+    const delimiter = `layercache_${(0, import_node_crypto5.randomUUID)()}`;
     return `${name}<<${delimiter}
 ${value}
 ${delimiter}
@@ -3589,7 +3595,7 @@ async function exchangeCapability({ endpoint, project, compatibility, minutes, e
   if (!env.ACTIONS_ID_TOKEN_REQUEST_URL || !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) throw new Error("Team Cache OIDC needs job permissions id-token: write");
   const oidc = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
   if (oidc.protocol !== "https:") throw new Error("GitHub OIDC request URL must use HTTPS");
-  oidc.searchParams.set("audience", `layercache:${project}`);
+  oidc.searchParams.set("audience", projectAudience(project));
   const response = await fetcher(oidc, { headers: { Authorization: `Bearer ${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` }, redirect: "error", signal: AbortSignal.timeout(2e4) });
   if (!response.ok) throw new Error(`GitHub OIDC returned HTTP ${response.status}`);
   const identity = await response.json();
@@ -3617,14 +3623,14 @@ var exchangeTurbo = exchangeCapability;
 
 // native/source.ts
 var import_node_child_process2 = require("node:child_process");
-var import_node_crypto5 = require("node:crypto");
+var import_node_crypto6 = require("node:crypto");
 var import_promises6 = require("node:fs/promises");
 var import_node_path13 = require("node:path");
 async function sourceKey(directory) {
   const git = (args) => (0, import_node_child_process2.execFileSync)("git", ["-C", directory, ...args], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
   const root = git(["rev-parse", "--show-toplevel"]).trim();
   const files = (0, import_node_child_process2.execFileSync)("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], { encoding: "utf8", maxBuffer: 32 * 1024 ** 2 });
-  const hash = (0, import_node_crypto5.createHash)("sha256").update("layercache-source-v1\0");
+  const hash = (0, import_node_crypto6.createHash)("sha256").update("layercache-source-v1\0");
   for (const name of [...new Set(files.split("\0").filter(Boolean))].sort()) {
     const path = (0, import_node_path13.join)(root, name);
     let value;
@@ -3646,7 +3652,7 @@ async function sourceKey(directory) {
 var import_node_path15 = require("node:path");
 
 // native/expo-identity.ts
-var import_node_crypto6 = require("node:crypto");
+var import_node_crypto7 = require("node:crypto");
 var import_node_child_process3 = require("node:child_process");
 var import_node_util = require("node:util");
 var import_node_module = require("node:module");
@@ -3697,7 +3703,7 @@ function parseSimulatorTarget(value) {
 }
 function simulatorCompatibility(target) {
   parseSimulatorTarget(JSON.stringify(target));
-  const digest = (0, import_node_crypto6.createHash)("sha256").update(JSON.stringify([target.os, target.arch, target.xcode, target.sdk])).digest("hex");
+  const digest = (0, import_node_crypto7.createHash)("sha256").update(JSON.stringify([target.os, target.arch, target.xcode, target.sdk])).digest("hex");
   return `expo-ios-toolchain-v1-${digest}`;
 }
 async function detectSimulatorTarget(projectRoot) {

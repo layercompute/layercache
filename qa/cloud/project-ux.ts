@@ -141,7 +141,7 @@ try{
   const table=page.getByRole('table',{name:'Cache by type',exact:true});await table.waitFor();
   assert.match(await table.innerText(),/Docker|BuildKit/i);
   const coverage=page.getByRole('region',{name:'Cache by type',exact:true}).locator('details.integration-coverage');
-  if(await coverage.count()){await coverage.locator('summary').click();assert.match(await coverage.innerText(),/Xcode/);assert.match(await coverage.innerText(),/protocol|compiler verdict|unavailable/i);await expect(coverage.getByRole('link',{name:'Xcode setup',exact:true})).toHaveAttribute('href','https://github.com/ziahamza/layercache/blob/main/docs/native-metering.md#xcode');}
+  if(await coverage.count()){await coverage.locator('summary').click();assert.match(await coverage.innerText(),/Xcode/);assert.match(await coverage.innerText(),/protocol|compiler verdict|unavailable/i);await expect(coverage.getByRole('link',{name:'Xcode setup',exact:true})).toHaveAttribute('href','https://github.com/layercompute/layercache/blob/main/docs/native-metering.md#xcode');}
   await navigate('Activity');const xcode=page.getByRole('table',{name:'Cache by type',exact:true}).getByRole('row').filter({hasText:/Xcode/i});assert.match(await xcode.innerText(),/protocol activity only|unknown|not measured/i);await navigate('Overview');
   const popular=page.getByRole('region',{name:'Most reused artifacts',exact:true});await popular.waitFor();assert.match(await popular.innerText(),/unavailable|not (?:yet )?reported|no (?:artifact|per-artifact|key)/i);
  });
