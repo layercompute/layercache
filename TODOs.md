@@ -350,6 +350,15 @@ workspaces and filesystem migration are outside the current product scope.
   Published-beta qualification now accepts validated explicit tag, source commit
   and native-bundle digest inputs before checkout; PR checks retain the existing
   fixed beta.9 fixture. Qualify the next release using its actual merged source.
+  The reviewed OIDC runtime/client source at `7b5861d` is deployed for the managed
+  cohort. Actual hosted qualification now passes a main-ref native producer and
+  independent non-default-ref consumer: two remote task hits, zero executions,
+  matching output digests and denied reader writes. Changed source, environment
+  and compatibility miss; failed tasks execute twice without publication. A
+  separate real-project typecheck pair restores all nine selected tasks remotely
+  on a fresh runner, with zero local hits. These establish bounded cache reuse,
+  not required-artifact retention or monthly savings. Account billing recovery,
+  protected source CI and the immutable CLI release remain open.
 
 - [x] **Retire verified legacy cache storage after recovery and dependency checks.**
   Owner: LayerCache cloud/operator. October 20 retirement followed a full R2
