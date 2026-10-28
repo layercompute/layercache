@@ -154,12 +154,13 @@ test('direct TypeScript reporting loads the shipped isolated worker', async () =
   for (const value of Object.values(env)) assert.ok(!JSON.stringify(sample).includes(value));
 });
 
-test('the shipped native CJS action finds its sibling worker', { timeout: 5000 }, async () => {
+test('the shipped native CJS action requests canonical OIDC and finds its sibling worker', { timeout: 5000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'layercache-native-observation-'));
   try {
     const marker = join(directory, 'observed.json');
+    const audienceMarker = join(directory, 'oidc-audience.txt');
     const preload = join(directory, 'fixture.mjs');
-    await writeFile(preload, `import {writeFileSync} from 'node:fs';globalThis.fetch=async(input,request)=>{const path=new URL(input).pathname;if(path==='/oidc')return Response.json({value:'fixture-id-token'});if(path.endsWith('/auth/github-oidc/exchange'))return Response.json({teamToken:'fixture-native-token',expiresAt:new Date(Date.now()+300000).toISOString(),executionObservations:{version:1,path:'/v1/executions/observations'}});if(path==='/v1/executions/observations'){if(new Headers(request.headers).get('X-LayerCache-Project')!=='github.com/acme/widget')process.exit(3);writeFileSync(${JSON.stringify(marker)},request.body);process.exit(0);}throw Error('Unexpected network');};`);
+    await writeFile(preload, `import {writeFileSync} from 'node:fs';globalThis.fetch=async(input,request)=>{const url=new URL(input);const path=url.pathname;if(path==='/oidc'){writeFileSync(${JSON.stringify(audienceMarker)},url.searchParams.get('audience')??'');return Response.json({value:'fixture-id-token'});}if(path.endsWith('/auth/github-oidc/exchange'))return Response.json({teamToken:'fixture-native-token',expiresAt:new Date(Date.now()+300000).toISOString(),executionObservations:{version:1,path:'/v1/executions/observations'}});if(path==='/v1/executions/observations'){if(new Headers(request.headers).get('X-LayerCache-Project')!=='github.com/acme/widget')process.exit(3);writeFileSync(${JSON.stringify(marker)},request.body);process.exit(0);}throw Error('Unexpected network');};`);
     const child = spawn(process.execPath, ['--import', preload, new URL('../native/dist/main.cjs', import.meta.url).pathname], {
       env: {
         'INPUT_TEAM-URL': 'https://cache.example', INPUT_PROJECT: 'github.com/acme/widget', INPUT_KEY: 'fixture-key', INPUT_COMPATIBILITY: 'fixture-abi',
@@ -176,6 +177,8 @@ test('the shipped native CJS action finds its sibling worker', { timeout: 5000 }
       child.on('close', code => { clearTimeout(watchdog); resolve(code); });
     });
     assert.equal(result, 0, diagnostics);
+    assert.equal(await readFile(audienceMarker, 'utf8'),
+      'https://layercache.dev/oidc/projects/8ac5bc08a41714b439de011cd921e0dddce459b45787709cfa4e295aa228f879');
     const payload = JSON.parse(await readFile(marker, 'utf8'));
     assert.equal(payload.phase, 'start');
     assert.equal(payload.sample.cpu.effectiveMilliCPU, null);
