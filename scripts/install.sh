@@ -66,10 +66,8 @@ done
 gh release download "$version" --repo "$repository" --dir "$temporary" \
   --pattern "$package" --pattern "$package.sha256"
 for subject in "$package" "$package.sha256"; do
-  gh attestation verify "$temporary/$subject" --repo "$repository" \
-    --signer-workflow "$repository/.github/workflows/release.yml" \
-    --source-ref "refs/tags/$version" --source-digest "$commit" \
-    --deny-self-hosted-runners >/dev/null
+  bash "$(dirname -- "${BASH_SOURCE[0]}")/verify-release-provenance.sh" \
+    "$repository" "$version" "$commit" "$temporary/$subject"
 done
 expected=$(awk -v name="$package" 'NF == 2 && $2 == name { print $1 }' "$temporary/$package.sha256")
 [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || { echo 'Invalid package checksum manifest.' >&2; exit 1; }

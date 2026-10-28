@@ -5,6 +5,10 @@ on:
     paths:
       - .github/workflows/beta-release-install.yml
       - scripts/README.md
+      - scripts/install.sh
+      - scripts/install.test.mjs
+      - scripts/verify-release-provenance.sh
+      - scripts/provenance/**
       - action/setup/README.md
       - action/turbo/README.md
   workflow_dispatch:
@@ -61,7 +65,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || 'v0.1.0-beta.9' }}
       SOURCE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || 'cb254e9af694f6fe25f5a0ad416456174bda3e44' }}
-      RELEASE_REPOSITORY: ziahamza/layercache
+      RELEASE_REPOSITORY: ${{ github.repository }}
       NATIVE_BUNDLE_SHA256: ${{ github.event_name == 'workflow_dispatch' && inputs.native_bundle_sha256 || '2dc950d2bda8eb6b5d74be3e8f5b378c83e4c25343b554f976ee1aceca36fee8' }}
     steps:
       - name: Validate exact release qualification pins before checkout
@@ -72,13 +76,22 @@ jobs:
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$NATIVE_BUNDLE_SHA256" =~ ^[0-9a-f]{64}$ ]]
 
-      # The workflow is reviewed on this PR; the script comes from the exact
-      # commit that published the release, independent of PR branch contents.
+      # Native harnesses use the published source. The installer and its
+      # provenance policy use this reviewed workflow's source, so a repository
+      # transfer can be qualified without changing an immutable old release.
       - name: Check out the published installer source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: ziahamza/layercache
+          repository: ${{ github.repository }}
           ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Check out the reviewed installer policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .local/release-installer
           persist-credentials: false
 
       - name: Check published release and exact source commit
@@ -111,7 +124,7 @@ jobs:
           set -euo pipefail
           prefix="$RUNNER_TEMP/layercache-beta-install"
           test ! -e "$prefix"
-          bash scripts/install.sh \
+          bash .local/release-installer/scripts/install.sh \
             --repository "$RELEASE_REPOSITORY" \
             --version "$RELEASE_TAG" \
             --prefix "$prefix"
@@ -153,10 +166,8 @@ jobs:
         run: |
           set -euo pipefail
           binary="$RUNNER_TEMP/layercache-beta-install/layercache"
-          gh attestation verify "$binary" --repo "$RELEASE_REPOSITORY" \
-            --signer-workflow "$RELEASE_REPOSITORY/.github/workflows/release.yml" \
-            --source-ref "refs/tags/$RELEASE_TAG" --source-digest "$SOURCE_SHA" \
-            --deny-self-hosted-runners >/dev/null
+          bash .local/release-installer/scripts/verify-release-provenance.sh \
+            "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$SOURCE_SHA" "$binary"
           go version -m "$binary" >"$RUNNER_TEMP/beta-go-build-metadata.txt"
           awk -v revision="vcs.revision=$SOURCE_SHA" \
             -v goos="GOOS=$EXPECTED_GOOS" -v goarch="GOARCH=$EXPECTED_GOARCH" '
@@ -174,7 +185,7 @@ jobs:
       - name: Check installer and setup integrity with the installed binary
         env:
           LAYERCACHE_SETUP_BINARY: ${{ runner.temp }}/layercache-beta-install/layercache
-        run: node --test action/setup/setup.test.mjs action/gradle/*.test.mjs scripts/install.test.mjs
+        run: node --test action/setup/setup.test.mjs action/gradle/*.test.mjs .local/release-installer/scripts/install.test.mjs
 
       - name: Install the locked real Turbo client
         run: |
