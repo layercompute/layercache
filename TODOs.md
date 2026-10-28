@@ -334,6 +334,11 @@ workspaces and filesystem migration are outside the current product scope.
   beta.9 against its original signer identity rather than relabeling its provenance.
   Source qualification, release, installed CLI and service deployment are distinct
   gates. Keep credentials and operational receipts outside this public repository.
+  The restored hosted checks caught a stale packaged Native action that still
+  requested the old audience. Its bundle is regenerated from the pinned source;
+  a regression now runs the actual CJS action and rejects the historical bundle's
+  legacy audience before accepting the corrected artifact. Protected checks must
+  qualify this final source before landing or publishing.
 
 - [ ] **Keep existing cache projects usable after a GitHub repository transfer.**
   Owner: LayerCache CLI with the cloud/operator and application CI owners.
