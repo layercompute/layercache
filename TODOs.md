@@ -347,6 +347,9 @@ workspaces and filesystem migration are outside the current product scope.
   and a new immutable CLI release remain separate gates. Required hosted CI is
   currently prevented from starting by a GitHub account billing lock; preserve
   protected-main checks and publish only after exact-source qualification.
+  Published-beta qualification now accepts validated explicit tag, source commit
+  and native-bundle digest inputs before checkout; PR checks retain the existing
+  fixed beta.9 fixture. Qualify the next release using its actual merged source.
 
 - [x] **Retire verified legacy cache storage after recovery and dependency checks.**
   Owner: LayerCache cloud/operator. October 20 retirement followed a full R2
