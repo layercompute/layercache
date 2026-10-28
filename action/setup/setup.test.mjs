@@ -27,11 +27,34 @@ test('OIDC exchange requests only Turbo with bounded lifetime and no redirects',
     },
   });
   assert.equal(result.teamToken, 'turbo-token-fixture');
-  assert.equal(requests[0][0].searchParams.get('audience'), 'layercache:github.com/acme/widget');
+  assert.equal(requests[0][0].searchParams.get('audience'), 'https://layercache.dev/oidc/projects/8ac5bc08a41714b439de011cd921e0dddce459b45787709cfa4e295aa228f879');
   assert.equal(requests[1][0].href, 'https://cache.example/v1/auth/github-oidc/exchange');
   assert.equal(JSON.parse(requests[1][1].body).integration, 'turbo');
   assert.equal(JSON.parse(requests[1][1].body).ttlSeconds, 3600);
   assert.ok(requests.every(([, init]) => init.redirect === 'error'));
+});
+
+test('GitHub issuance uses an HTTPS audience bound to the exact project before exchanging credentials', async () => {
+  const expectedAudience = 'https://layercache.dev/oidc/projects/8ac5bc08a41714b439de011cd921e0dddce459b45787709cfa4e295aa228f879';
+  let exchanges = 0;
+  const result = await exchangeTurbo({
+    log: () => {}, endpoint: 'https://cache.example', project: 'github.com/acme/widget',
+    compatibility: 'linux-amd64-schema1', minutes: 15,
+    env: { ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example/token?api-version=2.0', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'request-fixture' },
+    fetcher: async (url, input) => {
+      if (url.hostname === 'oidc.example') {
+        // GitHub rejects the former opaque audience in the observed hosted path.
+        if (url.searchParams.get('audience') !== expectedAudience) return new Response(null, { status: 400 });
+        return Response.json({ value: 'project-bound-identity' });
+      }
+      exchanges++;
+      assert.equal(JSON.parse(input.body).project, 'github.com/acme/widget');
+      assert.equal(JSON.parse(input.body).idToken, 'project-bound-identity');
+      return Response.json({ teamToken: 'project-token', expiresAt: new Date(Date.now() + 900_000).toISOString() });
+    },
+  });
+  assert.equal(result.teamToken, 'project-token');
+  assert.equal(exchanges, 1);
 });
 
 test('optional execution reporting never changes native exchange authority or its success', async () => {

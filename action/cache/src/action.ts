@@ -1,6 +1,7 @@
 import type { DownloadOptions, UploadOptions } from "@actions/cache";
 
 import { reportExecutionObservation } from "../../setup/execution.js";
+import { projectAudience } from "../../setup/oidc.js";
 import {
   VerifiedCacheClient,
   VerifiedCacheInputError,
@@ -279,7 +280,7 @@ async function resolveRuntimeToken(
   }
   if (project !== "") {
     try {
-      const idToken = await core.getIDToken(`layercache:${project}`);
+      const idToken = await core.getIDToken(projectAudience(project));
       const exchangeURL = new URL(endpointURL);
       const basePath = exchangeURL.pathname.replace(/\/+$/, "");
       exchangeURL.pathname = `${basePath.endsWith("/v1") ? basePath : `${basePath}/v1`}/auth/github-oidc/exchange`;

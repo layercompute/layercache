@@ -335,8 +335,18 @@ workspaces and filesystem migration are outside the current product scope.
   [VM routing](internal/cli/vm_route.go) now preserve that separation. Focused
   Go CLI regression tests pass normally and with the race detector for transferred
   connect/run and VM routes, old-name and unrelated checkouts, invalid metadata
-  and local/origin controls. Installed
-  clients, hosted migration and application adoption remain separate outcomes.
+  and local/origin controls. October 28 follow-up acceptance adds actual
+  GitHub OIDC admission after transfer: clients request the canonical HTTPS
+  audience `https://layercache.dev/oidc/projects/<sha256-of-project-utf8>`.
+  The verifier accepts only that project's canonical or exact legacy audience,
+  retaining signature, issuer, expiry and repository guards. A hosted isolation
+  check rejected the legacy opaque audience and accepted the canonical audience
+  on both GitHub and Ubicloud runners. Focused action and service regressions
+  cover the new audience and cross-project/default-audience denials.
+  Source qualification, installed clients, deployed backend, actual remote reuse
+  and a new immutable CLI release remain separate gates. Required hosted CI is
+  currently prevented from starting by a GitHub account billing lock; preserve
+  protected-main checks and publish only after exact-source qualification.
 
 - [x] **Retire verified legacy cache storage after recovery and dependency checks.**
   Owner: LayerCache cloud/operator. October 20 retirement followed a full R2

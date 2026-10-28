@@ -210,7 +210,7 @@ func (server *Server) githubOIDCCapabilityExchange(writer http.ResponseWriter, r
 	}
 	loaded, _ := oidcVerifiers.LoadOrStore(issuer, &githubauth.OIDCVerifier{Issuer: issuer})
 	verifier := loaded.(*githubauth.OIDCVerifier)
-	identity, err := verifier.Verify(request.Context(), input.IDToken, "layercache:"+server.config.ProjectID, time.Now().UTC())
+	identity, err := verifier.VerifyProject(request.Context(), input.IDToken, server.config.ProjectID, time.Now().UTC())
 	if err != nil || !strings.EqualFold(identity.Repository, server.config.ActionsRepository) ||
 		!immutableCommit(identity.Commit) || !validGitRef(identity.Ref) {
 		server.writeCapabilityExchangeFailure(writer, request)

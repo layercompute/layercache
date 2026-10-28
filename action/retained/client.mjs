@@ -6,6 +6,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { performance } from 'node:perf_hooks';
 import { endpointURL } from '../setup/auth.ts';
+import { projectAudience } from '../setup/oidc.ts';
 
 const SCHEMA = 'retained-artifact-v1';
 const MAX_METADATA = 64 * 1024;
@@ -179,7 +180,7 @@ export async function exchangeRetained({ endpoint, project, profile, mode, env =
   if (!env.ACTIONS_ID_TOKEN_REQUEST_URL || !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN || !env['INPUT_GITHUB-TOKEN']) throw new RetainedError('Retained transfer requires GitHub OIDC and repository metadata authorization');
   const oidc = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
   if (oidc.protocol !== 'https:' || oidc.username || oidc.password) throw new RetainedError('GitHub OIDC endpoint must use HTTPS');
-  oidc.searchParams.set('audience', `layercache:${project}`);
+  oidc.searchParams.set('audience', projectAudience(project));
   const started = report.start();
   const request = { operation: 'github-oidc', attempt: 1, startMs: started, consumedBytes: 0, outcome: 'failed' };
   report.attempts.push(request);

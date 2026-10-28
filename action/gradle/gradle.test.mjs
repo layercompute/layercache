@@ -102,7 +102,7 @@ test('OIDC setup exports one scoped native connection and an exact credential-fr
     assert.equal(exported.LAYER_CACHE_GRADLE_LOCAL_ENABLED, undefined);
     assert.deepEqual(fileValues(fixture.env.GITHUB_OUTPUT), { configured: 'true', 'init-script': result.initScript, 'expires-at': result.expiresAt });
     assert.equal(oauth.requests[0].authorization, 'Bearer request-fixture');
-    assert.equal(new URL(oauth.requests[0].url, 'https://oidc.example').searchParams.get('audience'), 'layercache:team-widget');
+    assert.equal(new URL(oauth.requests[0].url, 'https://oidc.example').searchParams.get('audience'), 'https://layercache.dev/oidc/projects/910ce75d5f5202113131b5a5e455550bf4024d9a84dd871348d33060b0fa0975');
     assert.deepEqual(JSON.parse(oauth.requests[1].body), { project: 'team-widget', compatibility: 'linux-x64-android36-schema1', idToken: 'id-token-fixture', integration: 'gradle', ttlSeconds: 1200 });
     assert.ok(messages.includes(`::add-mask::${oauth.token()}\n`));
     assert.ok(messages.includes('::add-mask::id-token-fixture\n'));

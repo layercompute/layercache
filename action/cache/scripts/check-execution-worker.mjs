@@ -11,7 +11,7 @@ const unexpectedRequests = [];
 let oidcRequests = 0;
 const server = createServer((request, response) => {
   const url = new URL(request.url, "http://127.0.0.1");
-  if (url.pathname !== "/oidc" || decodeURIComponent(url.searchParams.get("audience") ?? "") !== "layercache:github.com/acme/widget") {
+  if (url.pathname !== "/oidc" || decodeURIComponent(url.searchParams.get("audience") ?? "") !== "https://layercache.dev/oidc/projects/8ac5bc08a41714b439de011cd921e0dddce459b45787709cfa4e295aa228f879") {
     unexpectedRequests.push(url.pathname);
     response.writeHead(500).end();
     return;

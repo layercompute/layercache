@@ -1,6 +1,7 @@
 import { appendFileSync, closeSync, fstatSync, ftruncateSync, openSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { reportExecutionObservation } from './execution.ts';
+import { projectAudience } from './oidc.ts';
 
 const escape = (value: string) => value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 const defaultLog = (value: string) => { process.stdout.write(value); };
@@ -36,7 +37,7 @@ export async function exchangeCapability({ endpoint, project, compatibility, min
   if (!env.ACTIONS_ID_TOKEN_REQUEST_URL || !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) throw new Error('Team Cache OIDC needs job permissions id-token: write');
   const oidc = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
   if (oidc.protocol !== 'https:') throw new Error('GitHub OIDC request URL must use HTTPS');
-  oidc.searchParams.set('audience', `layercache:${project}`);
+  oidc.searchParams.set('audience', projectAudience(project));
   const response = await fetcher(oidc, { headers: { Authorization: `Bearer ${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` }, redirect: 'error', signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`GitHub OIDC returned HTTP ${response.status}`);
   const identity = await response.json() as { value?: string };
