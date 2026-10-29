@@ -9,6 +9,21 @@ Start with deterministic typechecks, lint, unit tests and build outputs. Keep
 network tests, device assertions and checks against changing external state
 fresh until their complete inputs have a separate qualification.
 
+## Keep clocks and timing assertions deterministic
+
+A test that combines an old fixed fixture date with the real clock can pass
+from cache and fail when it next executes after a retention or UTC-day boundary.
+Give every component the same fixture clock. With Vitest, fake only `Date` when
+the asynchronous scheduler should keep running, set the fixture time, and restore
+real timers after each test. See Vitest's
+[fake-timer controls](https://vitest.dev/api/vi#vi-usefaketimers) and
+[system-time control](https://vitest.dev/api/vi#vi-setsystemtime).
+
+Measure a cancellation response from the actual cancellation request. Keep
+process startup and the whole fixture's watchdog separate. A delayed startup
+control should preserve the response assertion; a deliberately slow cleanup
+must still fail it. Do not relax the response bound to cover unrelated setup.
+
 ## Split the task that loses all its work on every edit
 
 A command such as `check` often hides many independent tests behind one cache
