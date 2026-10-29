@@ -1,8 +1,11 @@
 # Install a release
 
-The latest CLI beta is [v0.1.0-beta.9](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.9),
-pinned to protected main commit `cb254e9af694f6fe25f5a0ad416456174bda3e44`.
-It adds immutable operation reports and explicit complete-interval comparisons.
+The latest CLI beta is [v0.1.0-beta.10](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.10),
+pinned to protected main commit `9e29b2695e6816d95504f2f7bb0b91014e50d5dc`.
+It preserves project identities after repository transfers and supports project-bound
+HTTPS GitHub OIDC audiences. The release source also includes the corrected
+Native action bundle.
+It retains immutable operation reports and explicit complete-interval comparisons.
 The separate [native recorder](../docs/operation-measurement.md) runs offline;
 the Go CLI imports its sealed report. Native Gradle/Xcode reporting, offline
 report exporters and dashboard coverage explanations remain available.
@@ -25,7 +28,7 @@ installer from an inspected current checkout. The binary remains pinned to the
 release source above:
 
 ```sh
-bash scripts/install.sh --repository layercompute/layercache --version v0.1.0-beta.9 \
+bash scripts/install.sh --repository layercompute/layercache --version v0.1.0-beta.10 \
   --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
@@ -57,11 +60,14 @@ An old `gh` without the required verification flags fails rather than weakening
 the policy. The Node test uses a local fake GitHub client to exercise policy
 failures and target preservation.
 
-The [beta.9 release workflow](https://github.com/ziahamza/layercache/actions/runs/39584178827)
-qualifies native release candidates before immutable publication. The
+The [beta.10 release workflow](https://github.com/layercompute/layercache/actions/runs/40791848078)
+qualified native release candidates before immutable publication. The
 [published installer workflow](../.github/workflows/beta-release-install.yml)
-pins beta.9 and its exact source commit. It checks the locked tag, attestations,
-checksum, binary source/platform metadata, installation into an empty prefix,
+retains beta.9 and its exact source as the historical PR regression fixture.
+An [explicit beta.10 dispatch](https://github.com/layercompute/layercache/actions/runs/40792963587)
+qualified the new release with its exact tag, source and native-bundle digest.
+It checks the locked tag, attestations, checksum, binary source/platform
+metadata, installation into an empty prefix,
 `help`, and setup preview on Linux x64, Linux arm64, and macOS arm64. Each job runs
 the [17-scenario real Turbo acceptance](../qa/local-ci-reuse/README.md) using the
 installed release binary, followed by the pinned compiled Nx client acceptance.
@@ -85,6 +91,11 @@ The Turbo acceptance uses production metadata deadlines and deterministic delaye
 responses, and requires permanent conflict pins to retire. Nx acceptance proves
 Local/restart replay, a fresh read-only direct consumer with zero task executions,
 exact outputs/logs, changed-input/profile misses and failed-test reruns.
+
+The [transfer qualification](../docs/evidence/repository-transfer-20261029.md)
+records the separate source, release, installation and hosted-reuse outcomes.
+The [beta.9 release workflow](https://github.com/ziahamza/layercache/actions/runs/39584178827)
+remains its historical publication record with its original signing identity.
 
 Historical [beta.5 installer qualification](https://github.com/ziahamza/layercache/actions/runs/38895127715)
 passed all three platforms. Its [retained summary](../docs/evidence/beta5-installed-20261016.json)

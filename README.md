@@ -33,8 +33,10 @@ and direct private endpoints; remote read-through and queued Nx publication are
 not implemented.
 It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
 signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest
-CLI beta, [v0.1.0-beta.9](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.9),
-adds complete operation timing and explicit cold/warm comparisons through the
+CLI beta, [v0.1.0-beta.10](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.10),
+preserves cache identities after repository transfers and supports project-bound
+HTTPS GitHub OIDC audiences. It retains complete operation timing and explicit
+cold/warm comparisons through the
 [operation workflow](docs/operation-measurement.md). Setup, restore, work and
 publication contribute to the observed interval; elapsed differences remain
 separate from CPU use and billed savings. It retains native Gradle/Xcode reports,
@@ -55,15 +57,15 @@ Release and deployment instructions are in the [verified installer](scripts/READ
 
 To install the beta, run the verified installer from an inspected current
 checkout. The release binary is pinned to source
-`cb254e9af694f6fe25f5a0ad416456174bda3e44`:
+`9e29b2695e6816d95504f2f7bb0b91014e50d5dc`:
 
 ```bash
 bash scripts/install.sh --repository layercompute/layercache \
-  --version v0.1.0-beta.9 --prefix "$HOME/.local/bin"
+  --version v0.1.0-beta.10 --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
 
-The installer requires `gh`, `jq`, `tar`, and `shasum`; it checks the immutable release, attestations, and archive checksum before replacing a binary. The current installer preserves beta.9's original signing identity after the repository transfer. See the [installation guide](scripts/README.md) for supported platforms and authentication.
+The installer requires `gh`, `jq`, `tar`, and `shasum`; it checks the immutable release, attestations, and archive checksum before replacing a binary. The current installer preserves beta.9's original signing identity after the repository transfer. See the [installation guide](scripts/README.md) for supported platforms and authentication, and [beta.10 qualification](docs/evidence/repository-transfer-20261029.md) for source, release and remote-reuse evidence.
 
 ## Cache model
 

@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: layercompute/layercache/action/setup@b7b7d34eedd2e3b3cbd7565505049f1fe48f3061
+  - uses: layercompute/layercache/action/setup@9e29b2695e6816d95504f2f7bb0b91014e50d5dc
     id: layercache
     with:
       repository: layercompute/layercache
-      version: v0.1.0-beta.9
+      version: v0.1.0-beta.10
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: layercompute/layercache/action/cache@b7b7d34eedd2e3b3cbd7565505049f1fe48f3061
+  - uses: layercompute/layercache/action/cache@9e29b2695e6816d95504f2f7bb0b91014e50d5dc
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,9 +30,11 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The actions are pinned to the reviewed repository-transfer installer source;
-the binary release stays pinned to CLI beta.9. The release includes complete
-operation reporting and explicit cold/warm comparisons, confirmed Turbo
+The actions and binary release are pinned to the qualified beta.10 source.
+Repository discovery preserves a project's original cache identity while its
+explicit repository binding follows a transfer. Project-bound HTTPS OIDC
+audiences work through the existing scoped exchange. The release includes
+complete operation reporting and explicit cold/warm comparisons, confirmed Turbo
 publication, permanent-conflict pin retirement, owner-only Personal projects,
 native Nx Local/direct private endpoints, native Bazel HTTP integration, storage
 inspection and standalone Xcode cache lifecycle with scoped snapshot access.
