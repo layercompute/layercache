@@ -1,6 +1,8 @@
 # Direct object transfer
 
-Status: design, not implemented. Owner: LayerCache cloud/storage.
+Status: sections 2 and 3 are implemented in the gateway and the Go clients
+(`remote.TurboClient`, `actionscache.RemoteStorage`); the TypeScript clients
+follow against the [wire API](#wire-api). Owner: LayerCache cloud/storage.
 
 Today the project gateway streams every hosted byte. With direct transfer, the
 gateway keeps all authority and moves only metadata. LayerCache's own clients get
@@ -68,8 +70,9 @@ Then, instead of the bytes, it answers `200` with `Cache-Control: no-store` and
  "expiresAt": "…", "lease": "<existing read-lease id>"}
 ```
 
-For Actions, these fields go into the lookup response's `archiveLocation`, which
-saves a round trip.
+For Actions, the same object goes into the lookup response as
+`layerCacheTransfer`, next to an unchanged `archiveLocation`. That saves a round
+trip, and `archiveLocation` stays the proxied download and the completion target.
 
 **Why a descriptor, not a `307` redirect:** existing clients reject cross-origin
 redirects (`remote/turbo.go`, `redirect: 'error'`). A redirect also can't carry
@@ -141,9 +144,12 @@ three per read.
   The read is recorded as `ResultUnknown`.
 - **Verified hit:** after verification, the client sends a single-use completion
   to `POST <route>/transfers/<lease>/complete` with the verified digest and bytes.
-  That records the verified read and the hit measurement, with the existing
-  `client-reported` basis. Actions instead reuses the signed `outcome` already
-  carried by its archive URL.
+  That records the verified read and the hit measurement, on the client's
+  report. Turbo gateway observations are provisional transport evidence that the
+  Run Summary reconciles, so the hit is an ordinary observation: no basis column
+  is added. Actions instead reuses the signed `outcome` already carried by its
+  archive URL: the client `POST`s the completion to that URL with its bearer
+  token, and the gateway records the outcome once.
 - **Single use:** a completion is accepted once, only for a live lease issued to
   the same principal. A reader therefore can't inflate the retention of objects
   it never read.
@@ -154,7 +160,9 @@ three per read.
 
 The client opts in on its existing publish route. The steps:
 
-1. The gateway runs today's admission and quota checks on the declared size.
+1. The gateway runs today's write authorization and the project quota check on
+   the declared size. The bytes never reach the gateway's disk, so the storage
+   pool's disk-headroom admission applies only to the small request itself.
 2. It inserts the `uploading` row.
 3. It returns a presigned `PUT` for a fresh staging key, with
    `x-amz-checksum-sha256` as a signed header.
@@ -179,9 +187,28 @@ re-read. A declared size that doesn't match fails commit, and the staging object
 is discarded. Unknown outcomes reconcile through the existing upload rows. Staging
 TTL bounds abandoned uploads.
 
-**Clients in this slice:** the daemon's upload worker (Turbo) and
-`native/client.ts`. Actions chunked uploads and retained publication stay proxied
-for now.
+A commit that fails for any reason other than a first-writer `409` (unknown
+outcome, size mismatch, expired upload) makes the client repeat the publication
+once through the proxied `PUT`, which is idempotent for the same bytes.
+
+**Clients in this slice:** the daemon's Team publication, both the immediate
+publish and the upload worker (Turbo), and `native/client.ts`. Actions chunked
+uploads and retained publication stay proxied for now.
+
+### Wire API
+
+All routes take the existing bearer token and compatibility selector. Digests are
+`sha256:<lowercase hex>`. Presigned URLs are HTTPS (loopback HTTP only in
+tests), are never logged, and get no LayerCache credentials.
+
+| Request | Answer |
+|---|---|
+| `GET /v8/artifacts/<hash>` with `Accept: application/vnd.layercache.transfer.v1+json` | `200` `Content-Type: application/vnd.layercache.transfer.v1+json`, `Cache-Control: no-store`, `Vary: Accept`, the usual `x-artifact-duration`, `x-artifact-tag`, `x-layercache-digest` headers and the descriptor body. `404` is a miss. Any other `200` is the proxied bytes. |
+| `POST /v8/artifacts/<hash>/transfers/<lease>/complete` `{"digest","size"}` (read capability) | `204` once. `404` for an unknown, expired, replayed, other-principal or other-entry lease, or a mismatched digest or size. |
+| `POST /v8/artifacts/<hash>/transfers/upload` `{"digest","size"}` (write capability) | `200` `{"url","headers","upload","expiresAt"}`: `PUT` the exact bytes to `url` with every header in `headers`. `404` means direct write is unavailable; use the proxied `PUT`. `400` invalid declaration, `507` quota. |
+| `POST /v8/artifacts/<hash>/transfers/<upload>/commit`, Turbo metadata headers as on `PUT` | `200` `{"stored":true}`. `409` first-writer conflict, `400` staged object missing or of another size, `404` unknown, replayed or other-principal upload, `507` quota. |
+| `GET …/_apis/artifactcache/cache` with the same `Accept` | The lookup JSON gains `layerCacheTransfer`, the descriptor capped by the archive URL's expiry. |
+| `POST <archiveLocation>` `{"lease","digest","size"}` (read capability) | `204` once, recording the signed hit outcome. `404` as for Turbo completion. |
 
 ## Local read-through
 
@@ -192,8 +219,10 @@ through `action/setup`'s local daemon, not by talking to the gateway directly.
 
 ## Switch, rollout and recovery
 
-- **Pool config:** `directTransfer: {read: bool, write: bool, maxURLSeconds: int}`,
-  off by default.
+- **Pool config:** `directTransfer: {read: bool, write: bool, maxURLSeconds: int}`
+  on the hosted pool's project template, off by default. `maxURLSeconds` is 0
+  (meaning 120) through 900. Changing it is not a storage migration: the pool's
+  backend fingerprint ignores it.
 - **Env override:** `LAYER_CACHE_DIRECT_TRANSFER=off` on the gateway forces it off
   without editing config.
 - **Credentials:** presigning needs the pool's static S3 key with `GetObject` and
