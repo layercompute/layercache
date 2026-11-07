@@ -98,6 +98,7 @@ type Config struct {
 	CloudS3UsePathStyle        bool               `json:"cloudS3UsePathStyle,omitempty"`
 	CloudStageTTL              time.Duration      `json:"cloudStageTtl,omitempty"`
 	CloudBlobGrace             time.Duration      `json:"cloudBlobGrace,omitempty"`
+	DirectTransfer             DirectTransfer     `json:"directTransfer,omitzero"`
 	CacheIdleTTL               time.Duration      `json:"cacheIdleTtl,omitempty"`
 	CacheUnreusedTTL           time.Duration      `json:"cacheUnreusedTtl,omitempty"`
 	CacheSoftBytes             int64              `json:"cacheSoftBytes,omitempty"`
@@ -108,6 +109,21 @@ type Config struct {
 	CompatibilityID            string             `json:"compatibilityId"`
 	CreatedAt                  time.Time          `json:"createdAt"`
 }
+
+// DirectTransfer lets LayerCache clients of a hosted pool move object bytes
+// directly with object storage through short-lived presigned URLs, instead of
+// through the gateway. It is off by default, needs the pool's static S3 key,
+// and LAYER_CACHE_DIRECT_TRANSFER=off on the gateway forces it off.
+type DirectTransfer struct {
+	Read  bool `json:"read,omitempty"`
+	Write bool `json:"write,omitempty"`
+	// MaxURLSeconds caps every presigned URL, and so bounds how long a revoked
+	// member can still start a direct read. Zero means 120 seconds.
+	MaxURLSeconds int `json:"maxURLSeconds,omitempty"`
+}
+
+// MaximumDirectTransferURLSeconds keeps revocation of direct reads prompt.
+const MaximumDirectTransferURLSeconds = 900
 
 // BazelRemoteConfig binds a dedicated native engine to one private project and
 // profile. Its storage and eviction budget are operated separately from Local
@@ -449,6 +465,11 @@ func (cfg Config) Validate() error {
 	}
 	if err := validateCloudConfig(cfg); err != nil {
 		return err
+	}
+	if direct := cfg.DirectTransfer; direct.MaxURLSeconds < 0 || direct.MaxURLSeconds > MaximumDirectTransferURLSeconds {
+		return fmt.Errorf("directTransfer.maxURLSeconds must be from 0 through %d", MaximumDirectTransferURLSeconds)
+	} else if (direct.Read || direct.Write) && (cfg.Role != "team" || cfg.CloudS3Endpoint == "") {
+		return errors.New("directTransfer requires a Team role with hosted PostgreSQL/S3 storage")
 	}
 	seenAdapters := make(map[string]struct{}, len(cfg.BypassAdapters))
 	for _, adapter := range cfg.BypassAdapters {

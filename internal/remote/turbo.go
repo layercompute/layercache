@@ -17,6 +17,7 @@ import (
 
 	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/compatibility"
+	"github.com/layercache/layercache/internal/directtransfer"
 )
 
 var (
@@ -30,6 +31,8 @@ type TurboClient struct {
 	baseURL       string
 	compatibility string
 	http          *http.Client
+	direct        *http.Client
+	breaker       *directtransfer.Breaker
 	transferIdle  time.Duration
 	tokenMu       sync.RWMutex
 	token         string
@@ -83,29 +86,30 @@ func (client *TurboClient) Head(ctx context.Context, hash string) (TurboMetadata
 	return TurboMetadata{Digest: digest, Size: response.ContentLength}, nil
 }
 
-// Confirm reads the complete Team Cache artifact and verifies its bytes against
-// the advertised digest and size. Hosted Team servers verify before their 200
-// and remove a corrupt entry, which then reports ErrMiss. Bytes that disagree
-// with their own metadata report artifact.ErrCorrupt.
+// Confirm reads the complete Team Cache artifact, directly or proxied, and
+// verifies its bytes against the advertised digest and size. Hosted Team
+// servers verify before their 200 and remove a corrupt entry, which then
+// reports ErrMiss. Bytes that disagree with their own metadata report
+// artifact.ErrCorrupt.
 func (client *TurboClient) Confirm(ctx context.Context, hash string) (TurboMetadata, error) {
-	download, err := client.Get(ctx, hash)
-	if err != nil {
-		return TurboMetadata{}, err
-	}
-	defer download.Body.Close()
-	digest, ok := turboDigest(download.ExpectedDigest)
-	if !ok || download.Size < 0 {
-		return TurboMetadata{}, ErrMetadata
-	}
-	hasher := sha256.New()
-	written, err := io.Copy(hasher, io.LimitReader(download.Body, download.Size+1))
-	if err != nil {
-		return TurboMetadata{}, fmt.Errorf("confirm remote cache: %w", err)
-	}
-	if written != download.Size || hex.EncodeToString(hasher.Sum(nil)) != digest {
-		return TurboMetadata{}, artifact.ErrCorrupt
-	}
-	return TurboMetadata{Digest: digest, Size: download.Size}, nil
+	var confirmed TurboMetadata
+	err := client.Fetch(ctx, hash, func(download TurboDownload) error {
+		digest, ok := turboDigest(download.ExpectedDigest)
+		if !ok || download.Size < 0 {
+			return ErrMetadata
+		}
+		hasher := sha256.New()
+		written, err := io.Copy(hasher, io.LimitReader(download.Body, download.Size+1))
+		if err != nil {
+			return fmt.Errorf("confirm remote cache: %w", err)
+		}
+		if written != download.Size || hex.EncodeToString(hasher.Sum(nil)) != digest {
+			return artifact.ErrCorrupt
+		}
+		confirmed = TurboMetadata{Digest: digest, Size: download.Size}
+		return nil
+	})
+	return confirmed, err
 }
 
 func turboDigest(value string) (string, bool) {
@@ -175,12 +179,18 @@ func newTurboClient(baseURL, token, compatibilityID string, timeouts Timeouts) (
 				return nil
 			},
 		},
+		// Presigned object URLs get a client that sends no credentials and
+		// follows no redirects.
+		direct:       directtransfer.NewClient(30 * time.Second),
+		breaker:      directtransfer.ProcessBreaker(),
 		transferIdle: timeouts.TransferIdle,
 	}, nil
 }
 
+// Get reads one artifact through the gateway. It never opts in to direct
+// transfer; see Fetch.
 func (client *TurboClient) Get(ctx context.Context, hash string) (TurboDownload, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.baseURL+"/v8/artifacts/"+url.PathEscape(hash), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.artifactURL(hash), nil)
 	if err != nil {
 		return TurboDownload{}, err
 	}
@@ -189,28 +199,7 @@ func (client *TurboClient) Get(ctx context.Context, hash string) (TurboDownload,
 	if err != nil {
 		return TurboDownload{}, fmt.Errorf("read remote cache: %w", err)
 	}
-	if response.StatusCode == http.StatusNotFound {
-		response.Body.Close()
-		return TurboDownload{}, ErrMiss
-	}
-	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-		response.Body.Close()
-		return TurboDownload{}, ErrUnauthorized
-	}
-	if response.StatusCode != http.StatusOK {
-		response.Body.Close()
-		return TurboDownload{}, fmt.Errorf("remote cache returned HTTP %d", response.StatusCode)
-	}
-	duration, _ := strconv.ParseInt(response.Header.Get("x-artifact-duration"), 10, 64)
-	return TurboDownload{
-		Body:           withIdleReadTimeout(response.Body, client.transferIdle),
-		ExpectedDigest: response.Header.Get("x-layercache-digest"),
-		Size:           response.ContentLength,
-		Metadata: artifact.Metadata{
-			DurationMS: duration,
-			Tag:        response.Header.Get("x-artifact-tag"),
-		},
-	}, nil
+	return turboResponse(response, client.transferIdle)
 }
 
 func (client *TurboClient) Put(ctx context.Context, hash string, entry artifact.Entry, body io.Reader) error {

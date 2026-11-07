@@ -58,19 +58,9 @@ func (store *Store) putWithCommit(
 	if expectedDigest != "" && !validDigest(expectedDigest) {
 		return artifact.Entry{}, false, ErrCorrupt
 	}
-	metadataJSON, err := json.Marshal(metadata)
+	publication, err := preparePublication(metadata)
 	if err != nil {
-		return artifact.Entry{}, false, fmt.Errorf("encode cloud artifact metadata: %w", err)
-	}
-	if len(metadataJSON) > 64<<10 {
-		return artifact.Entry{}, false, errors.New("cloud artifact metadata exceeds 64 KiB")
-	}
-	mediaType := "application/octet-stream"
-	if candidate := metadata.Values["mediaType"]; candidate != "" {
-		if err := validateIdentity("artifact media type", candidate, 256); err != nil {
-			return artifact.Entry{}, false, err
-		}
-		mediaType = candidate
+		return artifact.Entry{}, false, err
 	}
 
 	uploadID, err := randomToken("upload-")
@@ -105,7 +95,7 @@ func (store *Store) putWithCommit(
 	if isRetained {
 		maximum = min(maximum, retainedStage.size)
 	}
-	staged, err := store.blobs.Stage(ctx, stageKey, body, maximum, mediaType)
+	staged, err := store.blobs.Stage(ctx, stageKey, body, maximum, publication.mediaType)
 	if err != nil {
 		if errors.Is(err, ErrQuota) {
 			return artifact.Entry{}, false, ErrQuota
@@ -125,7 +115,47 @@ func (store *Store) putWithCommit(
 		staged.Digest, staged.Size, uploadID, store.config.Project); err != nil {
 		return artifact.Entry{}, false, store.safeError("finalize cloud staged upload", err)
 	}
+	return store.commitStaged(ctx, key, metadata, publication, staged, commitHook)
+}
 
+// artifactPublication is the validated, encoded form of publication metadata
+// shared by proxied and direct uploads.
+type artifactPublication struct {
+	metadataJSON []byte
+	mediaType    string
+}
+
+func preparePublication(metadata artifact.Metadata) (artifactPublication, error) {
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return artifactPublication{}, fmt.Errorf("encode cloud artifact metadata: %w", err)
+	}
+	if len(metadataJSON) > 64<<10 {
+		return artifactPublication{}, errors.New("cloud artifact metadata exceeds 64 KiB")
+	}
+	mediaType := "application/octet-stream"
+	if candidate := metadata.Values["mediaType"]; candidate != "" {
+		if err := validateIdentity("artifact media type", candidate, 256); err != nil {
+			return artifactPublication{}, err
+		}
+		mediaType = candidate
+	}
+	return artifactPublication{metadataJSON: metadataJSON, mediaType: mediaType}, nil
+}
+
+// commitStaged is the commit half of a publication. The staged object already
+// has its final digest and size, and the caller owns discarding it. First
+// writer wins, quota and eviction run under the project lock, and the immutable
+// object is copied server-side before the SQL rows commit.
+func (store *Store) commitStaged(
+	ctx context.Context,
+	key artifact.Key,
+	metadata artifact.Metadata,
+	publication artifactPublication,
+	staged stagedBlob,
+	commitHook artifactCommitHook,
+) (artifact.Entry, bool, error) {
+	metadataJSON, mediaType := publication.metadataJSON, publication.mediaType
 	transaction, err := store.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return artifact.Entry{}, false, store.safeError("begin cloud artifact publication", err)
@@ -656,6 +686,19 @@ func readEntry(ctx context.Context, query interface {
 }
 
 func (store *Store) readEntryWithLease(ctx context.Context, key artifact.Key) (artifact.Entry, string, error) {
+	return store.readEntryWithLeaseFor(ctx, key, readLease{})
+}
+
+// readLease describes the lease a read inserts. The zero value is the proxied
+// read's renewable lease. A direct read binds its lease to the principal and
+// entry, and sizes its expiry for a transfer the gateway cannot renew.
+type readLease struct {
+	principal string
+	resource  string
+	expires   func(now time.Time, entry artifact.Entry) time.Time
+}
+
+func (store *Store) readEntryWithLeaseFor(ctx context.Context, key artifact.Key, lease readLease) (artifact.Entry, string, error) {
 	if err := store.validateKey(key); err != nil {
 		return artifact.Entry{}, "", err
 	}
@@ -679,9 +722,14 @@ func (store *Store) readEntryWithLease(ctx context.Context, key artifact.Key) (a
 		return artifact.Entry{}, "", store.safeError("read cloud cache entry", err)
 	}
 	now := store.config.Now().UTC()
+	expiresAt := now.Add(readLeaseTTL)
+	if lease.expires != nil {
+		expiresAt = lease.expires(now, entry)
+	}
 	if _, err := transaction.ExecContext(ctx, `
-		INSERT INTO layercache_blob_read_leases_v1(lease_id, project_id, digest, expires_at)
-		VALUES($1, $2, $3, $4)`, leaseID, key.Project, entry.Digest, now.Add(readLeaseTTL)); err != nil {
+		INSERT INTO layercache_blob_read_leases_v1(lease_id, project_id, digest, expires_at, principal, entry_resource)
+		VALUES($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''))`,
+		leaseID, key.Project, entry.Digest, expiresAt, lease.principal, lease.resource); err != nil {
 		return artifact.Entry{}, "", store.safeError("lease cloud artifact read", err)
 	}
 	if _, err := transaction.ExecContext(ctx, `

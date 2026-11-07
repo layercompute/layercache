@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"time"
@@ -281,7 +282,7 @@ func (server *Server) processUpload(lease uploadqueue.Lease) {
 			return
 		}
 	}
-	if err := team.Put(server.uploadContext, key.Native, entry, file); err != nil {
+	if err := team.PutFrom(server.uploadContext, key.Native, entry, server.reopenLocalArtifact(server.uploadContext, key, entry, file)); err != nil {
 		if errors.Is(err, remote.ErrConflict) {
 			// Different opaque logs can produce different archive bytes at the
 			// same deterministic Turbo task identity. Verify that the configured
@@ -300,6 +301,33 @@ func (server *Server) processUpload(lease uploadqueue.Lease) {
 		return
 	}
 	server.completeUpload(lease)
+}
+
+// reopenLocalArtifact serves an already open local artifact to the first
+// publication attempt. A failed direct write is repeated once through the
+// proxied PUT, which reads the same artifact again from the local store.
+func (server *Server) reopenLocalArtifact(
+	ctx context.Context,
+	key artifact.Key,
+	entry artifact.Entry,
+	file io.Reader,
+) func() (io.ReadCloser, error) {
+	opened := false
+	return func() (io.ReadCloser, error) {
+		if !opened {
+			opened = true
+			return io.NopCloser(file), nil
+		}
+		reopened, body, err := server.store.Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if reopened.Digest != entry.Digest || reopened.Size != entry.Size {
+			body.Close()
+			return nil, artifact.ErrCorrupt
+		}
+		return body, nil
+	}
 }
 
 func (server *Server) claimUpload() (uploadqueue.Lease, error) {

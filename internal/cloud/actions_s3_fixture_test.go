@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/xml"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/layercache/layercache/internal/artifact"
 )
@@ -70,6 +72,8 @@ type memoryS3Endpoint struct {
 	readGate *memoryS3ReadGate
 	// objectGets counts object body reads; metadata probes must add none.
 	objectGets atomic.Int64
+	// presigned counts requests made with a presigned URL.
+	presigned atomic.Int64
 }
 
 type memoryS3ReadGate struct {
@@ -161,6 +165,37 @@ func (endpoint *memoryS3Endpoint) serve(writer http.ResponseWriter, request *htt
 		endpoint.objects[key] = object
 		writeXML("<CopyObjectResult><LastModified>2026-10-14T00:00:00.000Z</LastModified><ETag>\"fixture\"</ETag></CopyObjectResult>")
 		return
+	}
+	if signature := query.Get("X-Amz-Signature"); signature != "" {
+		// Presigned requests: enforce expiry and, like R2, the signed
+		// x-amz-checksum-sha256 header. Signatures themselves are not checked.
+		signedAt, err := time.Parse("20060102T150405Z", query.Get("X-Amz-Date"))
+		expires, _ := strconv.Atoi(query.Get("X-Amz-Expires"))
+		if err != nil || !time.Now().Before(signedAt.Add(time.Duration(expires)*time.Second)) {
+			http.Error(writer, "AccessDenied", http.StatusForbidden)
+			return
+		}
+		endpoint.presigned.Add(1)
+		if request.Method == http.MethodPut {
+			signed := strings.Contains(query.Get("X-Amz-SignedHeaders"), "x-amz-checksum-sha256")
+			declared := request.Header.Get("X-Amz-Checksum-Sha256")
+			if signed && declared == "" {
+				http.Error(writer, "SignatureDoesNotMatch", http.StatusForbidden)
+				return
+			}
+			data, err := io.ReadAll(request.Body)
+			if err != nil {
+				http.Error(writer, "fixture read failed", http.StatusBadRequest)
+				return
+			}
+			sum := sha256.Sum256(data)
+			if declared != base64.StdEncoding.EncodeToString(sum[:]) {
+				http.Error(writer, "BadDigest", http.StatusBadRequest)
+				return
+			}
+			endpoint.objects[key] = memoryS3Object{data: data, metadata: http.Header{}}
+			return
+		}
 	}
 	if request.Method == http.MethodGet && (request.URL.Path == "/cache/" || request.URL.Path == "/cache") {
 		type content struct {

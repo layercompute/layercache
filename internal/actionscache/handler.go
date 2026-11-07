@@ -19,6 +19,7 @@ import (
 
 	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/compatibility"
+	"github.com/layercache/layercache/internal/directtransfer"
 	"github.com/layercache/layercache/internal/measurement"
 )
 
@@ -187,6 +188,17 @@ type OpenRequest struct {
 	ID    int64
 }
 
+// DirectArchiveStorage is implemented by hosted storage that can issue a
+// direct read of a committed archive. IssueDirectArchive runs the same scope
+// and entry checks as Open, leases the object instead of opening it, and caps
+// the descriptor at notAfter. CompleteDirectArchive consumes that lease once,
+// for the principal it was issued to, after the client verified the bytes; it
+// returns ErrNotFound for any other lease.
+type DirectArchiveStorage interface {
+	IssueDirectArchive(ctx context.Context, request OpenRequest, notAfter time.Time) (directtransfer.Descriptor, error)
+	CompleteDirectArchive(ctx context.Context, request OpenRequest, lease, digest string, size int64) error
+}
+
 func reservationScopeMatches(scope *Scope, repository, compatibilityID, ref string) bool {
 	return scope == nil || scope.Repository == repository &&
 		scope.Compatibility == compatibilityID && scope.Ref == ref
@@ -305,6 +317,7 @@ func NewHandler(config Config, storage StorageIndex) (*Handler, error) {
 	handler.mux.HandleFunc("POST /_apis/artifactcache/caches/{id}", handler.commit)
 	handler.mux.HandleFunc("DELETE /_apis/artifactcache/caches/{id}", handler.abort)
 	handler.mux.HandleFunc("GET /_apis/artifactcache/caches/{id}/archive", handler.download)
+	handler.mux.HandleFunc("POST /_apis/artifactcache/caches/{id}/archive", handler.completeDirectDownload)
 	const compatibilityPrefix = "/_layercache/compatibility/{compatibility}/_apis/artifactcache"
 	handler.mux.HandleFunc("GET "+compatibilityPrefix+"/cache", handler.lookup)
 	handler.mux.HandleFunc("POST "+compatibilityPrefix+"/caches", handler.reserve)
@@ -312,6 +325,7 @@ func NewHandler(config Config, storage StorageIndex) (*Handler, error) {
 	handler.mux.HandleFunc("POST "+compatibilityPrefix+"/caches/{id}", handler.commit)
 	handler.mux.HandleFunc("DELETE "+compatibilityPrefix+"/caches/{id}", handler.abort)
 	handler.mux.HandleFunc("GET "+compatibilityPrefix+"/caches/{id}/archive", handler.download)
+	handler.mux.HandleFunc("POST "+compatibilityPrefix+"/caches/{id}/archive", handler.completeDirectDownload)
 	return handler, nil
 }
 
@@ -380,20 +394,22 @@ func (handler *Handler) lookup(writer http.ResponseWriter, request *http.Request
 	outcome.Bytes.Downloaded = result.Entry.Size
 	outcome.ProducerDuration = cloneDuration(result.Entry.ProducerDuration)
 	outcome.Degraded = result.Degraded
-	archiveLocation, err := handler.archiveLocation(request, result.Entry.ID, scope, outcome)
+	archiveLocation, archiveExpiresAt, err := handler.archiveLocation(request, result.Entry.ID, scope, outcome)
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "cache archive URL signing failed")
 		return
 	}
+	transfer := handler.directArchive(writer, request, OpenRequest{Scope: scope, ID: result.Entry.ID}, archiveExpiresAt)
 	writeJSON(writer, http.StatusOK, struct {
-		CacheKey                              string               `json:"cacheKey"`
-		Scope                                 string               `json:"scope"`
-		CacheVersion                          string               `json:"cacheVersion"`
-		CreationTime                          time.Time            `json:"creationTime"`
-		ArchiveLocation                       string               `json:"archiveLocation"`
-		LayerCacheOrigin                      CacheSource          `json:"layerCacheOrigin"`
-		LayerCachePublic                      *PublicEntryMetadata `json:"layerCachePublic,omitempty"`
-		LayerCacheProducerDurationNanoseconds *int64               `json:"layerCacheProducerDurationNanoseconds,omitempty"`
+		CacheKey                              string                     `json:"cacheKey"`
+		Scope                                 string                     `json:"scope"`
+		CacheVersion                          string                     `json:"cacheVersion"`
+		CreationTime                          time.Time                  `json:"creationTime"`
+		ArchiveLocation                       string                     `json:"archiveLocation"`
+		LayerCacheOrigin                      CacheSource                `json:"layerCacheOrigin"`
+		LayerCachePublic                      *PublicEntryMetadata       `json:"layerCachePublic,omitempty"`
+		LayerCacheProducerDurationNanoseconds *int64                     `json:"layerCacheProducerDurationNanoseconds,omitempty"`
+		LayerCacheTransfer                    *directtransfer.Descriptor `json:"layerCacheTransfer,omitempty"`
 	}{
 		CacheKey:                              result.Entry.Key,
 		Scope:                                 result.Entry.Ref,
@@ -403,7 +419,93 @@ func (handler *Handler) lookup(writer http.ResponseWriter, request *http.Request
 		LayerCacheOrigin:                      result.Entry.Origin,
 		LayerCachePublic:                      clonePublicEntryMetadata(result.Entry.Public),
 		LayerCacheProducerDurationNanoseconds: durationNanoseconds(result.Entry.ProducerDuration),
+		LayerCacheTransfer:                    transfer,
 	})
+}
+
+// directArchive issues a read descriptor for an opted-in lookup when the
+// storage supports direct transfer. Nil means the client downloads through
+// archiveLocation as before. The descriptor never outlives the archive URL,
+// whose signed outcome its completion reuses.
+func (handler *Handler) directArchive(
+	writer http.ResponseWriter,
+	request *http.Request,
+	open OpenRequest,
+	archiveExpiresAt time.Time,
+) *directtransfer.Descriptor {
+	if !directtransfer.Accepts(request.Header) {
+		return nil
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Add("Vary", "Accept")
+	storage, ok := handler.storage.(DirectArchiveStorage)
+	if !ok {
+		return nil
+	}
+	descriptor, err := storage.IssueDirectArchive(request.Context(), open, archiveExpiresAt)
+	if err != nil {
+		return nil
+	}
+	return &descriptor
+}
+
+// completeDirectDownload accepts the completion of a verified direct read at
+// the signed archive URL. Like a proxied download it records the signed
+// outcome, and only once: the read lease is single-use and bound to the
+// principal it was issued to.
+func (handler *Handler) completeDirectDownload(writer http.ResponseWriter, request *http.Request) {
+	query := request.URL.Query()
+	if !handler.verifiesArchiveURL(request) {
+		writeError(writer, http.StatusNotFound, ErrNotFound.Error())
+		return
+	}
+	storage, ok := handler.storage.(DirectArchiveStorage)
+	if !ok {
+		writeError(writer, http.StatusNotFound, ErrNotFound.Error())
+		return
+	}
+	id, err := parseID(request.PathValue("id"))
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	scope, err := decodeArchiveAuthority(query.Get(archiveAuthorityQuery))
+	if err != nil {
+		writeError(writer, http.StatusNotFound, ErrNotFound.Error())
+		return
+	}
+	outcome, err := decodeArchiveOutcome(query.Get(archiveOutcomeQuery))
+	if err != nil {
+		writeError(writer, http.StatusNotFound, ErrNotFound.Error())
+		return
+	}
+	defer request.Body.Close()
+	var body struct {
+		Lease  string `json:"lease"`
+		Digest string `json:"digest"`
+		Size   int64  `json:"size"`
+	}
+	if err := json.NewDecoder(io.LimitReader(request.Body, 64<<10)).Decode(&body); err != nil || body.Size < 0 {
+		writeError(writer, http.StatusBadRequest, "invalid transfer completion")
+		return
+	}
+	err = storage.CompleteDirectArchive(request.Context(), OpenRequest{Scope: scope, ID: id}, body.Lease, body.Digest, body.Size)
+	if errors.Is(err, ErrNotFound) {
+		writeError(writer, http.StatusNotFound, "transfer lease is not active")
+		return
+	}
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "transfer completion failed")
+		return
+	}
+	finishedAt := time.Now().UTC()
+	if finishedAt.After(outcome.FinishedAt) {
+		outcome.Timing.Download = finishedAt.Sub(outcome.FinishedAt)
+	}
+	outcome.FinishedAt = finishedAt
+	outcome.Bytes.Downloaded = body.Size
+	handler.recordOutcome(outcome)
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (handler *Handler) reserve(writer http.ResponseWriter, request *http.Request) {
@@ -756,9 +858,12 @@ func validateScope(scope Scope) error {
 // download handler independently repeats the same verification before serving
 // bytes.
 func (handler *Handler) AuthorizesArchiveDownload(request *http.Request) bool {
-	if request.Method != http.MethodGet {
-		return false
-	}
+	return request.Method == http.MethodGet && handler.verifiesArchiveURL(request)
+}
+
+// verifiesArchiveURL checks an archive URL's signature and expiry for any
+// method. Only GET may bypass bearer authentication.
+func (handler *Handler) verifiesArchiveURL(request *http.Request) bool {
 	if _, err := archiveIDFromPath(request.URL.Path); err != nil {
 		return false
 	}
@@ -792,7 +897,7 @@ func (handler *Handler) archiveLocation(
 	id int64,
 	scope Scope,
 	outcome measurement.FinalOutcome,
-) (string, error) {
+) (string, time.Time, error) {
 	base := strings.TrimRight(handler.config.ArchiveBaseURL, "/")
 	if base == "" {
 		scheme := request.Header.Get("X-Forwarded-Proto")
@@ -811,22 +916,22 @@ func (handler *Handler) archiveLocation(
 	}
 	location, err := url.Parse(base + archivePath)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	expiresAt := time.Now().UTC().Add(handler.archiveURLTTL).Truncate(time.Millisecond)
 	authority, err := encodeArchiveAuthority(scope)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	encodedOutcome, err := encodeArchiveOutcome(outcome)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	signature, err := handler.archiveURLSigner.SignArchiveURL(
 		archiveSignatureResource(location.EscapedPath(), authority, encodedOutcome), expiresAt,
 	)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	query := location.Query()
 	query.Set(archiveExpiryQuery, strconv.FormatInt(expiresAt.UnixMilli(), 10))
@@ -834,7 +939,7 @@ func (handler *Handler) archiveLocation(
 	query.Set(archiveOutcomeQuery, encodedOutcome)
 	query.Set(archiveSignatureQuery, signature)
 	location.RawQuery = query.Encode()
-	return location.String(), nil
+	return location.String(), expiresAt, nil
 }
 
 func archiveSignatureResource(escapedPath, authority, outcome string) string {
@@ -889,6 +994,9 @@ func decodeArchiveOutcome(encoded string) (measurement.FinalOutcome, error) {
 	}
 	return outcome, nil
 }
+
+// ArchiveIDFromPath parses the cache ID from an archive URL path.
+func ArchiveIDFromPath(value string) (int64, error) { return archiveIDFromPath(value) }
 
 func archiveIDFromPath(value string) (int64, error) {
 	const prefix = "/_apis/artifactcache/caches/"

@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -29,6 +30,9 @@ type s3BlobStore struct {
 	client    *minio.Client
 	bucket    string
 	namespace string
+	// Presigned URLs are issued only with the pool's static key. Chain or
+	// temporary credentials could expire before the URL does.
+	presign bool
 }
 
 func newS3BlobStore(ctx context.Context, config Config, namespace string) (*s3BlobStore, error) {
@@ -67,7 +71,34 @@ func newS3BlobStore(ctx context.Context, config Config, namespace string) (*s3Bl
 	if !exists {
 		return nil, errors.New("configured cloud S3 bucket does not exist")
 	}
-	return &s3BlobStore{client: client, bucket: config.S3Bucket, namespace: namespace}, nil
+	return &s3BlobStore{
+		client: client, bucket: config.S3Bucket, namespace: namespace, presign: config.S3AccessKey != "",
+	}, nil
+}
+
+func (storage *s3BlobStore) PresignGet(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
+	if !storage.presign {
+		return nil, ErrDirectTransferUnavailable
+	}
+	return storage.client.PresignedGetObject(ctx, storage.bucket, key, expires, nil)
+}
+
+func (storage *s3BlobStore) PresignPut(
+	ctx context.Context,
+	key string,
+	digest [32]byte,
+	expires time.Duration,
+) (*url.URL, http.Header, error) {
+	if !storage.presign {
+		return nil, nil, ErrDirectTransferUnavailable
+	}
+	header := http.Header{}
+	header.Set("x-amz-checksum-sha256", base64.StdEncoding.EncodeToString(digest[:]))
+	location, err := storage.client.PresignHeader(ctx, http.MethodPut, storage.bucket, key, expires, nil, header)
+	if err != nil {
+		return nil, nil, err
+	}
+	return location, header, nil
 }
 
 func (storage *s3BlobStore) Stage(

@@ -123,6 +123,13 @@ var schemaStatements = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS layercache_blob_read_leases_expiry_v1
 		ON layercache_blob_read_leases_v1(project_id, digest, expires_at)`,
+	// Direct transfers bind a read lease or staged upload to the principal and
+	// cache entry it was issued for, so completion and commit are single-use
+	// and cannot be replayed by another reader or against another entry.
+	`ALTER TABLE layercache_blob_read_leases_v1 ADD COLUMN IF NOT EXISTS principal TEXT`,
+	`ALTER TABLE layercache_blob_read_leases_v1 ADD COLUMN IF NOT EXISTS entry_resource TEXT`,
+	`ALTER TABLE layercache_uploads_v1 ADD COLUMN IF NOT EXISTS principal TEXT`,
+	`ALTER TABLE layercache_uploads_v1 ADD COLUMN IF NOT EXISTS entry_resource TEXT`,
 	`CREATE TABLE IF NOT EXISTS layercache_audit_events_v1 (
 		event_id BIGSERIAL PRIMARY KEY,
 		project_id TEXT NOT NULL,

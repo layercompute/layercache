@@ -8,6 +8,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/layercache/layercache/internal/directtransfer"
 )
 
 const cacheChainTransferChunkSize = 4 << 20
@@ -306,6 +308,11 @@ func (storage *CacheChain) warmLocalOnce(
 	storage.mu.Unlock()
 
 	call.entry, call.err = storage.warmLocal(ctx, request, remote, remoteStorage, remoteName)
+	if errors.Is(call.err, directtransfer.ErrFailed) {
+		// The remote dropped its failed direct descriptor, so this one repeat
+		// downloads through the proxied archive URL.
+		call.entry, call.err = storage.warmLocal(ctx, request, remote, remoteStorage, remoteName)
+	}
 	storage.mu.Lock()
 	delete(storage.warming, identity)
 	close(call.done)
@@ -395,6 +402,33 @@ func (storage *CacheChain) pruneReservationsLocked(now time.Time) {
 
 func (storage *CacheChain) Open(ctx context.Context, request OpenRequest) (Archive, error) {
 	return storage.local.Open(ctx, request)
+}
+
+// IssueDirectArchive and CompleteDirectArchive serve the provider that Open
+// reads from, when it supports direct transfer.
+func (storage *CacheChain) IssueDirectArchive(
+	ctx context.Context,
+	request OpenRequest,
+	notAfter time.Time,
+) (directtransfer.Descriptor, error) {
+	direct, ok := storage.local.(DirectArchiveStorage)
+	if !ok {
+		return directtransfer.Descriptor{}, ErrNotFound
+	}
+	return direct.IssueDirectArchive(ctx, request, notAfter)
+}
+
+func (storage *CacheChain) CompleteDirectArchive(
+	ctx context.Context,
+	request OpenRequest,
+	lease, digest string,
+	size int64,
+) error {
+	direct, ok := storage.local.(DirectArchiveStorage)
+	if !ok {
+		return ErrNotFound
+	}
+	return direct.CompleteDirectArchive(ctx, request, lease, digest, size)
 }
 
 func (storage *CacheChain) warmLocal(
