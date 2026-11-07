@@ -555,7 +555,7 @@ func exerciseCloudActions(t *testing.T, ctx context.Context, base Config) {
 		t.Fatalf("open cloud Actions store: %v", err)
 	}
 	defer store.Close()
-	storage, err := NewActionsStorage(store)
+	storage, err := NewActionsStorage(store, stageVerifiedTestRead(t))
 	if err != nil {
 		t.Fatalf("open cloud Actions index: %v", err)
 	}
@@ -602,7 +602,7 @@ func exerciseCloudActions(t *testing.T, ctx context.Context, base Config) {
 		t.Fatalf("reopen cloud Actions store: %v", err)
 	}
 	defer reopened.Close()
-	reopenedActions, err := NewActionsStorage(reopened)
+	reopenedActions, err := NewActionsStorage(reopened, stageVerifiedTestRead(t))
 	if err != nil {
 		t.Fatal(err)
 	}

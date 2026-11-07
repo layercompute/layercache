@@ -118,7 +118,9 @@ func (server *Server) putNx(writer http.ResponseWriter, request *http.Request, k
 	defer request.Body.Close()
 	// Nx requires every duplicate to conflict, even if its raw archive matches.
 	// Put's atomic created result also fences simultaneous first writers.
-	if _, err := server.store.Head(request.Context(), key); err == nil {
+	// Hosted Head also checks object metadata. A committed entry with a bad
+	// object still occupies the key until a read removes it, as before.
+	if _, err := server.store.Head(request.Context(), key); err == nil || errors.Is(err, artifact.ErrCorrupt) {
 		writer.WriteHeader(http.StatusConflict)
 		return
 	} else if !errors.Is(err, artifact.ErrNotFound) {

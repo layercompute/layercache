@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -24,13 +25,22 @@ import (
 // PostgreSQL transaction.
 type ActionsStorage struct {
 	store *Store
+	stage ActionsReadStager
 }
 
-func NewActionsStorage(store *Store) (*ActionsStorage, error) {
+// ActionsReadStager copies a cloud object into bounded local staging and
+// verifies its complete size and digest before any byte is served. It returns
+// ErrCorrupt for mismatched bytes and ErrQuota when staging space is exhausted.
+type ActionsReadStager func(context.Context, artifact.Entry, io.Reader) (*os.File, func(), error)
+
+func NewActionsStorage(store *Store, stage ActionsReadStager) (*ActionsStorage, error) {
 	if store == nil || store.database == nil || store.blobs == nil {
 		return nil, errors.New("cloud store is required for Actions cache storage")
 	}
-	return &ActionsStorage{store: store}, nil
+	if stage == nil {
+		return nil, errors.New("verified read staging is required for Actions cache storage")
+	}
+	return &ActionsStorage{store: store, stage: stage}, nil
 }
 
 func (storage *ActionsStorage) Close() error { return nil }
@@ -397,7 +407,35 @@ func (storage *ActionsStorage) Open(
 		_ = storage.InvalidateEntry(ctx, entry.ID)
 		return actionscache.Archive{}, actionscache.ErrNotFound
 	}
-	return actionscache.Archive{Entry: entry, Body: body}, nil
+	// Stream nothing until the complete object is verified: an HTTP 200 cannot
+	// be retracted after a checksum failure at EOF.
+	staged, cleanup, err := storage.stage(ctx, artifactEntry, body)
+	closeErr := body.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		if errors.Is(err, ErrCorrupt) {
+			_ = storage.InvalidateEntry(context.WithoutCancel(ctx), entry.ID)
+			return actionscache.Archive{}, actionscache.ErrNotFound
+		}
+		return actionscache.Archive{}, err
+	}
+	return actionscache.Archive{Entry: entry, Body: stagedArchive{File: staged, cleanup: cleanup}}, nil
+}
+
+// stagedArchive releases verification staging when the download closes it.
+type stagedArchive struct {
+	*os.File
+	cleanup func()
+}
+
+func (archive stagedArchive) Close() error {
+	archive.cleanup()
+	return nil
 }
 
 func (storage *ActionsStorage) Abort(ctx context.Context, reservationID int64) error {
@@ -794,14 +832,9 @@ func (storage *ActionsStorage) actionsEntryAvailable(
 		Compatibility: request.Scope.Compatibility, Native: candidate.nativeKey,
 		Version: entry.Version, Ref: entry.Ref,
 	}
-	artifactEntry, body, err := storage.store.Get(ctx, key)
-	if err == nil {
-		_, err = io.Copy(io.Discard, body)
-		closeErr := body.Close()
-		if err == nil {
-			err = closeErr
-		}
-	}
+	// Lookup checks the committed entry and object metadata only. Content
+	// corruption that needs a full read is caught by the verified download.
+	artifactEntry, err := storage.store.Head(ctx, key)
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrCorrupt) {
 		if invalidateErr := storage.InvalidateEntry(ctx, entry.ID); invalidateErr != nil &&
 			!errors.Is(invalidateErr, actionscache.ErrNotFound) {

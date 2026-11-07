@@ -68,8 +68,8 @@ entry ordering.
 Read counts persist across server restarts and are shared by aliases of the
 same blob. Local Cache increments them after verifying a complete artifact.
 Team Cache increments them only when a streamed S3 read reaches verified
-EOF. Failed/corrupt reads, partial Team reads and HEAD probes do not increase
-the count. Counter failures never break a successful cache restore.
+EOF. Failed/corrupt reads, partial Team reads, HEAD probes and Actions lookups
+do not increase the count. Counter failures never break a successful cache restore.
 
 Incoming artifacts still use the existing admission behavior. A new insert
 can displace a more valuable resident artifact because this version does not
