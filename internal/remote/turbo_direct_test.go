@@ -34,6 +34,8 @@ type directFixture struct {
 	expired   bool
 	stored    []byte
 	commit    int
+	admission int  // upload admission status override
+	stall     bool // the object store sends a prefix, then stops until cancelled
 
 	mu             sync.Mutex
 	optedIn        int
@@ -79,6 +81,12 @@ func (fixture *directFixture) serveObject(writer http.ResponseWriter, request *h
 		fixture.objectGets++
 		fixture.mu.Unlock()
 		writer.Header().Set("Content-Length", strconv.Itoa(len(fixture.served)))
+		if fixture.stall {
+			_, _ = writer.Write(fixture.served[:64])
+			writer.(http.Flusher).Flush()
+			<-request.Context().Done()
+			return
+		}
 		_, _ = writer.Write(fixture.served)
 	case http.MethodPut:
 		body, _ := io.ReadAll(request.Body)
@@ -130,12 +138,19 @@ func (fixture *directFixture) serveGateway(writer http.ResponseWriter, request *
 		fixture.completions = append(fixture.completions, completion)
 		writer.WriteHeader(http.StatusNoContent)
 	case request.Method == http.MethodPost && path == "/v8/artifacts/task/transfers/upload":
+		if fixture.admission != 0 {
+			writer.WriteHeader(fixture.admission)
+			return
+		}
 		var declaration directtransfer.Declaration
 		_ = json.NewDecoder(request.Body).Decode(&declaration)
 		sum, _ := hex.DecodeString(strings.TrimPrefix(declaration.Digest, "sha256:"))
 		_ = json.NewEncoder(writer).Encode(directtransfer.Upload{
-			URL:       fixture.objects.URL + "/staging/upload-1?X-Amz-Signature=secret-signature",
-			Headers:   map[string]string{"x-amz-checksum-sha256": base64.StdEncoding.EncodeToString(sum)},
+			URL: fixture.objects.URL + "/staging/upload-1?X-Amz-Signature=secret-signature",
+			Headers: map[string]string{
+				"x-amz-checksum-sha256": base64.StdEncoding.EncodeToString(sum),
+				"Content-Length":        strconv.FormatInt(declaration.Size, 10),
+			},
 			Upload:    "upload-1",
 			ExpiresAt: time.Now().Add(time.Minute),
 		})
@@ -330,5 +345,59 @@ func TestTurboPutFromWritesDirectlyAndFallsBackOnce(t *testing.T) {
 	opener, opens = open(payload)
 	if err := fixture.client(nil).PutFrom(context.Background(), "task", entry, opener); err != nil || *opens != 2 || fixture.proxiedPuts != 1 {
 		t.Fatalf("rejected commit err %v, opens %d, proxied %d", err, *opens, fixture.proxiedPuts)
+	}
+}
+
+func TestTurboDirectTransferIgnoresTheCallersOwnCancellation(t *testing.T) {
+	payload := bytes.Repeat([]byte("cancelled"), 8192)
+	fixture := newDirectFixture(t, payload)
+	fixture.stall = true
+	breaker := directtransfer.NewBreaker(1, 10*time.Minute, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := fixture.client(breaker).Fetch(ctx, "task", func(download remote.TurboDownload) error {
+		buffer := make([]byte, 16)
+		if _, err := io.ReadFull(download.Body, buffer); err != nil {
+			return err
+		}
+		cancel()
+		_, err := io.Copy(io.Discard, download.Body)
+		return err
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled Fetch = %v", err)
+	}
+	if !breaker.Allow() || fixture.proxiedGets != 0 {
+		t.Fatalf("cancellation counted as a storage failure (breaker open %v) or was repeated (%d)", !breaker.Allow(), fixture.proxiedGets)
+	}
+}
+
+func TestTurboPutFromStopsOnQuotaWithoutARepeat(t *testing.T) {
+	payload := []byte("over quota")
+	sum := sha256.Sum256(payload)
+	entry := artifact.Entry{Digest: hex.EncodeToString(sum[:]), Size: int64(len(payload))}
+	for name, configure := range map[string]func(*directFixture){
+		"admission": func(fixture *directFixture) { fixture.admission = http.StatusInsufficientStorage },
+		"commit":    func(fixture *directFixture) { fixture.commit = http.StatusInsufficientStorage },
+	} {
+		t.Run(name, func(t *testing.T) {
+			fixture := newDirectFixture(t, payload)
+			configure(fixture)
+			breaker := directtransfer.NewBreaker(1, 10*time.Minute, nil)
+			err := fixture.client(breaker).PutFrom(context.Background(), "task", entry, func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(payload)), nil
+			})
+			if err == nil || !strings.Contains(err.Error(), "507") || fixture.proxiedPuts != 0 || !breaker.Allow() {
+				t.Fatalf("err %v, proxied %d, breaker open %v", err, fixture.proxiedPuts, !breaker.Allow())
+			}
+		})
+	}
+	// Other refusals, such as the per-principal upload cap, fall back.
+	fixture := newDirectFixture(t, payload)
+	fixture.admission = http.StatusTooManyRequests
+	if err := fixture.client(nil).PutFrom(context.Background(), "task", entry, func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(payload)), nil
+	}); err != nil || fixture.proxiedPuts != 1 {
+		t.Fatalf("capped upload err %v, proxied %d", err, fixture.proxiedPuts)
 	}
 }

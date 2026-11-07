@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -235,6 +236,13 @@ func Put(ctx context.Context, client *http.Client, upload Upload, body io.Reader
 		request.Body = http.NoBody
 	}
 	for name, value := range upload.Headers {
+		if http.CanonicalHeaderKey(name) == "Content-Length" {
+			// Signed by the gateway; the transport sends it from ContentLength.
+			if value != strconv.FormatInt(size, 10) {
+				return fmt.Errorf("%w: upload length does not match the declaration", ErrFailed)
+			}
+			continue
+		}
 		request.Header.Set(name, value)
 	}
 	response, err := client.Do(request)

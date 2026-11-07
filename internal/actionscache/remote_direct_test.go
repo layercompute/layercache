@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,7 +32,11 @@ type directMemoryStorage struct {
 	objectGets  int
 	headers     []http.Header
 	completions []string
+	// completionAuth records the bearer header of each completion request.
+	completionAuth []string
 }
+
+func (storage *directMemoryStorage) DirectArchiveEnabled() bool { return true }
 
 func (storage *directMemoryStorage) IssueDirectArchive(
 	_ context.Context,
@@ -69,6 +74,18 @@ func (storage *directMemoryStorage) CompleteDirectArchive(
 
 func newDirectActionsFixture(t *testing.T, payload []byte) (*directMemoryStorage, actionscache.Scope, *actionscache.RemoteStorage) {
 	t.Helper()
+	return newDirectActionsFixtureWith(t, payload, func(*actionscache.Config) {}, 0)
+}
+
+// newDirectActionsFixtureWith configures the gateway's handler and delays the
+// object store's response, to let an archive URL expire mid-transfer.
+func newDirectActionsFixtureWith(
+	t *testing.T,
+	payload []byte,
+	configure func(*actionscache.Config),
+	objectDelay time.Duration,
+) (*directMemoryStorage, actionscache.Scope, *actionscache.RemoteStorage) {
+	t.Helper()
 	scope := actionscache.Scope{
 		Repository: "acme/widgets", Ref: "refs/heads/main", DefaultRef: "refs/heads/main",
 		Compatibility: "linux-x64-node24",
@@ -80,18 +97,28 @@ func newDirectActionsFixture(t *testing.T, payload []byte) (*directMemoryStorage
 		storage.headers = append(storage.headers, request.Header.Clone())
 		served := storage.served
 		storage.mu.Unlock()
+		time.Sleep(objectDelay)
 		writer.Header().Set("Content-Length", strconv.Itoa(len(served)))
 		_, _ = writer.Write(served)
 	}))
 	t.Cleanup(storage.objects.Close)
 	putArchive(t, storage, scope, "direct-key", "v1", payload)
-	handler, err := actionscache.NewHandler(actionscache.Config{
+	config := actionscache.Config{
 		Repository: scope.Repository, Ref: scope.Ref, DefaultRef: scope.DefaultRef, Compatibility: scope.Compatibility,
-	}, storage)
+	}
+	configure(&config)
+	handler, err := actionscache.NewHandler(config, storage)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gateway := httptest.NewServer(handler)
+	gateway := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/archive") {
+			storage.mu.Lock()
+			storage.completionAuth = append(storage.completionAuth, request.Header.Get("Authorization"))
+			storage.mu.Unlock()
+		}
+		handler.ServeHTTP(writer, request)
+	}))
 	t.Cleanup(gateway.Close)
 	client, err := actionscache.NewRemoteStorage(actionscache.RemoteStorageConfig{Endpoint: gateway.URL, Token: "team-token"})
 	if err != nil {
@@ -189,5 +216,35 @@ func TestCacheChainRepeatsAFailedDirectWarmOnce(t *testing.T) {
 	}
 	if storage.objectGets != 1 || len(storage.completions) != 0 {
 		t.Fatalf("object GETs %d, completions %d", storage.objectGets, len(storage.completions))
+	}
+}
+
+func TestRemoteStorageCompletesAfterTheArchiveURLExpiresAndAcrossOrigins(t *testing.T) {
+	payload := bytes.Repeat([]byte("slow direct read"), 256)
+	// The archive URL is published on another origin, and expires while the
+	// object is still transferring.
+	elsewhere := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(elsewhere.Close)
+	storage, scope, client := newDirectActionsFixtureWith(t, payload, func(config *actionscache.Config) {
+		config.ArchiveBaseURL = elsewhere.URL
+		config.ArchiveURLTTL = 1500 * time.Millisecond
+	}, 1600*time.Millisecond)
+	result, err := client.Lookup(context.Background(), actionscache.LookupRequest{Scope: scope, Keys: []string{"direct-key"}, Version: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := client.Open(context.Background(), actionscache.OpenRequest{Scope: scope, ID: result.Entry.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, err := io.ReadAll(archive.Body)
+	_ = archive.Body.Close()
+	if err != nil || !bytes.Equal(contents, payload) {
+		t.Fatalf("direct archive: %d bytes, %v", len(contents), err)
+	}
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	if len(storage.completions) != 1 || len(storage.completionAuth) != 1 || storage.completionAuth[0] != "Bearer team-token" {
+		t.Fatalf("completions %v with bearer %q", storage.completions, storage.completionAuth)
 	}
 }

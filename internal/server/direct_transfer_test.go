@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -230,6 +231,9 @@ func TestHostedGatewayKeepsProxiedReadsWhenDirectTransferIsOff(t *testing.T) {
 			gateway.do(t, http.MethodPut, "/v8/artifacts/proxied", writer, payload, nil)
 			response := gateway.do(t, http.MethodGet, "/v8/artifacts/proxied", writer, nil, optIn)
 			body, _ := io.ReadAll(response.Body)
+			if strings.Contains(strings.Join(response.Header.Values("Vary"), ","), "Accept") {
+				t.Fatal("a proxied response with direct read off varies on Accept")
+			}
 			if response.StatusCode != http.StatusOK || directtransfer.IsDescriptor(response.Header) || !bytes.Equal(body, payload) {
 				t.Fatalf("opted-in GET = %d %q, %d bytes", response.StatusCode, response.Header.Get("Content-Type"), len(body))
 			}
@@ -283,12 +287,25 @@ func TestTurboClientTransfersDirectlyThroughTheHostedGateway(t *testing.T) {
 	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&upload) != nil {
 		t.Fatalf("direct upload admission = %d", response.StatusCode)
 	}
+	if upload.Headers["Content-Length"] != strconv.Itoa(len(payload)) {
+		t.Fatalf("upload does not sign the declared length: %v", upload.Headers)
+	}
 	tampered := append([]byte(nil), payload...)
 	tampered[0] ^= 1
-	for name, headers := range map[string]map[string]string{"tampered body": upload.Headers, "unsigned checksum": nil} {
-		request, _ := http.NewRequest(http.MethodPut, upload.URL, bytes.NewReader(tampered))
-		for header, value := range headers {
-			request.Header.Set(header, value)
+	longer := append(append([]byte(nil), payload...), 'x')
+	for name, attempt := range map[string]struct {
+		body    []byte
+		headers map[string]string
+	}{
+		"tampered body":     {tampered, upload.Headers},
+		"unsigned checksum": {tampered, nil},
+		"unsigned length":   {longer, upload.Headers},
+	} {
+		request, _ := http.NewRequest(http.MethodPut, upload.URL, bytes.NewReader(attempt.body))
+		for header, value := range attempt.headers {
+			if header != "Content-Length" {
+				request.Header.Set(header, value)
+			}
 		}
 		stored, err := http.DefaultClient.Do(request)
 		if err != nil {

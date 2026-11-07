@@ -510,6 +510,9 @@ func (storage *RemoteStorage) Open(ctx context.Context, request OpenRequest) (Ar
 		if err == nil {
 			return archive, nil
 		}
+		if ctx.Err() != nil {
+			return Archive{}, ctx.Err()
+		}
 		// Failed before any byte was delivered: repeat once through the
 		// proxied archive URL, verified against the same digest and size.
 	}
@@ -591,6 +594,9 @@ func (storage *RemoteStorage) openDirect(
 	verifier, err := directtransfer.Get(requestContext, storage.direct, *metadata.direct, metadata.directURL)
 	if err != nil {
 		cancel(nil)
+		if ctx.Err() != nil {
+			return Archive{}, ctx.Err()
+		}
 		storage.breaker.Fail()
 		storage.dropDirect(identity)
 		return Archive{}, err
@@ -598,8 +604,8 @@ func (storage *RemoteStorage) openDirect(
 	entry.Size = metadata.direct.Size
 	watch := newIdleWatch(cancel, storage.transferIdleTimeout)
 	return Archive{Entry: entry, Body: &directArchiveBody{
-		body:     &progressReadCloser{body: verifier, context: requestContext, cancel: cancel, watch: watch},
-		verifier: verifier, storage: storage, identity: identity,
+		body:    &progressReadCloser{body: verifier, context: requestContext, cancel: cancel, watch: watch},
+		context: ctx, verifier: verifier, storage: storage, identity: identity,
 		descriptor: *metadata.direct, completion: metadata.location, compatibilityID: compatibilityID,
 	}}, nil
 }
@@ -631,7 +637,15 @@ func (storage *RemoteStorage) completeDirect(body *directArchiveBody) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), directCompletionTimeout)
 	defer cancel()
-	response, err := storage.do(ctx, http.MethodPost, body.completion, strings.NewReader(string(payload)), "application/json", body.compatibilityID)
+	// The completion needs the bearer token, which is only ever sent to the
+	// configured endpoint. A signed archive URL on another origin (a distinct
+	// ArchiveBaseURL) is served by the same gateway: its signature covers the
+	// path and query, not the host, so send it to the endpoint instead.
+	target := *body.completion
+	if target.Scheme != storage.endpoint.Scheme || target.Host != storage.endpoint.Host {
+		target.Scheme, target.Host = storage.endpoint.Scheme, storage.endpoint.Host
+	}
+	response, err := storage.do(ctx, http.MethodPost, &target, strings.NewReader(string(payload)), "application/json", body.compatibilityID)
 	if err != nil {
 		return
 	}
@@ -640,6 +654,7 @@ func (storage *RemoteStorage) completeDirect(body *directArchiveBody) {
 }
 
 type directArchiveBody struct {
+	context         context.Context
 	body            io.ReadCloser
 	verifier        *directtransfer.Verifier
 	storage         *RemoteStorage
@@ -666,6 +681,12 @@ func (body *directArchiveBody) Read(buffer []byte) (int, error) {
 			body.storage.completeDirect(body)
 		}
 		return count, io.EOF
+	}
+	if body.context.Err() != nil {
+		// The caller gave up; this is neither a storage failure nor a reason
+		// to repeat.
+		body.err = body.context.Err()
+		return 0, body.err
 	}
 	body.storage.breaker.Fail()
 	body.storage.dropDirect(body.identity)

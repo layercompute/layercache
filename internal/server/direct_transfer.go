@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -46,6 +47,11 @@ func (server *Server) serveDirectTurboRead(
 		return true
 	}
 	if err != nil {
+		if !errors.Is(err, cloud.ErrDirectTransferUnavailable) {
+			// Store errors carry no presigned URL; it is never created on
+			// these paths.
+			log.Printf("direct Turbo read fell back to the proxied response: %v", err)
+		}
 		return false
 	}
 	entry := read.Entry
@@ -139,6 +145,9 @@ func (server *Server) beginTurboUpload(writer http.ResponseWriter, request *http
 	switch {
 	case errors.Is(err, cloud.ErrDirectTransferUnavailable):
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "direct transfer is unavailable"})
+		return
+	case errors.Is(err, cloud.ErrDirectUploadLimit):
+		writeJSON(writer, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 		return
 	case errors.Is(err, artifact.ErrQuota):
 		writeJSON(writer, http.StatusInsufficientStorage, map[string]string{"error": err.Error()})

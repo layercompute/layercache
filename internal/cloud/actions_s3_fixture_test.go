@@ -193,7 +193,7 @@ func (endpoint *memoryS3Endpoint) serve(writer http.ResponseWriter, request *htt
 				http.Error(writer, "BadDigest", http.StatusBadRequest)
 				return
 			}
-			endpoint.objects[key] = memoryS3Object{data: data, metadata: http.Header{}}
+			endpoint.objects[key] = memoryS3Object{data: data, metadata: http.Header{"X-Amz-Checksum-Sha256": {declared}}}
 			return
 		}
 	}
@@ -237,6 +237,9 @@ func (endpoint *memoryS3Endpoint) serve(writer http.ResponseWriter, request *htt
 		if strings.HasPrefix(strings.ToLower(name), "x-amz-meta-") {
 			writer.Header()[name] = values
 		}
+	}
+	if checksum := object.metadata.Get("X-Amz-Checksum-Sha256"); checksum != "" && strings.EqualFold(request.Header.Get("X-Amz-Checksum-Mode"), "ENABLED") {
+		writer.Header().Set("X-Amz-Checksum-Sha256", checksum)
 	}
 	writer.Header().Set("Content-Length", strconv.Itoa(len(object.data)))
 	writer.Header().Set("Last-Modified", "Wed, 14 Oct 2026 00:00:00 GMT")

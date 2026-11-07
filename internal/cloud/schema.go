@@ -2,7 +2,11 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Serialize first-start DDL across supported replicas sharing one database.
@@ -123,13 +127,6 @@ var schemaStatements = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS layercache_blob_read_leases_expiry_v1
 		ON layercache_blob_read_leases_v1(project_id, digest, expires_at)`,
-	// Direct transfers bind a read lease or staged upload to the principal and
-	// cache entry it was issued for, so completion and commit are single-use
-	// and cannot be replayed by another reader or against another entry.
-	`ALTER TABLE layercache_blob_read_leases_v1 ADD COLUMN IF NOT EXISTS principal TEXT`,
-	`ALTER TABLE layercache_blob_read_leases_v1 ADD COLUMN IF NOT EXISTS entry_resource TEXT`,
-	`ALTER TABLE layercache_uploads_v1 ADD COLUMN IF NOT EXISTS principal TEXT`,
-	`ALTER TABLE layercache_uploads_v1 ADD COLUMN IF NOT EXISTS entry_resource TEXT`,
 	`CREATE TABLE IF NOT EXISTS layercache_audit_events_v1 (
 		event_id BIGSERIAL PRIMARY KEY,
 		project_id TEXT NOT NULL,
@@ -298,6 +295,76 @@ var schemaStatements = []string{
 		)`,
 }
 
+// addedColumns are nullable columns added after a table first shipped. Even
+// ADD COLUMN IF NOT EXISTS takes an ACCESS EXCLUSIVE lock, which would queue
+// every read behind a long transaction on each boot, so each is added only
+// when the catalog shows it missing.
+var addedColumns = []struct{ table, column, definition string }{
+	// Direct transfers bind a read lease or staged upload to the principal and
+	// cache entry it was issued for, so completion and commit are single-use
+	// and cannot be replayed by another reader or against another entry.
+	{"layercache_blob_read_leases_v1", "principal", "TEXT"},
+	{"layercache_blob_read_leases_v1", "entry_resource", "TEXT"},
+	{"layercache_uploads_v1", "principal", "TEXT"},
+	{"layercache_uploads_v1", "entry_resource", "TEXT"},
+}
+
+const (
+	addColumnAttempts = 5
+	addColumnLockWait = "2s"
+)
+
+// addMissingColumns adds each missing column in its own short transaction
+// that waits at most addColumnLockWait for the table lock, retrying a bounded
+// number of times so a busy table delays startup instead of stalling traffic.
+func (store *Store) addMissingColumns(ctx context.Context) error {
+	for _, added := range addedColumns {
+		for attempt := 1; ; attempt++ {
+			var present bool
+			if err := store.database.QueryRowContext(ctx, `
+				SELECT EXISTS(
+					SELECT 1 FROM information_schema.columns
+					WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2
+				)`, added.table, added.column).Scan(&present); err != nil {
+				return store.safeError("inspect cloud metadata columns", err)
+			}
+			if present {
+				break
+			}
+			err := store.addColumn(ctx, added.table, added.column, added.definition)
+			if err == nil {
+				break
+			}
+			var postgresError *pgconn.PgError
+			if !errors.As(err, &postgresError) || postgresError.Code != "55P03" || attempt == addColumnAttempts {
+				return store.safeError("add cloud metadata column", err)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+	}
+	return nil
+}
+
+func (store *Store) addColumn(ctx context.Context, table, column, definition string) error {
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer transaction.Rollback()
+	if _, err := transaction.ExecContext(ctx, `SET LOCAL lock_timeout = '`+addColumnLockWait+`'`); err != nil {
+		return err
+	}
+	// Identifiers come from addedColumns, never from input.
+	if _, err := transaction.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN IF NOT EXISTS `+column+` `+definition); err != nil {
+		return err
+	}
+	return transaction.Commit()
+}
+
 func (store *Store) migrate(ctx context.Context) error {
 	transaction, err := store.database.BeginTx(ctx, nil)
 	if err != nil {
@@ -315,7 +382,7 @@ func (store *Store) migrate(ctx context.Context) error {
 	if err := transaction.Commit(); err != nil {
 		return store.safeError("commit cloud metadata migration", err)
 	}
-	return nil
+	return store.addMissingColumns(ctx)
 }
 
 func metadataBudget(maxBytes int64) int64 {

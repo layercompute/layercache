@@ -744,8 +744,9 @@ func turboRequestMetadata(request *http.Request) artifact.Metadata {
 
 func (server *Server) getTurbo(writer http.ResponseWriter, request *http.Request, key artifact.Key, head bool) {
 	startedAt := time.Now().UTC()
-	if server.cloudStore != nil && server.team == nil {
-		// The body differs between the descriptor and the proxied bytes.
+	if server.hostsDirectTransfer() && server.cloudStore.DirectTransferPolicy().Read {
+		// The body differs between the descriptor and the proxied bytes. With
+		// direct read off, the response stays exactly today's.
 		writer.Header().Add("Vary", "Accept")
 		if !head && directtransfer.Accepts(request.Header) && server.serveDirectTurboRead(writer, request, key, startedAt) {
 			return
@@ -977,13 +978,17 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 		// the proxied read, so install sees the final attempt's download.
 		storeErr, hasMetadata := error(nil), false
 		teamErr := server.team.Fetch(ctx, key.Native, func(download remote.TurboDownload) error {
-			hasMetadata = download.ExpectedDigest != "" && download.Size >= 0
+			hasMetadata = download.ExpectedDigest != ""
 			if !hasMetadata {
 				return &turboInstallError{err: remote.ErrMetadata}
 			}
-			_, _, storeErr = server.store.PutVerified(
-				ctx, key, download.Metadata, exactSizeReader(download.Body, download.Size), download.ExpectedDigest,
-			)
+			// A declared size is enforced exactly. A proxied relay that declares
+			// none is still installed only after its digest verifies.
+			body := io.Reader(download.Body)
+			if download.Size >= 0 {
+				body = exactSizeReader(body, download.Size)
+			}
+			_, _, storeErr = server.store.PutVerified(ctx, key, download.Metadata, body, download.ExpectedDigest)
 			if storeErr != nil {
 				return &turboInstallError{err: storeErr}
 			}

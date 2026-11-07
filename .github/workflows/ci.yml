@@ -243,6 +243,17 @@ jobs:
     env:
       LAYER_CACHE_QA_POSTGRES_URL: postgres://layercache:layercache@127.0.0.1:5432/layercache?sslmode=disable
       LAYERCACHE_MEASUREMENT_POSTGRES_URL: postgres://layercache:layercache@127.0.0.1:5432/layercache?sslmode=disable
+      # S3 integration tests, including the direct-transfer gateway tests that
+      # need real SigV4 and checksum enforcement, run against a disposable MinIO.
+      LAYER_CACHE_QA_S3_ENDPOINT: http://127.0.0.1:19000
+      LAYER_CACHE_QA_S3_BUCKET: layercache-ci
+      LAYER_CACHE_QA_S3_REGION: us-east-1
+      LAYER_CACHE_QA_S3_ACCESS_KEY: layercache-ci
+      LAYER_CACHE_QA_S3_SECRET_KEY: layercache-ci-secret
+      AWS_ACCESS_KEY_ID: layercache-ci
+      AWS_SECRET_ACCESS_KEY: layercache-ci-secret
+      MINIO_ROOT_USER: layercache-ci
+      MINIO_ROOT_PASSWORD: layercache-ci-secret
     services:
       postgres:
         image: postgres:16
@@ -287,6 +298,29 @@ jobs:
       - name: Require native x64 runner
         if: steps.scope.outputs.mode != 'docs'
         run: test "$(uname -m)" = x86_64
+
+      # Service containers cannot pass MinIO its "server" arguments, so the
+      # same pinned image as the release QA starts here.
+      - name: Start disposable MinIO
+        if: steps.scope.outputs.mode != 'docs'
+        run: |
+          set -euo pipefail
+          docker run --detach --rm --name layercache-ci-minio \
+            --publish 127.0.0.1:19000:9000 \
+            --env MINIO_ROOT_USER --env MINIO_ROOT_PASSWORD \
+            cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 \
+            server /data
+          for _ in {1..30}; do
+            if curl --fail --silent "$LAYER_CACHE_QA_S3_ENDPOINT/minio/health/ready" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent --show-error "$LAYER_CACHE_QA_S3_ENDPOINT/minio/health/ready" >/dev/null
+          docker run --rm --network container:layercache-ci-minio \
+            --env MC_HOST_qa="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@127.0.0.1:9000" \
+            cgr.dev/chainguard/minio-client@sha256:b8b144ab34694ecea25aa352c4be9de4c26ee2a02701521dce02ee5593c57338 \
+            mb --ignore-existing "qa/$LAYER_CACHE_QA_S3_BUCKET"
 
       - name: Test
         if: steps.scope.outputs.mode != 'docs'

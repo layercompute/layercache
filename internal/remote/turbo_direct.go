@@ -72,6 +72,10 @@ func (client *TurboClient) fetchDirect(ctx context.Context, hash string, install
 	}
 	verifier, err := directtransfer.Get(ctx, client.direct, descriptor, location)
 	if err != nil {
+		if ctx.Err() != nil {
+			// The caller gave up; storage did not fail, and a repeat is moot.
+			return true, ctx.Err()
+		}
 		client.breaker.Fail()
 		return false, nil
 	}
@@ -85,6 +89,8 @@ func (client *TurboClient) fetchDirect(ctx context.Context, hash string, install
 		client.breaker.Succeed()
 		client.completeDirectRead(ctx, hash, descriptor)
 		return true, installErr
+	case ctx.Err() != nil:
+		return true, ctx.Err()
 	case verifier.Failed():
 		client.breaker.Fail()
 		return false, nil
@@ -151,9 +157,14 @@ func (client *TurboClient) putDirect(
 		// The gateway itself is unreachable; a proxied PUT would be too.
 		return true, fmt.Errorf("publish remote cache: %w", err)
 	}
+	if response.StatusCode == http.StatusInsufficientStorage {
+		// Over quota: a proxied repeat of the same bytes would be refused too.
+		closeResponse(response)
+		return true, fmt.Errorf("remote cache publication returned HTTP %d", response.StatusCode)
+	}
 	if response.StatusCode != http.StatusOK {
-		// Direct write is off, unsupported or not admitted: the proxied PUT
-		// answers authoritatively, including for authorization and quota.
+		// Direct write is off, unsupported, or not admitted for this client:
+		// the proxied PUT answers authoritatively, including authorization.
 		closeResponse(response)
 		return false, nil
 	}
@@ -174,6 +185,9 @@ func (client *TurboClient) putDirect(
 	progress.stop()
 	cancel()
 	_ = body.Close()
+	if ctx.Err() != nil {
+		return true, ctx.Err()
+	}
 	if putErr != nil {
 		client.breaker.Fail()
 		return false, nil
@@ -181,6 +195,9 @@ func (client *TurboClient) putDirect(
 	target := client.artifactURL(hash) + "/transfers/" + url.PathEscape(upload.Upload) + "/commit"
 	response, err = client.postTransfer(ctx, target, nil, &entry)
 	if err != nil {
+		if ctx.Err() != nil {
+			return true, ctx.Err()
+		}
 		// The outcome is unknown. A proxied PUT of the same bytes is idempotent.
 		client.breaker.Fail()
 		return false, nil
@@ -193,6 +210,8 @@ func (client *TurboClient) putDirect(
 	case http.StatusConflict:
 		client.breaker.Succeed()
 		return true, ErrConflict
+	case http.StatusInsufficientStorage:
+		return true, fmt.Errorf("remote cache publication returned HTTP %d", response.StatusCode)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		// Not a storage failure; the proxied PUT reports authorization.
 		return false, nil

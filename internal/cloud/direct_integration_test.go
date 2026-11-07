@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/layercache/layercache/internal/access"
+	"github.com/layercache/layercache/internal/actionscache"
 	"github.com/layercache/layercache/internal/artifact"
 )
 
@@ -372,5 +374,171 @@ func TestDirectUploadAdmitsCommitsAndRejects(t *testing.T) {
 	}
 	if _, err := fixture.store.blobs.Stat(context.Background(), strings.TrimPrefix(upload.URL.Path, "/cache/")); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("abandoned staging object survived its TTL: %v", err)
+	}
+}
+
+func TestDirectUploadsAreBoundedAndSweptSoon(t *testing.T) {
+	fixture := newDirectFixture(t, 64<<10)
+	writer := fixture.as("github:writer", time.Hour)
+	digest := strings.Repeat("ab", 32)
+	key := func(index int) artifact.Key {
+		key := fixture.key
+		key.Native = "bounded-" + strconv.Itoa(index)
+		return key
+	}
+	// Declared bytes of unfinished uploads count against the quota.
+	if _, err := fixture.store.BeginDirectUpload(writer, key(0), digest, 40<<10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.BeginDirectUpload(writer, key(1), digest, 30<<10); !errors.Is(err, ErrQuota) {
+		t.Fatalf("outstanding uploads beyond the quota = %v", err)
+	}
+	// Each principal holds at most a bounded number of unfinished uploads.
+	for index := 1; index < maximumDirectUploadsPerPrincipal; index++ {
+		if _, err := fixture.store.BeginDirectUpload(writer, key(index), digest, 1); err != nil {
+			t.Fatalf("upload %d: %v", index, err)
+		}
+	}
+	if _, err := fixture.store.BeginDirectUpload(writer, key(99), digest, 1); !errors.Is(err, ErrDirectUploadLimit) {
+		t.Fatalf("upload beyond the per-principal cap = %v", err)
+	}
+	if _, err := fixture.store.BeginDirectUpload(fixture.as("github:other", time.Hour), key(99), digest, 1); err != nil {
+		t.Fatalf("another principal was capped: %v", err)
+	}
+	// An abandoned upload is reclaimed shortly after its URL expires, not after
+	// the staging TTL.
+	var expires time.Time
+	if err := fixture.store.database.QueryRow(`SELECT MAX(expires_at) FROM layercache_uploads_v1 WHERE project_id = $1`, fixture.store.config.Project).Scan(&expires); err != nil {
+		t.Fatal(err)
+	}
+	if want := fixture.clock().Add(2*time.Minute + directUploadCommitGrace); !expires.Equal(want) {
+		t.Fatalf("direct upload row expires %v, want %v", expires, want)
+	}
+	fixture.now.Add(int64(2*time.Minute + directUploadCommitGrace + time.Second))
+	if result, err := fixture.store.Maintain(context.Background()); err != nil || result.ExpiredUploads != maximumDirectUploadsPerPrincipal+1 {
+		t.Fatalf("sweep = %+v, %v", result, err)
+	}
+	if _, err := fixture.store.BeginDirectUpload(writer, key(0), digest, 40<<10); err != nil {
+		t.Fatalf("swept uploads still held the quota: %v", err)
+	}
+}
+
+func TestDirectCommitKeepsAHealthyCanonicalObjectAndChecksStoredChecksums(t *testing.T) {
+	fixture := newDirectFixture(t, 1<<20)
+	writer := fixture.as("github:writer", time.Hour)
+	payload := bytes.Repeat([]byte("shared canonical"), 256)
+	sum := sha256.Sum256(payload)
+	digest := hex.EncodeToString(sum[:])
+	fixture.put(t, fixture.key, artifact.Metadata{}, payload)
+	stage := func(key artifact.Key) DirectUpload {
+		t.Helper()
+		upload, err := fixture.store.BeginDirectUpload(writer, key, digest, int64(len(payload)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, _ := fetchURL(t, http.MethodPut, upload.URL.String(), upload.Header, payload); status != http.StatusOK {
+			t.Fatalf("PUT = %d", status)
+		}
+		return upload
+	}
+	// A direct commit of an already stored digest never rewrites the shared
+	// object: with copies failing, it still succeeds.
+	alias := fixture.key
+	alias.Native = "alias"
+	upload := stage(alias)
+	fixture.objects.failCopy.Store(true)
+	if _, _, err := fixture.store.CommitDirectUpload(writer, alias, artifact.Metadata{}, upload.Upload); err != nil {
+		t.Fatalf("direct commit over a healthy canonical object = %v", err)
+	}
+	if _, _, err := fixture.store.CommitDirectUpload(writer, alias, artifact.Metadata{}, stage(alias).Upload); err != nil {
+		t.Fatalf("idempotent direct commit = %v", err)
+	}
+	fixture.objects.failCopy.Store(false)
+
+	// A stored checksum that disagrees with the declaration fails commit.
+	other := fixture.key
+	other.Native = "checksum-mismatch"
+	upload = stage(other)
+	stagingKey := strings.TrimPrefix(upload.URL.Path, "/cache/")
+	fixture.objects.mutex.Lock()
+	object := fixture.objects.objects[stagingKey]
+	wrong := sha256.Sum256([]byte("other bytes"))
+	object.metadata = http.Header{"X-Amz-Checksum-Sha256": {base64.StdEncoding.EncodeToString(wrong[:])}}
+	fixture.objects.objects[stagingKey] = object
+	fixture.objects.mutex.Unlock()
+	if _, _, err := fixture.store.CommitDirectUpload(writer, other, artifact.Metadata{}, upload.Upload); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("checksum mismatch commit = %v", err)
+	}
+}
+
+func TestDirectActionsReadRecordsAccessOnlyOnCompletion(t *testing.T) {
+	fixture := newDirectFixture(t, 1<<20)
+	payload := bytes.Repeat([]byte("actions access"), 256)
+	id := fixture.publish(t, "access", payload)
+	storage, err := NewActionsStorage(fixture.store, stageVerifiedTestRead(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessed := func() time.Time {
+		var at time.Time
+		if err := fixture.store.database.QueryRow(`SELECT last_accessed_at FROM layercache_entries_v1 WHERE project_id = $1 AND integration = 'actions'`, fixture.store.config.Project).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	before := accessed()
+	fixture.now.Add(int64(time.Hour))
+	reader := fixture.as("actions-reader", 2*time.Hour)
+	request := actionscache.OpenRequest{Scope: actionscache.Scope{
+		Repository: "acme/phone", Ref: "refs/heads/main", DefaultRef: "refs/heads/main", Compatibility: "linux-x64-node24",
+	}, ID: id}
+	descriptor, err := storage.IssueDirectArchive(reader, request, fixture.clock().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !accessed().Equal(before) {
+		t.Fatal("an opted-in lookup recorded an access before any verified read")
+	}
+	if err := storage.CompleteDirectArchive(reader, request, descriptor.Lease, descriptor.Digest, descriptor.Size); err != nil {
+		t.Fatal(err)
+	}
+	if !accessed().Equal(fixture.clock()) {
+		t.Fatal("a verified completion did not record the access")
+	}
+	fixture.store.config.DirectTransfer.Read = false
+	if storage.DirectArchiveEnabled() {
+		t.Fatal("direct archives stayed enabled with the switch off")
+	}
+	if _, err := storage.IssueDirectArchive(reader, request, fixture.clock().Add(time.Minute)); !errors.Is(err, ErrDirectTransferUnavailable) {
+		t.Fatalf("switch off = %v", err)
+	}
+}
+
+func TestAddedColumnsAreAddedOnlyWhenMissing(t *testing.T) {
+	fixture := newDirectFixture(t, 1<<20)
+	if _, err := fixture.store.database.Exec(`ALTER TABLE layercache_uploads_v1 DROP COLUMN entry_resource`); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.addMissingColumns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var present bool
+	if err := fixture.store.database.QueryRow(`SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'layercache_uploads_v1' AND column_name = 'entry_resource')`).Scan(&present); err != nil || !present {
+		t.Fatalf("missing column was not added: %v %v", present, err)
+	}
+	// With every column present, a boot takes no table lock: it succeeds while
+	// another session holds an exclusive lock on the table.
+	locker, err := fixture.store.database.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer locker.Rollback()
+	if _, err := locker.Exec(`LOCK TABLE layercache_uploads_v1 IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := fixture.store.addMissingColumns(ctx); err != nil {
+		t.Fatalf("a boot with every column present waited on the table lock: %v", err)
 	}
 }

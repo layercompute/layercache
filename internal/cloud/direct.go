@@ -43,6 +43,11 @@ type DirectUpload struct {
 	ExpiresAt time.Time
 }
 
+// DirectTransferPolicy reports the store's effective direct transfer policy.
+func (store *Store) DirectTransferPolicy() DirectTransferPolicy {
+	return store.config.DirectTransfer
+}
+
 // directPrincipal returns the authenticated subject a direct lease is issued
 // to and the capability token's expiry, which caps every presigned URL.
 func directPrincipal(ctx context.Context) (string, time.Time, bool) {
@@ -85,10 +90,17 @@ func (store *Store) directExpiry(ctx context.Context, notAfter time.Time) (strin
 // flight, and is consumed by CompleteDirectRead. It returns
 // ErrDirectTransferUnavailable when the caller must use the proxied read.
 func (store *Store) IssueDirectRead(ctx context.Context, key artifact.Key, notAfter time.Time) (DirectRead, error) {
+	return store.issueDirectRead(ctx, key, notAfter, false)
+}
+
+// issueDirectRead with deferAccess leases the object without recording an
+// access; completeDirectRead then records it. A lookup that may never be
+// followed by a download must not refresh retention.
+func (store *Store) issueDirectRead(ctx context.Context, key artifact.Key, notAfter time.Time, deferAccess bool) (DirectRead, error) {
 	if !store.config.DirectTransfer.Read {
 		return DirectRead{}, ErrDirectTransferUnavailable
 	}
-	principal, expiresAt, ttl, err := store.directExpiry(ctx, notAfter)
+	principal, expiresAt, _, err := store.directExpiry(ctx, notAfter)
 	if err != nil {
 		return DirectRead{}, err
 	}
@@ -99,6 +111,7 @@ func (store *Store) IssueDirectRead(ctx context.Context, key artifact.Key, notAf
 			transfer := time.Duration(entry.Size/directReadBytesPerSecond) * time.Second
 			return expiresAt.Add(max(readLeaseTTL, transfer))
 		},
+		deferAccess: deferAccess,
 	})
 	if err != nil {
 		return DirectRead{}, err
@@ -107,6 +120,13 @@ func (store *Store) IssueDirectRead(ctx context.Context, key artifact.Key, notAf
 	if entry.Metadata.Values["origin"] == "public" {
 		store.releaseReadLease(leaseID)
 		return DirectRead{}, ErrDirectTransferUnavailable
+	}
+	// Recompute the signed lifetime now, so the URL never outlives the token
+	// or archive bound however long the lease transaction took.
+	expiresAt, ttl, err := store.remainingURLLifetime(expiresAt)
+	if err != nil {
+		store.releaseReadLease(leaseID)
+		return DirectRead{}, err
 	}
 	// Only the key resolved from this project's committed entry is signed.
 	location, err := store.blobs.PresignGet(ctx, store.blobKey(entry.Digest), ttl)
@@ -117,11 +137,27 @@ func (store *Store) IssueDirectRead(ctx context.Context, key artifact.Key, notAf
 	return DirectRead{Entry: entry, URL: location, ExpiresAt: expiresAt, Lease: leaseID}, nil
 }
 
+// remainingURLLifetime rounds what is left before bound down to whole SigV4
+// seconds.
+func (store *Store) remainingURLLifetime(bound time.Time) (time.Time, time.Duration, error) {
+	now := store.config.Now().UTC()
+	ttl := bound.Sub(now).Truncate(time.Second)
+	if ttl < time.Second {
+		return time.Time{}, 0, ErrDirectTransferUnavailable
+	}
+	return now.Add(ttl), ttl, nil
+}
+
 // CompleteDirectRead consumes a live lease issued to the same principal for the
 // same entry, after the client verified the complete digest and size. Only
 // then is the read counted for retention. Any other lease, a replay, or a
-// mismatched report returns ErrNotFound.
+// mismatched report returns ErrNotFound. The report is self-attested by the
+// reader, and bounded to one per issued descriptor.
 func (store *Store) CompleteDirectRead(ctx context.Context, key artifact.Key, lease, digest string, size int64) error {
+	return store.completeDirectRead(ctx, key, lease, digest, size, false)
+}
+
+func (store *Store) completeDirectRead(ctx context.Context, key artifact.Key, lease, digest string, size int64, recordAccess bool) error {
 	if err := store.validateKey(key); err != nil {
 		return err
 	}
@@ -130,28 +166,50 @@ func (store *Store) CompleteDirectRead(ctx context.Context, key artifact.Key, le
 	if !ok || lease == "" || len(lease) > 128 || !validDigest(digest) || size < 0 {
 		return ErrNotFound
 	}
-	result, err := store.database.ExecContext(ctx, `
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return store.safeError("begin direct cloud read completion", err)
+	}
+	defer transaction.Rollback()
+	now := store.config.Now().UTC()
+	result, err := transaction.ExecContext(ctx, `
 		DELETE FROM layercache_blob_read_leases_v1 AS lease
 		USING layercache_artifacts_v1 AS object
 		WHERE lease.lease_id = $1 AND lease.project_id = $2 AND lease.principal = $3
 			AND lease.entry_resource = $4 AND lease.digest = $5 AND lease.expires_at > $6
 			AND object.project_id = lease.project_id AND object.digest = lease.digest
 			AND object.size_bytes = $7`,
-		lease, store.config.Project, principal, cacheEntryAuditResource(key), digest,
-		store.config.Now().UTC(), size)
+		lease, store.config.Project, principal, cacheEntryAuditResource(key), digest, now, size)
 	if err != nil {
 		return store.safeError("complete direct cloud read", err)
 	}
 	if completed, err := result.RowsAffected(); err != nil || completed != 1 {
 		return ErrNotFound
 	}
+	if recordAccess {
+		if err := touchEntryAccess(ctx, transaction, key, digest, now); err != nil {
+			return store.safeError("touch cloud cache entry", err)
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return store.safeError("commit direct cloud read completion", err)
+	}
 	store.recordVerifiedRead(digest)
 	return nil
 }
 
+// Direct uploads are bounded so that issued but unfinished uploads cannot hold
+// more staging than the project may store: their declared bytes count against
+// the quota, each principal has a small number outstanding, and an abandoned
+// upload is swept soon after its URL can no longer start a transfer.
+const (
+	maximumDirectUploadsPerPrincipal = 16
+	directUploadCommitGrace          = 5 * time.Minute
+)
+
 // BeginDirectUpload admits a declared object against the project quota,
 // records the staged upload, and presigns a PUT for a fresh staging key that
-// storage accepts only with the declared SHA-256.
+// storage accepts only with the declared SHA-256 and length.
 func (store *Store) BeginDirectUpload(ctx context.Context, key artifact.Key, digest string, size int64) (DirectUpload, error) {
 	if !store.config.DirectTransfer.Write {
 		return DirectUpload{}, ErrDirectTransferUnavailable
@@ -164,45 +222,76 @@ func (store *Store) BeginDirectUpload(ctx context.Context, key artifact.Key, dig
 	if !validDigest(digest) || err != nil || size < 0 {
 		return DirectUpload{}, ErrCorrupt
 	}
-	principal, expiresAt, ttl, err := store.directExpiry(ctx, time.Time{})
+	principal, expiresAt, _, err := store.directExpiry(ctx, time.Time{})
 	if err != nil {
 		return DirectUpload{}, err
-	}
-	quota, err := store.Quota(ctx)
-	if err != nil {
-		return DirectUpload{}, err
-	}
-	if size > quota.MaxBytes {
-		return DirectUpload{}, ErrQuota
 	}
 	uploadID, err := randomToken("upload-")
+	if err != nil {
+		return DirectUpload{}, err
+	}
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return DirectUpload{}, store.safeError("begin direct cloud upload", err)
+	}
+	defer transaction.Rollback()
+	// Serialize admissions so concurrent begins cannot both fit.
+	var quota int64
+	if err := transaction.QueryRowContext(ctx, `
+		SELECT quota_bytes FROM layercache_projects_v1 WHERE project_id = $1 FOR UPDATE`,
+		store.config.Project).Scan(&quota); err != nil {
+		return DirectUpload{}, store.safeError("lock cloud project for direct upload", err)
+	}
+	now := store.config.Now().UTC()
+	var outstandingBytes, principalUploads int64
+	if err := transaction.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(size_bytes), 0), COUNT(*) FILTER (WHERE principal = $3)
+		FROM layercache_uploads_v1
+		WHERE project_id = $1 AND state = 'uploading' AND principal IS NOT NULL AND expires_at > $2`,
+		store.config.Project, now, principal).Scan(&outstandingBytes, &principalUploads); err != nil {
+		return DirectUpload{}, store.safeError("count direct cloud uploads", err)
+	}
+	if size > quota-outstandingBytes {
+		return DirectUpload{}, ErrQuota
+	}
+	if principalUploads >= maximumDirectUploadsPerPrincipal {
+		return DirectUpload{}, ErrDirectUploadLimit
+	}
+	expiresAt, ttl, err := store.remainingURLLifetime(expiresAt)
 	if err != nil {
 		return DirectUpload{}, err
 	}
 	stageKey := "projects/" + store.namespace + "/staging/" + uploadID
 	var checksum [32]byte
 	copy(checksum[:], decoded)
-	location, header, err := store.blobs.PresignPut(ctx, stageKey, checksum, ttl)
+	location, header, err := store.blobs.PresignPut(ctx, stageKey, checksum, size, ttl)
 	if err != nil {
 		return DirectUpload{}, ErrDirectTransferUnavailable
 	}
-	now := store.config.Now().UTC()
-	if _, err := store.database.ExecContext(ctx, `
+	// The URL can start a transfer until expiresAt; allow that transfer to
+	// finish at 1 MiB/s, and at least the commit grace, before the sweeper
+	// reclaims the staging key.
+	transfer := time.Duration(size/directReadBytesPerSecond) * time.Second
+	if _, err := transaction.ExecContext(ctx, `
 		INSERT INTO layercache_uploads_v1(
 			upload_id, project_id, object_key, state, digest, size_bytes, created_at, expires_at,
 			principal, entry_resource
 		) VALUES($1, $2, $3, 'uploading', $4, $5, $6, $7, $8, $9)`,
-		uploadID, store.config.Project, stageKey, digest, size, now, now.Add(store.config.StageTTL),
-		principal, cacheEntryAuditResource(key)); err != nil {
+		uploadID, store.config.Project, stageKey, digest, size, now,
+		expiresAt.Add(max(directUploadCommitGrace, transfer)), principal, cacheEntryAuditResource(key)); err != nil {
 		return DirectUpload{}, store.safeError("record direct cloud upload", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return DirectUpload{}, store.safeError("commit direct cloud upload", err)
 	}
 	return DirectUpload{URL: location, Header: header, Upload: uploadID, ExpiresAt: expiresAt}, nil
 }
 
 // CommitDirectUpload claims an upload issued to the same principal for the same
-// entry, checks the staged object's size, and runs the same commit as a
-// proxied publication. Storage enforced the signed checksum, so the staged
-// bytes are not read again. The staging object is always discarded.
+// entry, checks the staged object's size and, where storage reports one, its
+// SHA-256 checksum, and runs the same commit as a proxied publication. Storage
+// enforced the signed checksum and length, so the staged bytes are not read
+// again. The staging object is always discarded.
 func (store *Store) CommitDirectUpload(
 	ctx context.Context,
 	key artifact.Key,
@@ -238,17 +327,17 @@ func (store *Store) CommitDirectUpload(
 		return artifact.Entry{}, false, store.safeError("claim direct cloud upload", err)
 	}
 	defer store.discardStage(upload, staged.Key)
-	info, err := store.blobs.Stat(ctx, staged.Key)
+	info, err := store.blobs.StatChecksum(ctx, staged.Key)
 	if errors.Is(err, ErrNotFound) {
 		return artifact.Entry{}, false, ErrCorrupt
 	}
 	if err != nil {
 		return artifact.Entry{}, false, store.safeError("inspect direct cloud upload", err)
 	}
-	if info.Size != staged.Size {
+	if info.Size != staged.Size || info.SHA256 != "" && info.SHA256 != staged.Digest {
 		return artifact.Entry{}, false, ErrCorrupt
 	}
-	return store.commitStaged(ctx, key, metadata, publication, staged, nil)
+	return store.commitStaged(ctx, key, metadata, publication, staged, nil, true)
 }
 
 // IssueDirectArchive issues a direct read of a committed Actions archive. It
@@ -259,6 +348,9 @@ func (storage *ActionsStorage) IssueDirectArchive(
 	request actionscache.OpenRequest,
 	notAfter time.Time,
 ) (directtransfer.Descriptor, error) {
+	if !storage.DirectArchiveEnabled() {
+		return directtransfer.Descriptor{}, ErrDirectTransferUnavailable
+	}
 	if err := storage.validateScope(request.Scope); err != nil {
 		return directtransfer.Descriptor{}, err
 	}
@@ -269,7 +361,9 @@ func (storage *ActionsStorage) IssueDirectArchive(
 	if entry.Public != nil || entry.Origin == actionscache.SourcePublicCache {
 		return directtransfer.Descriptor{}, ErrDirectTransferUnavailable
 	}
-	read, err := storage.store.IssueDirectRead(ctx, storage.openKey(request, entry, nativeKey), notAfter)
+	// A lookup is not a read: many are never followed by a download. Only a
+	// verified completion records the access.
+	read, err := storage.store.issueDirectRead(ctx, storage.openKey(request, entry, nativeKey), notAfter, true)
 	if err != nil {
 		return directtransfer.Descriptor{}, err
 	}
@@ -282,6 +376,11 @@ func (storage *ActionsStorage) IssueDirectArchive(
 		Digest: directtransfer.Digest(read.Entry.Digest), Size: read.Entry.Size,
 		ExpiresAt: read.ExpiresAt, Lease: read.Lease,
 	}, nil
+}
+
+// DirectArchiveEnabled reports whether lookups may issue direct reads at all.
+func (storage *ActionsStorage) DirectArchiveEnabled() bool {
+	return storage.store.config.DirectTransfer.Read
 }
 
 // CompleteDirectArchive consumes a direct Actions read lease once.
@@ -298,7 +397,7 @@ func (storage *ActionsStorage) CompleteDirectArchive(
 	if err != nil {
 		return err
 	}
-	err = storage.store.CompleteDirectRead(ctx, storage.openKey(request, entry, nativeKey), lease, digest, size)
+	err = storage.store.completeDirectRead(ctx, storage.openKey(request, entry, nativeKey), lease, digest, size, true)
 	if errors.Is(err, ErrNotFound) {
 		return actionscache.ErrNotFound
 	}

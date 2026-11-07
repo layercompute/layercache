@@ -1,7 +1,12 @@
 package server
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +26,43 @@ func withoutDirectTransfer(team http.Handler) http.Handler {
 		}
 		team.ServeHTTP(writer, request)
 	})
+}
+
+func TestTeamRelayWithoutADeclaredSizeStillInstallsAfterItsDigestVerifies(t *testing.T) {
+	payload := []byte("relayed without a length")
+	sum := sha256.Sum256(payload)
+	team := httptest.NewServer(withoutDirectTransfer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writer.Header().Set("x-layercache-digest", "sha256:"+hex.EncodeToString(sum[:]))
+		writer.WriteHeader(http.StatusOK)
+		// Flushing before the body forces a chunked response with no size.
+		writer.(http.Flusher).Flush()
+		_, _ = writer.Write(payload)
+	})))
+	defer team.Close()
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DataDir, cfg.MinFreeBytes = t.TempDir(), 0
+	cfg.ProjectID, cfg.ActionsRepository = "github.com/acme/widget", "github.com/acme/widget"
+	cfg.CompatibilityID = "linux-amd64-schema1"
+	cfg.TeamURL, cfg.TeamToken = team.URL, "team-token"
+	instance, err := New(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = instance.Close() })
+	request := httptest.NewRequest(http.MethodGet, "/v8/artifacts/relayed", nil)
+	request.Header.Set("Authorization", "Bearer "+cfg.LocalToken)
+	response := httptest.NewRecorder()
+	instance.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), payload) {
+		t.Fatalf("relayed read = %d, %q", response.Code, response.Body.Bytes())
+	}
 }
 
 func TestDirectTransferPolicyIsOffByDefaultAndForcedOffByEnvironment(t *testing.T) {

@@ -404,8 +404,13 @@ func (storage *CacheChain) Open(ctx context.Context, request OpenRequest) (Archi
 	return storage.local.Open(ctx, request)
 }
 
-// IssueDirectArchive and CompleteDirectArchive serve the provider that Open
-// reads from, when it supports direct transfer.
+// DirectArchiveEnabled, IssueDirectArchive and CompleteDirectArchive serve the
+// provider that Open reads from, when it supports direct transfer.
+func (storage *CacheChain) DirectArchiveEnabled() bool {
+	direct, ok := storage.local.(DirectArchiveStorage)
+	return ok && direct.DirectArchiveEnabled()
+}
+
 func (storage *CacheChain) IssueDirectArchive(
 	ctx context.Context,
 	request OpenRequest,

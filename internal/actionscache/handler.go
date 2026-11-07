@@ -195,6 +195,7 @@ type OpenRequest struct {
 // for the principal it was issued to, after the client verified the bytes; it
 // returns ErrNotFound for any other lease.
 type DirectArchiveStorage interface {
+	DirectArchiveEnabled() bool
 	IssueDirectArchive(ctx context.Context, request OpenRequest, notAfter time.Time) (directtransfer.Descriptor, error)
 	CompleteDirectArchive(ctx context.Context, request OpenRequest, lease, digest string, size int64) error
 }
@@ -436,12 +437,13 @@ func (handler *Handler) directArchive(
 	if !directtransfer.Accepts(request.Header) {
 		return nil
 	}
-	writer.Header().Set("Cache-Control", "no-store")
-	writer.Header().Add("Vary", "Accept")
 	storage, ok := handler.storage.(DirectArchiveStorage)
-	if !ok {
+	if !ok || !storage.DirectArchiveEnabled() {
+		// Direct transfer off: the response is exactly today's.
 		return nil
 	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Add("Vary", "Accept")
 	descriptor, err := storage.IssueDirectArchive(request.Context(), open, archiveExpiresAt)
 	if err != nil {
 		return nil
@@ -455,7 +457,7 @@ func (handler *Handler) directArchive(
 // principal it was issued to.
 func (handler *Handler) completeDirectDownload(writer http.ResponseWriter, request *http.Request) {
 	query := request.URL.Query()
-	if !handler.verifiesArchiveURL(request) {
+	if !handler.verifiesArchiveURL(request, true) {
 		writeError(writer, http.StatusNotFound, ErrNotFound.Error())
 		return
 	}
@@ -858,12 +860,16 @@ func validateScope(scope Scope) error {
 // download handler independently repeats the same verification before serving
 // bytes.
 func (handler *Handler) AuthorizesArchiveDownload(request *http.Request) bool {
-	return request.Method == http.MethodGet && handler.verifiesArchiveURL(request)
+	return request.Method == http.MethodGet && handler.verifiesArchiveURL(request, false)
 }
 
 // verifiesArchiveURL checks an archive URL's signature and expiry for any
 // method. Only GET may bypass bearer authentication.
-func (handler *Handler) verifiesArchiveURL(request *http.Request) bool {
+//
+// A direct read's completion may arrive after the archive URL expired: the
+// download may outlast the URL. The signature still binds the authority and
+// outcome, and the live, principal-bound lease is what admits the completion.
+func (handler *Handler) verifiesArchiveURL(request *http.Request, ignoreExpiry bool) bool {
 	if _, err := archiveIDFromPath(request.URL.Path); err != nil {
 		return false
 	}
@@ -879,7 +885,7 @@ func (handler *Handler) verifiesArchiveURL(request *http.Request) bool {
 		return false
 	}
 	expiresAt := time.UnixMilli(expiresMilliseconds).UTC()
-	if !time.Now().UTC().Before(expiresAt) {
+	if !ignoreExpiry && !time.Now().UTC().Before(expiresAt) {
 		return false
 	}
 	if _, err := decodeArchiveAuthority(authorityValues[0]); err != nil {
