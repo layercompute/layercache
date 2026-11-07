@@ -194,7 +194,7 @@ func TestRestartUploadsQueuedTurboArtifactWithOriginalCompatibility(t *testing.T
 	ctx := context.Background()
 	requests := make(chan *http.Request, 1)
 	bodies := make(chan []byte, 1)
-	team := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	team := httptest.NewServer(withoutDirectTransfer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
 		if err != nil {
 			t.Errorf("read Team upload: %v", err)
@@ -202,7 +202,7 @@ func TestRestartUploadsQueuedTurboArtifactWithOriginalCompatibility(t *testing.T
 		requests <- request.Clone(context.Background())
 		bodies <- body
 		writer.WriteHeader(http.StatusOK)
-	}))
+	})))
 	defer team.Close()
 
 	root := t.TempDir()

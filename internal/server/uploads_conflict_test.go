@@ -25,7 +25,7 @@ import (
 func conflictUploadFixture(t *testing.T, handler http.Handler) (*Server, uploadqueue.Lease, artifact.Entry) {
 	t.Helper()
 	ctx := context.Background()
-	endpoint := httptest.NewServer(handler)
+	endpoint := httptest.NewServer(withoutDirectTransfer(handler))
 	t.Cleanup(endpoint.Close)
 	root := t.TempDir()
 	store, err := artifact.Open(ctx, root, 4, 0)

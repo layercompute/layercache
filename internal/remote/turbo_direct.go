@@ -151,13 +151,9 @@ func (client *TurboClient) putDirect(
 		// The gateway itself is unreachable; a proxied PUT would be too.
 		return true, fmt.Errorf("publish remote cache: %w", err)
 	}
-	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-		closeResponse(response)
-		return true, ErrUnauthorized
-	}
 	if response.StatusCode != http.StatusOK {
-		// Direct write is off or not admitted: the proxied PUT answers
-		// authoritatively.
+		// Direct write is off, unsupported or not admitted: the proxied PUT
+		// answers authoritatively, including for authorization and quota.
 		closeResponse(response)
 		return false, nil
 	}
@@ -198,7 +194,8 @@ func (client *TurboClient) putDirect(
 		client.breaker.Succeed()
 		return true, ErrConflict
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return true, ErrUnauthorized
+		// Not a storage failure; the proxied PUT reports authorization.
+		return false, nil
 	default:
 		client.breaker.Fail()
 		return false, nil

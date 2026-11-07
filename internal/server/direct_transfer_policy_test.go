@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,18 @@ import (
 	"github.com/layercache/layercache/internal/cloud"
 	"github.com/layercache/layercache/internal/config"
 )
+
+// withoutDirectTransfer is a Team that predates direct transfer: its transfer
+// routes do not exist, so clients publish through the proxied PUT.
+func withoutDirectTransfer(team http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.Contains(request.URL.Path, "/transfers/") {
+			http.NotFound(writer, request)
+			return
+		}
+		team.ServeHTTP(writer, request)
+	})
+}
 
 func TestDirectTransferPolicyIsOffByDefaultAndForcedOffByEnvironment(t *testing.T) {
 	cfg := config.Config{}
