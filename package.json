@@ -38,7 +38,7 @@
     "qa:gradle-native": "node --test action/gradle/*.test.mjs && node qa/gradle-native/run.mjs --with-metering"
   },
   "dependencies": {
-    "ajv": "8.17.1",
+    "ajv": "8.18.0",
     "secure-json-parse": "4.1.0",
     "tar": "7.5.22"
   },
