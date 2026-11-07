@@ -324,6 +324,19 @@ func (store *Store) Head(ctx context.Context, key artifact.Key) (artifact.Entry,
 	if err := transaction.Commit(); err != nil {
 		return artifact.Entry{}, store.safeError("commit cloud cache lookup", err)
 	}
+	// A probe applies Open's object metadata checks without reading the body,
+	// so it neither stages bytes nor counts as a verified read for retention.
+	info, err := store.blobs.Stat(ctx, store.blobKey(entry.Digest))
+	if errors.Is(err, ErrNotFound) {
+		return artifact.Entry{}, ErrCorrupt
+	}
+	if err != nil {
+		return artifact.Entry{}, store.safeError("inspect cloud artifact", err)
+	}
+	// Objects without stored sha256 metadata are accepted, as Open accepts them.
+	if info.Size != entry.Size || info.Digest != "" && info.Digest != entry.Digest {
+		return artifact.Entry{}, ErrCorrupt
+	}
 	return entry, nil
 }
 

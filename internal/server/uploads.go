@@ -287,10 +287,12 @@ func (server *Server) processUpload(lease uploadqueue.Lease) {
 			// same deterministic Turbo task identity. Verify that the configured
 			// Team has a complete result in this exact namespace before releasing
 			// retention; a conflict response alone does not establish availability.
-			if _, headErr := team.Head(server.uploadContext, key.Native); headErr == nil {
+			// HEAD is metadata-only, so read and verify the whole remote copy. A
+			// corrupt copy is removed by the Team read and repaired by the retry.
+			if _, confirmErr := team.Confirm(server.uploadContext, key.Native); confirmErr == nil {
 				server.completeAlreadyPresentUpload(lease)
 			} else {
-				server.retryUpload(lease, uploadFailureCode(headErr))
+				server.retryUpload(lease, uploadFailureCode(confirmErr))
 			}
 			return
 		}

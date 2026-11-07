@@ -92,6 +92,12 @@ func TestActionsAcknowledgementDoesNotRetainFutureHandoff(t *testing.T) {
 				}
 				fixture.objects.mutex.Unlock()
 				reason = "integrity-rejected"
+				if cause == "corrupt-object" {
+					// Object metadata still matches, so lookup succeeds. The
+					// verified download rejects the bytes and invalidates the entry.
+					fixture.rejectDownload(t, "required-handoff", id)
+					reason = "no-matching-entry"
+				}
 			case "wrong-profile":
 				headers["x-layercache-compatibility"] = "different-profile"
 				reason = "no-matching-entry"
@@ -107,6 +113,100 @@ func TestActionsAcknowledgementDoesNotRetainFutureHandoff(t *testing.T) {
 			}
 			if cause == "wrong-profile" || cause == "wrong-version" {
 				fixture.restore(t, "required-handoff", id, payload)
+			}
+		})
+	}
+}
+
+func TestActionsLookupReadsMetadataAndDownloadReadsOnce(t *testing.T) {
+	if os.Getenv("LAYER_CACHE_QA_POSTGRES_URL") == "" {
+		t.Skip("requires disposable PostgreSQL")
+	}
+	fixture := newActionsHTTPFixture(t, 64<<10)
+	payload := bytes.Repeat([]byte{0x71}, 32<<10)
+	id := fixture.publish(t, "required-handoff", payload)
+	entry, err := fixture.store.Head(context.Background(), fixture.artifactKey("required-handoff"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gets := fixture.objects.objectGets.Load()
+	location := fixture.lookupArchive(t, "required-handoff", id)
+	if got := fixture.objects.objectGets.Load() - gets; got != 0 || fixture.readCount(t, entry.Digest) != 0 {
+		t.Fatalf("lookup read %d object bodies and counted %d reads", got, fixture.readCount(t, entry.Digest))
+	}
+	response, err := fixture.endpoint.Client().Get(location)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusOK || !bytes.Equal(body, payload) {
+		t.Fatalf("archive HTTP %d with %d bytes: %v", response.StatusCode, len(body), err)
+	}
+	if got := fixture.objects.objectGets.Load() - gets; got != 1 || fixture.readCount(t, entry.Digest) != 1 {
+		t.Fatalf("verified hit read %d object bodies and counted %d reads, want one", got, fixture.readCount(t, entry.Digest))
+	}
+}
+
+func TestCloudHeadChecksObjectMetadataWithoutReading(t *testing.T) {
+	if os.Getenv("LAYER_CACHE_QA_POSTGRES_URL") == "" {
+		t.Skip("requires disposable PostgreSQL")
+	}
+	fixture := newActionsHTTPFixture(t, 64<<10)
+	ctx := context.Background()
+	for _, change := range []string{"intact", "no-stored-digest", "missing", "size", "stored-digest"} {
+		t.Run(change, func(t *testing.T) {
+			key := artifact.Key{
+				Project: fixture.store.config.Project, Integration: "turbo",
+				Compatibility: "linux-x64-node24", Native: "probe-" + change,
+			}
+			entry, _, err := fixture.store.Put(ctx, key, artifact.Metadata{}, strings.NewReader("probe-"+change))
+			if err != nil {
+				t.Fatal(err)
+			}
+			objectKey := fixture.store.blobKey(entry.Digest)
+			fixture.objects.mutex.Lock()
+			object := fixture.objects.objects[objectKey]
+			object.metadata = object.metadata.Clone()
+			switch change {
+			case "no-stored-digest":
+				object.metadata.Del("X-Amz-Meta-Sha256")
+			case "size":
+				object.data = append(append([]byte(nil), object.data...), 'x')
+			case "stored-digest":
+				object.metadata.Set("X-Amz-Meta-Sha256", strings.Repeat("0", 64))
+			}
+			fixture.objects.objects[objectKey] = object
+			if change == "missing" {
+				delete(fixture.objects.objects, objectKey)
+			}
+			fixture.objects.mutex.Unlock()
+
+			gets := fixture.objects.objectGets.Load()
+			got, err := fixture.store.Head(ctx, key)
+			if change == "intact" || change == "no-stored-digest" {
+				if err != nil || got.Digest != entry.Digest || got.Size != entry.Size {
+					t.Fatalf("Head = %+v, %v", got, err)
+				}
+			} else if !errors.Is(err, ErrCorrupt) {
+				t.Fatalf("Head accepted a %s object: %v", change, err)
+			}
+			if fixture.objects.objectGets.Load() != gets || fixture.readCount(t, entry.Digest) != 0 {
+				t.Fatal("Head read the object body or counted a verified read")
+			}
+			if change != "intact" {
+				return
+			}
+			// Control: a complete verified read is visible to both counters.
+			_, body, err := fixture.store.Get(ctx, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(io.Discard, body)
+			body.Close()
+			if err != nil || fixture.objects.objectGets.Load() != gets+1 || fixture.readCount(t, entry.Digest) != 1 {
+				t.Fatalf("verified read control: gets=%d, reads=%d, error=%v",
+					fixture.objects.objectGets.Load()-gets, fixture.readCount(t, entry.Digest), err)
 			}
 		})
 	}
@@ -252,7 +352,7 @@ func TestActionsAcknowledgedLookupWithConcurrentMaintenance(t *testing.T) {
 	}
 }
 
-func TestActionsMaintenanceProtectsLookupAlreadyReadingArchive(t *testing.T) {
+func TestActionsMaintenanceProtectsDownloadAlreadyReadingArchive(t *testing.T) {
 	if os.Getenv("LAYER_CACHE_QA_POSTGRES_URL") == "" {
 		t.Skip("requires disposable PostgreSQL")
 	}
@@ -263,6 +363,8 @@ func TestActionsMaintenanceProtectsLookupAlreadyReadingArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Lookup reads metadata only; the verified download holds the S3 read.
+	location := fixture.lookupArchive(t, "required-handoff", id)
 	gate := &memoryS3ReadGate{key: fixture.store.blobKey(entry.Digest), entered: make(chan struct{}), released: make(chan struct{})}
 	fixture.objects.mutex.Lock()
 	fixture.objects.readGate = gate
@@ -275,14 +377,14 @@ func TestActionsMaintenanceProtectsLookupAlreadyReadingArchive(t *testing.T) {
 	worker.Add(1)
 	go func() {
 		defer worker.Done()
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet,
-			fixture.endpoint.URL+"/_apis/artifactcache/cache?keys=required-handoff&version=v1", nil)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, location, nil)
 		if err == nil {
 			var response *http.Response
 			response, err = fixture.endpoint.Client().Do(request)
 			if err == nil {
-				if response.StatusCode != http.StatusOK {
-					err = fmt.Errorf("active lookup HTTP %d", response.StatusCode)
+				body, readErr := io.ReadAll(response.Body)
+				if response.StatusCode != http.StatusOK || readErr != nil || !bytes.Equal(body, payload) {
+					err = fmt.Errorf("active download HTTP %d with %d bytes: %v", response.StatusCode, len(body), readErr)
 				}
 				response.Body.Close()
 			}
@@ -292,13 +394,13 @@ func TestActionsMaintenanceProtectsLookupAlreadyReadingArchive(t *testing.T) {
 	select {
 	case <-gate.entered:
 	case <-ctx.Done():
-		t.Fatal("lookup did not reach archive verification")
+		t.Fatal("download did not reach archive verification")
 	}
 	// Make the entry eligible for idle pruning while its real S3 read is held.
 	fixture.now.Add(int64(2 * time.Second))
 	result, err := fixture.store.Maintain(ctx)
 	if err != nil || result.PrunedEntries != 0 {
-		t.Fatalf("maintenance during active lookup: %+v, %v", result, err)
+		t.Fatalf("maintenance during active download: %+v, %v", result, err)
 	}
 	gate.release()
 	if err := <-finished; err != nil {
@@ -340,7 +442,7 @@ func TestActionsLookupScopeIsolation(t *testing.T) {
 			case "key":
 				key = "other-handoff"
 			}
-			storage, err := NewActionsStorage(store)
+			storage, err := NewActionsStorage(store, stageVerifiedTestRead(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -431,7 +533,7 @@ func newActionsHTTPFixture(t *testing.T, quota int64) *actionsHTTPFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = fixture.store.Close() })
-	storage, err := NewActionsStorage(fixture.store)
+	storage, err := NewActionsStorage(fixture.store, stageVerifiedTestRead(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,6 +619,29 @@ func (fixture *actionsHTTPFixture) restore(t *testing.T, key string, id int64, p
 
 func (fixture *actionsHTTPFixture) restoreLookup(t *testing.T, query url.Values, key string, id int64, payload []byte) {
 	t.Helper()
+	response, err := fixture.endpoint.Client().Get(fixture.lookupArchiveQuery(t, query, key, id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("archive HTTP %d", response.StatusCode)
+	}
+	hash := sha256.New()
+	size, err := io.Copy(hash, response.Body)
+	wantDigest := sha256.Sum256(payload)
+	if err != nil || size != int64(len(payload)) || !bytes.Equal(hash.Sum(nil), wantDigest[:]) {
+		t.Fatalf("archive verification: bytes=%d, expected=%d, error=%v", size, len(payload), err)
+	}
+}
+
+func (fixture *actionsHTTPFixture) lookupArchive(t *testing.T, key string, id int64) string {
+	t.Helper()
+	return fixture.lookupArchiveQuery(t, url.Values{"keys": {key}, "version": {"v1"}}, key, id)
+}
+
+func (fixture *actionsHTTPFixture) lookupArchiveQuery(t *testing.T, query url.Values, key string, id int64) string {
+	t.Helper()
 	response := fixture.request(t, http.MethodGet, "/_apis/artifactcache/cache?"+query.Encode(), nil, nil, http.StatusOK)
 	var lookup struct {
 		CacheKey        string `json:"cacheKey"`
@@ -531,18 +656,40 @@ func (fixture *actionsHTTPFixture) restoreLookup(t *testing.T, query url.Values,
 	if parseErr != nil || lookup.CacheKey != key || !strings.HasSuffix(location.Path, fmt.Sprintf("/caches/%d/archive", id)) {
 		t.Fatal("lookup identity differs from the acknowledged reservation")
 	}
-	response, err = fixture.endpoint.Client().Get(lookup.ArchiveLocation)
+	return lookup.ArchiveLocation
+}
+
+// rejectDownload requires a 404 that carries no archive bytes and leaves no
+// Actions entry behind.
+func (fixture *actionsHTTPFixture) rejectDownload(t *testing.T, key string, id int64) {
+	t.Helper()
+	response, err := fixture.endpoint.Client().Get(fixture.lookupArchive(t, key, id))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("archive HTTP %d", response.StatusCode)
+	var failure struct {
+		Message string `json:"message"`
 	}
-	hash := sha256.New()
-	size, err := io.Copy(hash, response.Body)
-	wantDigest := sha256.Sum256(payload)
-	if err != nil || size != int64(len(payload)) || !bytes.Equal(hash.Sum(nil), wantDigest[:]) {
-		t.Fatalf("archive verification: bytes=%d, expected=%d, error=%v", size, len(payload), err)
+	decodeErr := json.NewDecoder(response.Body).Decode(&failure)
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound || decodeErr != nil || failure.Message == "" {
+		t.Fatalf("corrupt archive HTTP %d, want 404 with only an error message: %v", response.StatusCode, decodeErr)
 	}
+	var entries int
+	if err := fixture.store.database.QueryRowContext(context.Background(), `
+		SELECT count(*) FROM layercache_actions_entries_v1 WHERE project_id = $1 AND entry_id = $2`,
+		fixture.store.config.Project, id).Scan(&entries); err != nil || entries != 0 {
+		t.Fatalf("corrupt archive entry was not invalidated: count=%d, error=%v", entries, err)
+	}
+}
+
+func (fixture *actionsHTTPFixture) readCount(t *testing.T, digest string) int64 {
+	t.Helper()
+	var count int64
+	if err := fixture.store.database.QueryRowContext(context.Background(), `
+		SELECT COALESCE(MAX(read_count), 0) FROM layercache_artifact_access_v1 WHERE project_id = $1 AND digest = $2`,
+		fixture.store.config.Project, digest).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
 }

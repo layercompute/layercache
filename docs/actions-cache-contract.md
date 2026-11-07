@@ -25,7 +25,7 @@ Existing v1 clients may ignore it; status codes and lookup ordering are unchange
 | --- | --- |
 | `no-matching-entry` | The PostgreSQL Actions index has no available match for the authorized project, repository, profile, ref, version and ordered keys. |
 | `entry-removed` | A selected PostgreSQL candidate lost its underlying cache entry before availability verification. |
-| `integrity-rejected` | A PostgreSQL candidate failed full archive or identity verification, including a missing S3 object. |
+| `integrity-rejected` | A PostgreSQL candidate's S3 object is missing, its size or stored digest differs from the committed entry, or its Public identity does not match. |
 | `remote-unavailable` | A Local Cache hierarchy degraded an upstream failure to a miss. |
 | `not-found` | The adapter returned a miss without a more specific observation. |
 
@@ -33,8 +33,16 @@ These observations are not a durable removal history. Quota eviction, expiry
 and deletion cascade through the index; a subsequent lookup cannot distinguish
 them from a never-published or differently scoped entry. A later lookup after
 integrity invalidation may also report `no-matching-entry`. A healthy later
-candidate still wins over a rejected candidate. Remote headers are not relayed
-through the Local Cache hierarchy by this change.
+candidate still wins over a candidate rejected at lookup. Remote headers are not
+relayed through the Local Cache hierarchy by this change.
+
+Lookup checks only the committed entry and S3 object metadata; it reads no
+archive bytes. The archive download stages and verifies the complete object
+before its `200`. Content corruption found there returns `404` and invalidates
+the entry, and the client rebuilds. Falling back to an older healthy candidate
+is not guaranteed for corruption that only a full read can detect. A full
+verification staging volume returns `507` with
+`x-layercache-degraded: verification-staging-full`.
 
 ## Isolated qualification
 

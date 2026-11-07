@@ -284,7 +284,7 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 	}
 	if cfg.Role != "public" {
 		if server.cloudStore != nil {
-			server.cloudActions, err = cloud.NewActionsStorage(server.cloudStore)
+			server.cloudActions, err = cloud.NewActionsStorage(server.cloudStore, server.stageVerifiedArtifactRead)
 			server.actionsStorage = server.cloudActions
 		} else {
 			server.actionsStorage, err = actionscache.OpenPersistentStorage(ctx, cfg.DataDir, localStore)
@@ -729,6 +729,33 @@ func (server *Server) putTurbo(writer http.ResponseWriter, request *http.Request
 
 func (server *Server) getTurbo(writer http.ResponseWriter, request *http.Request, key artifact.Key, head bool) {
 	startedAt := time.Now().UTC()
+	if head && server.cloudStore != nil && server.team == nil {
+		// A hosted probe answers from the committed entry and object metadata.
+		// It reads no body, so it stages nothing and records no verified read.
+		entry, err := server.store.Head(request.Context(), key)
+		if err == nil && entry.Metadata.Values["origin"] != "public" {
+			setTurboHeaders(writer, entry, server.config.Role)
+			writer.WriteHeader(http.StatusOK)
+			return
+		}
+		if errors.Is(err, artifact.ErrCorrupt) {
+			_ = server.store.Delete(context.WithoutCancel(request.Context()), key)
+			writer.Header().Set("x-layercache-degraded", "remote-read-failed")
+			server.recordTurboLookupMiss(request, key, startedAt, time.Now().UTC(), true)
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, artifact.ErrNotFound) {
+			server.recordTurboLookupMiss(request, key, startedAt, time.Now().UTC(), false)
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "cache read failed"})
+			return
+		}
+		// A Public-origin entry keeps the full resolution and its trust checks.
+	}
 	resolution, err := server.resolveTurbo(request.Context(), key)
 	if errors.Is(err, artifact.ErrNotFound) || errors.Is(err, artifact.ErrCorrupt) {
 		if resolution.Degraded {

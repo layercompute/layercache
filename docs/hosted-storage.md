@@ -110,7 +110,9 @@ Actual workload adoption, recovery, namespace migration, OAuth signup and
 managed plan activation remain separate gates in [TODOs.md](../TODOs.md).
 
 Current cloud reads download and verify complete artifacts in bounded local
-staging before returning success. R2 alone therefore establishes no faster-fetch
+staging before returning success. `HEAD` probes and Actions lookups read no
+bytes; they check the committed entry against S3 object size and stored digest
+metadata. R2 alone therefore establishes no faster-fetch
 claim. Measure metadata lookup, S3 transfer, verification, response transfer and
 complete command time independently. A direct-download optimization needs its
 own authorization, read-retention and client-integrity contract. [Direct object transfer](direct-object-transfer.md)

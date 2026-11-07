@@ -2,6 +2,8 @@ package remote
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -45,9 +47,11 @@ type TurboMetadata struct {
 	Size   int64
 }
 
-// Head confirms a complete Team Cache artifact without downloading its archive.
+// Head reports Team Cache artifact metadata without downloading its archive.
 // A successful status alone is insufficient: both immutable digest and size must
-// be present. The caller still relies on the Team's trusted-writer contract.
+// be present. Hosted Team servers answer HEAD from the committed entry and
+// object metadata only, so it does not prove the stored bytes are intact; use
+// Confirm when a caller must establish a verified remote copy.
 func (client *TurboClient) Head(ctx context.Context, hash string) (TurboMetadata, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodHead, client.baseURL+"/v8/artifacts/"+url.PathEscape(hash), nil)
 	if err != nil {
@@ -72,18 +76,51 @@ func (client *TurboClient) Head(ctx context.Context, hash string) (TurboMetadata
 	if len(digests) != 1 || response.ContentLength < 0 {
 		return TurboMetadata{}, ErrMetadata
 	}
-	digest := strings.TrimPrefix(digests[0], "sha256:")
-	if len(digest) != 64 {
+	digest, ok := turboDigest(digests[0])
+	if !ok {
 		return TurboMetadata{}, ErrMetadata
+	}
+	return TurboMetadata{Digest: digest, Size: response.ContentLength}, nil
+}
+
+// Confirm reads the complete Team Cache artifact and verifies its bytes against
+// the advertised digest and size. Hosted Team servers verify before their 200
+// and remove a corrupt entry, which then reports ErrMiss. Bytes that disagree
+// with their own metadata report artifact.ErrCorrupt.
+func (client *TurboClient) Confirm(ctx context.Context, hash string) (TurboMetadata, error) {
+	download, err := client.Get(ctx, hash)
+	if err != nil {
+		return TurboMetadata{}, err
+	}
+	defer download.Body.Close()
+	digest, ok := turboDigest(download.ExpectedDigest)
+	if !ok || download.Size < 0 {
+		return TurboMetadata{}, ErrMetadata
+	}
+	hasher := sha256.New()
+	written, err := io.Copy(hasher, io.LimitReader(download.Body, download.Size+1))
+	if err != nil {
+		return TurboMetadata{}, fmt.Errorf("confirm remote cache: %w", err)
+	}
+	if written != download.Size || hex.EncodeToString(hasher.Sum(nil)) != digest {
+		return TurboMetadata{}, artifact.ErrCorrupt
+	}
+	return TurboMetadata{Digest: digest, Size: download.Size}, nil
+}
+
+func turboDigest(value string) (string, bool) {
+	digest := strings.TrimPrefix(value, "sha256:")
+	if len(digest) != 64 {
+		return "", false
 	}
 	for _, character := range digest {
 		if character < '0' || character > '9' {
 			if character < 'a' || character > 'f' {
-				return TurboMetadata{}, ErrMetadata
+				return "", false
 			}
 		}
 	}
-	return TurboMetadata{Digest: digest, Size: response.ContentLength}, nil
+	return digest, true
 }
 
 // NewTurboClient preserves the original constructor with an OS/architecture

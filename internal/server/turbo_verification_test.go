@@ -124,3 +124,79 @@ func (reader *lateCorruptReadCloser) Read(buffer []byte) (int, error) {
 }
 
 func (*lateCorruptReadCloser) Close() error { return nil }
+
+func TestCloudTurboHeadAnswersFromMetadataWithoutReading(t *testing.T) {
+	t.Parallel()
+
+	key := artifact.Key{
+		Integration: "turbo", Project: "github.com/acme/widgets",
+		Compatibility: "linux-amd64-schema1", Native: "task-hash",
+	}
+	digest := sha256.Sum256([]byte("verified-cloud-turbo-artifact"))
+	entry := artifact.Entry{Key: key, Digest: hex.EncodeToString(digest[:]), Size: 29, Metadata: artifact.Metadata{DurationMS: 7, Tag: "tag"}}
+	for _, test := range []struct {
+		name       string
+		headErr    error
+		wantStatus int
+		wantDelete bool
+	}{
+		{name: "committed entry with matching object metadata", wantStatus: http.StatusOK},
+		{name: "missing or mismatched object", headErr: artifact.ErrCorrupt, wantStatus: http.StatusNotFound, wantDelete: true},
+		{name: "no committed entry", headErr: artifact.ErrNotFound, wantStatus: http.StatusNotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			store := &turboProbeStore{t: t, entry: entry, headErr: test.headErr}
+			instance := &Server{
+				config: config.Config{Role: "team", DataDir: root, MaxBytes: 1 << 20},
+				store:  store, cloudStore: &cloud.Store{},
+			}
+			response := httptest.NewRecorder()
+			instance.getTurbo(response, httptest.NewRequest(http.MethodHead, "/v8/artifacts/"+key.Native, nil), key, true)
+
+			if response.Code != test.wantStatus || response.Body.Len() != 0 {
+				t.Fatalf("HEAD = %d with %d body bytes, want %d", response.Code, response.Body.Len(), test.wantStatus)
+			}
+			if store.deleted != test.wantDelete {
+				t.Fatalf("deleted = %t, want %t", store.deleted, test.wantDelete)
+			}
+			if test.wantStatus != http.StatusOK {
+				return
+			}
+			for name, want := range map[string]string{
+				"Content-Length": "29", "x-layercache-digest": "sha256:" + entry.Digest,
+				"x-layercache-source": "team", "x-artifact-duration": "7", "x-artifact-tag": "tag",
+			} {
+				if got := response.Header().Get(name); got != want {
+					t.Fatalf("%s = %q, want %q", name, got, want)
+				}
+			}
+		})
+	}
+}
+
+// turboProbeStore fails the test if a HEAD opens the object body.
+type turboProbeStore struct {
+	cacheStore
+	t       *testing.T
+	entry   artifact.Entry
+	headErr error
+	deleted bool
+}
+
+func (store *turboProbeStore) Head(context.Context, artifact.Key) (artifact.Entry, error) {
+	if store.headErr != nil {
+		return artifact.Entry{}, store.headErr
+	}
+	return store.entry, nil
+}
+
+func (store *turboProbeStore) Get(context.Context, artifact.Key) (artifact.Entry, io.ReadCloser, error) {
+	store.t.Error("HEAD opened the cloud object body")
+	return artifact.Entry{}, nil, artifact.ErrNotFound
+}
+
+func (store *turboProbeStore) Delete(context.Context, artifact.Key) error {
+	store.deleted = true
+	return nil
+}

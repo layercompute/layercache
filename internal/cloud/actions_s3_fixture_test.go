@@ -2,20 +2,56 @@ package cloud
 
 import (
 	"bufio"
+	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/layercache/layercache/internal/artifact"
 )
+
+// stageVerifiedTestRead stands in for the gateway's bounded verification
+// staging. Like it, nothing is returned until the complete size and digest
+// match, and mismatched bytes report ErrCorrupt.
+func stageVerifiedTestRead(t *testing.T) ActionsReadStager {
+	directory := t.TempDir()
+	return func(_ context.Context, entry artifact.Entry, body io.Reader) (*os.File, func(), error) {
+		file, err := os.CreateTemp(directory, "actions-read-*")
+		if err != nil {
+			return nil, nil, err
+		}
+		cleanup := func() { _ = file.Close(); _ = os.Remove(file.Name()) }
+		hash := sha256.New()
+		written, err := io.Copy(io.MultiWriter(file, hash), body)
+		if err == nil && (written != entry.Size || hex.EncodeToString(hash.Sum(nil)) != entry.Digest) {
+			err = ErrCorrupt
+		}
+		if err == nil {
+			_, err = file.Seek(0, io.SeekStart)
+		}
+		if err != nil {
+			cleanup()
+			if errors.Is(err, ErrCorrupt) {
+				return nil, nil, ErrCorrupt
+			}
+			return nil, nil, err
+		}
+		return file, cleanup, nil
+	}
+}
 
 // This fixture exercises the production S3 SDK without external S3 credentials.
 // It implements only the object and multipart operations used by these tests.
@@ -32,6 +68,8 @@ type memoryS3Endpoint struct {
 	nextID   int
 	failCopy atomic.Bool
 	readGate *memoryS3ReadGate
+	// objectGets counts object body reads; metadata probes must add none.
+	objectGets atomic.Int64
 }
 
 type memoryS3ReadGate struct {
@@ -169,6 +207,7 @@ func (endpoint *memoryS3Endpoint) serve(writer http.ResponseWriter, request *htt
 	writer.Header().Set("Last-Modified", "Wed, 14 Oct 2026 00:00:00 GMT")
 	writer.Header().Set("ETag", "\"fixture\"")
 	if request.Method == http.MethodGet {
+		endpoint.objectGets.Add(1)
 		if gate != nil && key == gate.key {
 			gate.enterOnce.Do(func() { close(gate.entered) })
 			select {

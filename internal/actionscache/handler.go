@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/compatibility"
 	"github.com/layercache/layercache/internal/measurement"
 )
@@ -641,6 +642,13 @@ func (handler *Handler) download(writer http.ResponseWriter, request *http.Reque
 	archive, err := handler.storage.Open(request.Context(), OpenRequest{Scope: scope, ID: id})
 	if errors.Is(err, ErrNotFound) {
 		writeError(writer, http.StatusNotFound, err.Error())
+		return
+	}
+	if errors.Is(err, artifact.ErrQuota) {
+		// Hosted storage verifies the complete archive in bounded local staging
+		// before its 200. A full staging volume is capacity, not a cache miss.
+		writer.Header().Set("x-layercache-degraded", "verification-staging-full")
+		writeError(writer, http.StatusInsufficientStorage, "insufficient verification staging space")
 		return
 	}
 	if err != nil {

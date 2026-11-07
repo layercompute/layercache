@@ -69,11 +69,12 @@ func TestTurboConflictRequiresValidScopedMetadataBeforeReleasingRetention(t *tes
 	for _, test := range []struct {
 		name                  string
 		putStatus, headStatus int
-		digest, length        string
+		digest, length, body  string
 		alreadyPresent        bool
 		wantError             string
 	}{
 		{name: "different-log-bytes", putStatus: 409, headStatus: 200, digest: "different", length: "4", alreadyPresent: true},
+		{name: "corrupt-remote-copy", putStatus: 409, headStatus: 200, digest: "different", length: "4", body: "lies", wantError: "remote_unavailable"},
 		{name: "same-digest", putStatus: 409, headStatus: 200, digest: "same", length: "4", alreadyPresent: true},
 		{name: "missing-digest", putStatus: 409, headStatus: 200, length: "4", wantError: "metadata_invalid"},
 		{name: "malformed-digest", putStatus: 409, headStatus: 200, digest: "invalid", length: "4", wantError: "metadata_invalid"},
@@ -104,14 +105,16 @@ func TestTurboConflictRequiresValidScopedMetadataBeforeReleasingRetention(t *tes
 					writer.WriteHeader(test.putStatus)
 					return
 				}
-				digest := test.digest
+				digest, body := test.digest, "logs"
+				if digest == "same" {
+					body = "keep"
+				}
 				if digest == "same" || digest == "different" {
-					body := "keep"
-					if digest == "different" {
-						body = "logs"
-					}
 					hash := sha256.Sum256([]byte(body))
 					digest = "sha256:" + hex.EncodeToString(hash[:])
+				}
+				if test.body != "" {
+					body = test.body
 				}
 				if digest != "" {
 					writer.Header().Set("x-layercache-digest", digest)
@@ -120,6 +123,13 @@ func TestTurboConflictRequiresValidScopedMetadataBeforeReleasingRetention(t *tes
 					writer.Header().Set("Content-Length", test.length)
 				}
 				writer.WriteHeader(test.headStatus)
+				if test.headStatus == http.StatusOK {
+					if test.length == "" {
+						// Force a chunked response with no declared size.
+						writer.(http.Flusher).Flush()
+					}
+					_, _ = io.WriteString(writer, body)
+				}
 			}))
 			otherKey := entry.Key
 			otherKey.Native = "useful-other-task"
@@ -137,8 +147,8 @@ func TestTurboConflictRequiresValidScopedMetadataBeforeReleasingRetention(t *tes
 			if job.Digest != entry.Digest || job.Size != entry.Size {
 				t.Fatalf("remote metadata overwrote the queued Local archive identity: %+v", job)
 			}
-			if test.putStatus == 409 && (len(observedMethods) != 2 || observedMethods[0] != http.MethodPut || observedMethods[1] != http.MethodHead) {
-				t.Fatalf("conflict was not independently checked: %v", observedMethods)
+			if test.putStatus == 409 && (len(observedMethods) != 2 || observedMethods[0] != http.MethodPut || observedMethods[1] != http.MethodGet) {
+				t.Fatalf("conflict was not confirmed by a complete read: %v", observedMethods)
 			}
 			if test.putStatus != 409 && (len(observedMethods) != 1 || observedMethods[0] != http.MethodPut) {
 				t.Fatalf("an outage was treated as a verified conflict: %v", observedMethods)
@@ -196,6 +206,7 @@ func TestUnverifiedTurboConflictSurvivesRestartAndCompletesAfterMetadataRecovery
 		writer.Header().Set("x-layercache-digest", "sha256:"+hex.EncodeToString(digest[:]))
 		writer.Header().Set("Content-Length", "4")
 		writer.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(writer, "logs")
 	}))
 	instance.processUpload(lease)
 	if err := instance.uploads.Close(); err != nil {
