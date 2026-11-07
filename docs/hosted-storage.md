@@ -113,7 +113,8 @@ Current cloud reads download and verify complete artifacts in bounded local
 staging before returning success. R2 alone therefore establishes no faster-fetch
 claim. Measure metadata lookup, S3 transfer, verification, response transfer and
 complete command time independently. A direct-download optimization needs its
-own authorization, read-retention and client-integrity contract.
+own authorization, read-retention and client-integrity contract. [Direct object transfer](direct-object-transfer.md)
+proposes that contract.
 
 Operator-provisioned private hosting can precede public signup. Real OAuth,
 cohort access, recovery and two-user acceptance remain required before declaring
