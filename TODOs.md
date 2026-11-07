@@ -427,6 +427,16 @@ workspaces and filesystem migration are outside the current product scope.
   checks. Initial remote authentication now precedes owned-backend construction,
   with restored and published native bytes tested from an empty capability.
 
+- [ ] **Move hosted cache bytes off the gateway with direct R2 transfer.**
+  Owner: LayerCache cloud/storage. November 7 user outcome: authorized clients
+  move artifact bytes directly with R2 while the gateway keeps authority, leases
+  and accounting, so the gateway host stops carrying every hit. One slice behind
+  a per-pool switch with automatic proxied fallback: metadata-only probes and a
+  staged Actions download, presigned reads for LayerCache's verifying clients and
+  the local read-through store, and presigned writes. R2 enforcement of the
+  signed SHA-256 checksum on presigned uploads is qualified. Design, tests and
+  rollout are in [direct object transfer](docs/direct-object-transfer.md).
+
 - [ ] **Launch hosted private caches with R2-backed storage pools.**
   Owner: LayerCache cloud/storage. The October 19 user priority is a usable
   hosted service so teams can accumulate compatible results and restore them
