@@ -252,7 +252,8 @@ through `action/setup`'s local daemon, not by talking to the gateway directly.
 - **Pool config:** `directTransfer: {read: bool, write: bool, maxURLSeconds: int}`
   on the hosted pool's project template, off by default. `maxURLSeconds` is 0
   (meaning 120) through 900. Changing it is not a storage migration: the pool's
-  backend fingerprint ignores it.
+  backend fingerprint and the operator project binding both ignore it, so
+  turning it on or off only needs a restart.
 - **Env override:** `LAYER_CACHE_DIRECT_TRANSFER=off` on the gateway forces it off
   without editing config.
 - **Credentials:** presigning needs the pool's static S3 key with `GetObject` and

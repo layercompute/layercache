@@ -92,6 +92,13 @@ func TestStoreOperatorAdoptionRejectsDriftAndAllowsCredentialRotation(t *testing
 	if err := s.adoptOperatorProjects(ctx, []OperatorProject{rotated}); err != nil {
 		t.Fatal("same backend credential rotation rejected", err)
 	}
+	for _, direct := range []config.DirectTransfer{{Read: true, Write: true, MaxURLSeconds: 300}, {Read: true}, {}} {
+		toggled := p
+		toggled.Config.DirectTransfer = direct
+		if err := s.adoptOperatorProjects(ctx, []OperatorProject{toggled}); err != nil {
+			t.Fatal("direct transfer switch treated as an identity change", direct, err)
+		}
+	}
 	for _, mutate := range []func(*OperatorProject){
 		func(p *OperatorProject) { p.Config.LocalToken = "replacement-signing-key" },
 		func(p *OperatorProject) { p.Config.CloudS3Bucket = "other-bucket" },
