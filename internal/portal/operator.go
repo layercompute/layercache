@@ -55,9 +55,12 @@ func operatorFingerprint(project OperatorProject) (string, string, error) {
 	}
 	// Bind behavior and signing identity, while permitting credential rotation
 	// and preserving current SQL memberships instead of reapplying this file.
+	// The direct transfer switch is a runtime rollout control, not identity:
+	// turning it on or off must be a restart, never a migration.
 	cfg.CloudPostgresURL, cfg.CloudS3Endpoint, cfg.CloudS3Bucket, cfg.CloudS3Region = "", "", "", ""
 	cfg.CloudS3AccessKey, cfg.CloudS3SecretKey, cfg.TeamMembers = "", "", nil
 	cfg.Listen, cfg.ActionsArchiveBaseURL, cfg.SnapshotCredentialsFile = "", "", ""
+	cfg.DirectTransfer = config.DirectTransfer{}
 	return storageFingerprint(struct {
 		Project OperatorProject
 		Config  config.Config
