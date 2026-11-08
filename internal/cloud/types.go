@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/layercache/layercache/internal/artifact"
@@ -21,6 +23,12 @@ var (
 	ErrQuota     = artifact.ErrQuota
 	ErrLeaseHeld = errors.New("promotion reference already has an active lease")
 	ErrLeaseLost = errors.New("promotion lease is no longer active")
+	// ErrDirectTransferUnavailable means the caller must use the proxied path:
+	// the policy is off, the store cannot presign, or the read is not eligible.
+	ErrDirectTransferUnavailable = errors.New("direct object transfer is unavailable")
+	// ErrDirectUploadLimit means the principal already has the maximum number
+	// of unfinished direct uploads; the proxied PUT remains available.
+	ErrDirectUploadLimit = errors.New("too many unfinished direct uploads")
 )
 
 const (
@@ -46,7 +54,18 @@ type Config struct {
 	IdleTTL        time.Duration
 	UnreusedTTL    time.Duration
 	SoftBytes      int64
+	DirectTransfer DirectTransferPolicy
 	Now            func() time.Time
+}
+
+// DirectTransferPolicy lets authenticated LayerCache clients move one object's
+// bytes directly with object storage through a short-lived presigned URL.
+// PostgreSQL remains the only authority; a zero policy keeps every transfer
+// proxied through the gateway.
+type DirectTransferPolicy struct {
+	Read   bool
+	Write  bool
+	MaxURL time.Duration
 }
 
 // Store is the cloud persistence interface used by protocol gateways. Put is
@@ -71,6 +90,8 @@ type blobInfo struct {
 	Digest       string
 	Size         int64
 	LastModified time.Time
+	// SHA256 is the storage-computed checksum, from StatChecksum only.
+	SHA256 string
 }
 
 type blobListResult struct {
@@ -83,8 +104,15 @@ type blobStore interface {
 	Commit(context.Context, stagedBlob, string) error
 	Open(context.Context, string, string, int64) (io.ReadCloser, error)
 	Stat(context.Context, string) (blobInfo, error)
+	StatChecksum(context.Context, string) (blobInfo, error)
 	Delete(context.Context, string) error
 	List(context.Context, string) <-chan blobListResult
+	// PresignGet and PresignPut return ErrDirectTransferUnavailable when the
+	// store has no static credentials to sign with. PresignPut signs the
+	// x-amz-checksum-sha256 and Content-Length headers, so storage rejects any
+	// other body or length.
+	PresignGet(ctx context.Context, key string, expires time.Duration) (*url.URL, error)
+	PresignPut(ctx context.Context, key string, sha256 [32]byte, size int64, expires time.Duration) (*url.URL, http.Header, error)
 }
 
 type AuditEvent struct {

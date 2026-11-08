@@ -22,6 +22,7 @@ import (
 	"github.com/layercache/layercache/internal/cloud"
 	"github.com/layercache/layercache/internal/compatibility"
 	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/directtransfer"
 	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/measurement"
 	"github.com/layercache/layercache/internal/publicbuild"
@@ -436,6 +437,7 @@ func (server *Server) routes() {
 	server.mux.Handle("GET /v8/artifacts/status", server.requireToken(http.HandlerFunc(server.turboStatus)))
 	server.mux.Handle("POST /v8/artifacts/events", server.requireToken(http.HandlerFunc(server.turboEvents)))
 	server.mux.Handle("/v8/artifacts/{hash}", server.requireToken(http.HandlerFunc(server.turboArtifact)))
+	server.turboTransferRoutes()
 	server.mux.Handle("/v1/cache/{hash}", server.requireNxToken(http.HandlerFunc(server.nxArtifact)))
 	server.mux.Handle("/v1/gradle-cache/{hash}", server.requireGradleToken(http.HandlerFunc(server.gradleArtifact)))
 	server.mux.Handle(bazelCachePrefix, server.requireBazelToken(http.HandlerFunc(server.bazelArtifact)))
@@ -613,21 +615,9 @@ func (server *Server) turboEvents(writer http.ResponseWriter, request *http.Requ
 }
 
 func (server *Server) turboArtifact(writer http.ResponseWriter, request *http.Request) {
-	hash := request.PathValue("hash")
-	if hash == "" || strings.Contains(hash, "/") {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid artifact hash"})
+	key, ok := server.turboRequestKey(writer, request)
+	if !ok {
 		return
-	}
-	compatibilityID, err := server.requestCompatibility(request)
-	if err != nil {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	key := artifact.Key{
-		Integration:   "turbo",
-		Project:       server.config.ProjectID,
-		Compatibility: compatibilityID,
-		Native:        hash,
 	}
 	switch request.Method {
 	case http.MethodPut:
@@ -643,6 +633,27 @@ func (server *Server) turboArtifact(writer http.ResponseWriter, request *http.Re
 	default:
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+// turboRequestKey resolves the artifact key for a Turbo route, or writes the
+// rejection and returns false.
+func (server *Server) turboRequestKey(writer http.ResponseWriter, request *http.Request) (artifact.Key, bool) {
+	hash := request.PathValue("hash")
+	if hash == "" || strings.Contains(hash, "/") {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid artifact hash"})
+		return artifact.Key{}, false
+	}
+	compatibilityID, err := server.requestCompatibility(request)
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return artifact.Key{}, false
+	}
+	return artifact.Key{
+		Integration:   "turbo",
+		Project:       server.config.ProjectID,
+		Compatibility: compatibilityID,
+		Native:        hash,
+	}, true
 }
 
 func (server *Server) requestCompatibility(request *http.Request) (string, error) {
@@ -666,16 +677,7 @@ func (server *Server) requestCompatibility(request *http.Request) (string, error
 func (server *Server) putTurbo(writer http.ResponseWriter, request *http.Request, key artifact.Key) {
 	startedAt := time.Now().UTC()
 	defer request.Body.Close()
-	duration, _ := strconv.ParseInt(request.Header.Get("x-artifact-duration"), 10, 64)
-	metadata := artifact.Metadata{
-		DurationMS: duration,
-		Tag:        request.Header.Get("x-artifact-tag"),
-		Values: map[string]string{
-			"clientCI":  request.Header.Get("x-artifact-client-ci"),
-			"sourceSHA": request.Header.Get("x-artifact-source-sha"),
-			"dirtyHash": request.Header.Get("x-artifact-dirty-hash"),
-		},
-	}
+	metadata := turboRequestMetadata(request)
 	maximum, err := server.cacheLimit(request.Context())
 	if err != nil {
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "cache quota unavailable"})
@@ -702,7 +704,7 @@ func (server *Server) putTurbo(writer http.ResponseWriter, request *http.Request
 			writer.Header().Set("x-layercache-degraded", "team-publication-failed")
 			writer.Header().Set("x-layercache-upload-queue", "full-or-unavailable")
 		} else if _, file, openErr := server.store.Get(request.Context(), key); openErr == nil {
-			publishErr := server.team.Put(request.Context(), key.Native, entry, file)
+			publishErr := server.team.PutFrom(request.Context(), key.Native, entry, server.reopenLocalArtifact(request.Context(), key, entry, file))
 			file.Close()
 			if publishErr != nil {
 				degraded = true
@@ -727,8 +729,29 @@ func (server *Server) putTurbo(writer http.ResponseWriter, request *http.Request
 	writeJSON(writer, http.StatusOK, map[string]bool{"stored": true})
 }
 
+func turboRequestMetadata(request *http.Request) artifact.Metadata {
+	duration, _ := strconv.ParseInt(request.Header.Get("x-artifact-duration"), 10, 64)
+	return artifact.Metadata{
+		DurationMS: duration,
+		Tag:        request.Header.Get("x-artifact-tag"),
+		Values: map[string]string{
+			"clientCI":  request.Header.Get("x-artifact-client-ci"),
+			"sourceSHA": request.Header.Get("x-artifact-source-sha"),
+			"dirtyHash": request.Header.Get("x-artifact-dirty-hash"),
+		},
+	}
+}
+
 func (server *Server) getTurbo(writer http.ResponseWriter, request *http.Request, key artifact.Key, head bool) {
 	startedAt := time.Now().UTC()
+	if server.hostsDirectTransfer() && server.cloudStore.DirectTransferPolicy().Read {
+		// The body differs between the descriptor and the proxied bytes. With
+		// direct read off, the response stays exactly today's.
+		writer.Header().Add("Vary", "Accept")
+		if !head && directtransfer.Accepts(request.Header) && server.serveDirectTurboRead(writer, request, key, startedAt) {
+			return
+		}
+	}
 	if head && server.cloudStore != nil && server.team == nil {
 		// A hosted probe answers from the committed entry and object metadata.
 		// It reads no body, so it stages nothing and records no verified read.
@@ -951,11 +974,29 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 		return turboResolution{Degraded: degraded}, err
 	}
 	if server.team != nil {
-		download, teamErr := server.team.Get(ctx, key.Native)
-		if teamErr == nil {
-			if download.ExpectedDigest != "" {
-				_, _, storeErr := server.store.PutVerified(ctx, key, download.Metadata, download.Body, download.ExpectedDigest)
-				_ = download.Body.Close()
+		// Fetch verifies a direct transfer and repeats a failed one once through
+		// the proxied read, so install sees the final attempt's download.
+		storeErr, hasMetadata := error(nil), false
+		teamErr := server.team.Fetch(ctx, key.Native, func(download remote.TurboDownload) error {
+			hasMetadata = download.ExpectedDigest != ""
+			if !hasMetadata {
+				return &turboInstallError{err: remote.ErrMetadata}
+			}
+			// A declared size is enforced exactly. A proxied relay that declares
+			// none is still installed only after its digest verifies.
+			body := io.Reader(download.Body)
+			if download.Size >= 0 {
+				body = exactSizeReader(body, download.Size)
+			}
+			_, _, storeErr = server.store.PutVerified(ctx, key, download.Metadata, body, download.ExpectedDigest)
+			if storeErr != nil {
+				return &turboInstallError{err: storeErr}
+			}
+			return nil
+		})
+		var installFailure *turboInstallError
+		if teamErr == nil || errors.As(teamErr, &installFailure) {
+			if hasMetadata {
 				if storeErr == nil {
 					entry, file, err = server.store.Get(ctx, key)
 					if err == nil {
@@ -983,7 +1024,6 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 				// verified Public source may still repair the original absence.
 				degraded = true
 			} else {
-				_ = download.Body.Close()
 				degraded = true
 			}
 		} else if ctx.Err() != nil {

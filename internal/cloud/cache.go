@@ -58,19 +58,9 @@ func (store *Store) putWithCommit(
 	if expectedDigest != "" && !validDigest(expectedDigest) {
 		return artifact.Entry{}, false, ErrCorrupt
 	}
-	metadataJSON, err := json.Marshal(metadata)
+	publication, err := preparePublication(metadata)
 	if err != nil {
-		return artifact.Entry{}, false, fmt.Errorf("encode cloud artifact metadata: %w", err)
-	}
-	if len(metadataJSON) > 64<<10 {
-		return artifact.Entry{}, false, errors.New("cloud artifact metadata exceeds 64 KiB")
-	}
-	mediaType := "application/octet-stream"
-	if candidate := metadata.Values["mediaType"]; candidate != "" {
-		if err := validateIdentity("artifact media type", candidate, 256); err != nil {
-			return artifact.Entry{}, false, err
-		}
-		mediaType = candidate
+		return artifact.Entry{}, false, err
 	}
 
 	uploadID, err := randomToken("upload-")
@@ -105,7 +95,7 @@ func (store *Store) putWithCommit(
 	if isRetained {
 		maximum = min(maximum, retainedStage.size)
 	}
-	staged, err := store.blobs.Stage(ctx, stageKey, body, maximum, mediaType)
+	staged, err := store.blobs.Stage(ctx, stageKey, body, maximum, publication.mediaType)
 	if err != nil {
 		if errors.Is(err, ErrQuota) {
 			return artifact.Entry{}, false, ErrQuota
@@ -125,7 +115,53 @@ func (store *Store) putWithCommit(
 		staged.Digest, staged.Size, uploadID, store.config.Project); err != nil {
 		return artifact.Entry{}, false, store.safeError("finalize cloud staged upload", err)
 	}
+	return store.commitStaged(ctx, key, metadata, publication, staged, commitHook, false)
+}
 
+// artifactPublication is the validated, encoded form of publication metadata
+// shared by proxied and direct uploads.
+type artifactPublication struct {
+	metadataJSON []byte
+	mediaType    string
+}
+
+func preparePublication(metadata artifact.Metadata) (artifactPublication, error) {
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return artifactPublication{}, fmt.Errorf("encode cloud artifact metadata: %w", err)
+	}
+	if len(metadataJSON) > 64<<10 {
+		return artifactPublication{}, errors.New("cloud artifact metadata exceeds 64 KiB")
+	}
+	mediaType := "application/octet-stream"
+	if candidate := metadata.Values["mediaType"]; candidate != "" {
+		if err := validateIdentity("artifact media type", candidate, 256); err != nil {
+			return artifactPublication{}, err
+		}
+		mediaType = candidate
+	}
+	return artifactPublication{metadataJSON: metadataJSON, mediaType: mediaType}, nil
+}
+
+// commitStaged is the commit half of a publication. The staged object already
+// has its final digest and size, and the caller owns discarding it. First
+// writer wins, quota and eviction run under the project lock, and the immutable
+// object is copied server-side before the SQL rows commit.
+//
+// A proxied publication computed its digest itself, so it always copies and
+// thereby repairs the canonical object. A direct publication's digest rests on
+// the storage checksum, so it never replaces a healthy canonical object that
+// other entries may share.
+func (store *Store) commitStaged(
+	ctx context.Context,
+	key artifact.Key,
+	metadata artifact.Metadata,
+	publication artifactPublication,
+	staged stagedBlob,
+	commitHook artifactCommitHook,
+	direct bool,
+) (artifact.Entry, bool, error) {
+	metadataJSON, mediaType := publication.metadataJSON, publication.mediaType
 	transaction, err := store.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return artifact.Entry{}, false, store.safeError("begin cloud artifact publication", err)
@@ -157,7 +193,7 @@ func (store *Store) putWithCommit(
 		// The metadata winner does not prove the canonical object still exists
 		// or is healthy. This complete, digest-verified upload repairs it before
 		// an idempotent publication succeeds.
-		if err := store.blobs.Commit(ctx, staged, store.blobKey(staged.Digest)); err != nil {
+		if err := store.commitBlob(ctx, staged, direct); err != nil {
 			return artifact.Entry{}, false, store.safeError("repair immutable cloud artifact", err)
 		}
 		if commitHook != nil {
@@ -209,7 +245,7 @@ func (store *Store) putWithCommit(
 	}
 
 	objectKey := store.blobKey(staged.Digest)
-	if err := store.blobs.Commit(ctx, staged, objectKey); err != nil {
+	if err := store.commitBlob(ctx, staged, direct); err != nil {
 		return artifact.Entry{}, false, store.safeError("commit immutable cloud artifact", err)
 	}
 	createdAt := store.config.Now().UTC()
@@ -273,6 +309,16 @@ func (store *Store) putWithCommit(
 		return artifact.Entry{}, false, store.safeError("commit cloud cache publication", err)
 	}
 	return committedEntry, true, nil
+}
+
+func (store *Store) commitBlob(ctx context.Context, staged stagedBlob, direct bool) error {
+	objectKey := store.blobKey(staged.Digest)
+	if direct {
+		if info, err := store.blobs.Stat(ctx, objectKey); err == nil && info.Size == staged.Size && info.Digest == staged.Digest {
+			return nil
+		}
+	}
+	return store.blobs.Commit(ctx, staged, objectKey)
 }
 
 func (store *Store) Get(ctx context.Context, key artifact.Key) (artifact.Entry, io.ReadCloser, error) {
@@ -656,6 +702,21 @@ func readEntry(ctx context.Context, query interface {
 }
 
 func (store *Store) readEntryWithLease(ctx context.Context, key artifact.Key) (artifact.Entry, string, error) {
+	return store.readEntryWithLeaseFor(ctx, key, readLease{})
+}
+
+// readLease describes the lease a read inserts. The zero value is the proxied
+// read's renewable lease. A direct read binds its lease to the principal and
+// entry, and sizes its expiry for a transfer the gateway cannot renew.
+type readLease struct {
+	principal string
+	resource  string
+	expires   func(now time.Time, entry artifact.Entry) time.Time
+	// deferAccess leaves last_accessed_at for a verified completion to record.
+	deferAccess bool
+}
+
+func (store *Store) readEntryWithLeaseFor(ctx context.Context, key artifact.Key, lease readLease) (artifact.Entry, string, error) {
 	if err := store.validateKey(key); err != nil {
 		return artifact.Entry{}, "", err
 	}
@@ -679,27 +740,41 @@ func (store *Store) readEntryWithLease(ctx context.Context, key artifact.Key) (a
 		return artifact.Entry{}, "", store.safeError("read cloud cache entry", err)
 	}
 	now := store.config.Now().UTC()
+	expiresAt := now.Add(readLeaseTTL)
+	if lease.expires != nil {
+		expiresAt = lease.expires(now, entry)
+	}
 	if _, err := transaction.ExecContext(ctx, `
-		INSERT INTO layercache_blob_read_leases_v1(lease_id, project_id, digest, expires_at)
-		VALUES($1, $2, $3, $4)`, leaseID, key.Project, entry.Digest, now.Add(readLeaseTTL)); err != nil {
+		INSERT INTO layercache_blob_read_leases_v1(lease_id, project_id, digest, expires_at, principal, entry_resource)
+		VALUES($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''))`,
+		leaseID, key.Project, entry.Digest, expiresAt, lease.principal, lease.resource); err != nil {
 		return artifact.Entry{}, "", store.safeError("lease cloud artifact read", err)
 	}
-	if _, err := transaction.ExecContext(ctx, `
-		UPDATE layercache_entries_v1 SET last_accessed_at = $1
-		WHERE project_id = $2 AND integration = $3 AND compatibility = $4
-			AND native_key = $5 AND version = $6 AND ref_scope = $7`,
-		now, key.Project, key.Integration, key.Compatibility, key.Native, key.Version, key.Ref); err != nil {
-		return artifact.Entry{}, "", store.safeError("touch cloud cache entry", err)
-	}
-	if _, err := transaction.ExecContext(ctx, `
-		UPDATE layercache_artifacts_v1 SET last_accessed_at = $1
-		WHERE project_id = $2 AND digest = $3`, now, key.Project, entry.Digest); err != nil {
-		return artifact.Entry{}, "", store.safeError("touch cloud artifact", err)
+	if !lease.deferAccess {
+		if err := touchEntryAccess(ctx, transaction, key, entry.Digest, now); err != nil {
+			return artifact.Entry{}, "", store.safeError("touch cloud cache entry", err)
+		}
 	}
 	if err := transaction.Commit(); err != nil {
 		return artifact.Entry{}, "", store.safeError("commit cloud artifact read", err)
 	}
 	return entry, leaseID, nil
+}
+
+func touchEntryAccess(ctx context.Context, query interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, key artifact.Key, digest string, now time.Time) error {
+	if _, err := query.ExecContext(ctx, `
+		UPDATE layercache_entries_v1 SET last_accessed_at = $1
+		WHERE project_id = $2 AND integration = $3 AND compatibility = $4
+			AND native_key = $5 AND version = $6 AND ref_scope = $7`,
+		now, key.Project, key.Integration, key.Compatibility, key.Native, key.Version, key.Ref); err != nil {
+		return err
+	}
+	_, err := query.ExecContext(ctx, `
+		UPDATE layercache_artifacts_v1 SET last_accessed_at = $1
+		WHERE project_id = $2 AND digest = $3`, now, key.Project, digest)
+	return err
 }
 
 func (store *Store) validateKey(key artifact.Key) error {

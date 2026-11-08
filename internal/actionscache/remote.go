@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/layercache/layercache/internal/compatibility"
+	"github.com/layercache/layercache/internal/directtransfer"
 )
 
 const (
@@ -29,6 +30,13 @@ const (
 )
 
 var ErrTransferIdleTimeout = errors.New("remote cache transfer made no progress before the idle timeout")
+
+// ErrArchiveIntegrity reports proxied archive bytes that do not match the size
+// and digest the remote index declared for them.
+var ErrArchiveIntegrity = errors.New("remote Actions cache archive does not match its declared digest and size")
+
+// directCompletionTimeout bounds the best-effort report of a verified direct read.
+const directCompletionTimeout = 5 * time.Second
 
 type RemoteStorageConfig struct {
 	Endpoint              string
@@ -47,6 +55,9 @@ type RemoteStorage struct {
 	transferIdleTimeout time.Duration
 	tokenMu             sync.RWMutex
 	token               string
+	// Presigned object URLs use a client without credentials or redirects.
+	direct  *http.Client
+	breaker *directtransfer.Breaker
 
 	mu           sync.Mutex
 	locations    map[remoteEntryIdentity]remoteLocationMetadata
@@ -63,6 +74,12 @@ type remoteEntryIdentity struct {
 type remoteLocationMetadata struct {
 	location *url.URL
 	expires  time.Time
+	// A direct descriptor is used at most once; digest and size stay to
+	// verify the proxied repeat after a direct failure.
+	direct    *directtransfer.Descriptor
+	directURL *url.URL
+	digest    string
+	size      int64
 }
 
 type remoteEntryMetadata struct {
@@ -138,6 +155,8 @@ func NewRemoteStorage(config RemoteStorageConfig) (*RemoteStorage, error) {
 			},
 		},
 		transferIdleTimeout: transferIdleTimeout,
+		direct:              directtransfer.NewClient(responseHeaderTimeout * 15),
+		breaker:             directtransfer.ProcessBreaker(),
 		locations:           make(map[remoteEntryIdentity]remoteLocationMetadata),
 		entries:             make(map[remoteEntryIdentity]remoteEntryMetadata),
 		scopes:              make(map[remoteEntryIdentity]time.Time),
@@ -155,7 +174,15 @@ func (storage *RemoteStorage) Lookup(ctx context.Context, request LookupRequest)
 	target := storage.route("/_apis/artifactcache/cache")
 	target.RawQuery = query.Encode()
 
-	response, err := storage.do(ctx, http.MethodGet, target, nil, "", request.Scope.Compatibility)
+	lookupRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return LookupResult{}, err
+	}
+	optedIn := storage.breaker.Allow()
+	if optedIn {
+		lookupRequest.Header.Set("Accept", directtransfer.MediaType+", application/json")
+	}
+	response, err := storage.send(lookupRequest, "", request.Scope.Compatibility)
 	if err != nil {
 		return LookupResult{}, fmt.Errorf("lookup remote Actions cache: %w", err)
 	}
@@ -167,12 +194,13 @@ func (storage *RemoteStorage) Lookup(ctx context.Context, request LookupRequest)
 		return LookupResult{}, remoteStatusError(response, "lookup remote Actions cache")
 	}
 	var body struct {
-		CacheKey                              string    `json:"cacheKey"`
-		Scope                                 string    `json:"scope"`
-		CacheVersion                          string    `json:"cacheVersion"`
-		CreationTime                          time.Time `json:"creationTime"`
-		ArchiveLocation                       string    `json:"archiveLocation"`
-		LayerCacheProducerDurationNanoseconds *int64    `json:"layerCacheProducerDurationNanoseconds"`
+		CacheKey                              string                     `json:"cacheKey"`
+		Scope                                 string                     `json:"scope"`
+		CacheVersion                          string                     `json:"cacheVersion"`
+		CreationTime                          time.Time                  `json:"creationTime"`
+		ArchiveLocation                       string                     `json:"archiveLocation"`
+		LayerCacheProducerDurationNanoseconds *int64                     `json:"layerCacheProducerDurationNanoseconds"`
+		LayerCacheTransfer                    *directtransfer.Descriptor `json:"layerCacheTransfer"`
 	}
 	if err := decodeRemoteJSON(response.Body, &body); err != nil {
 		return LookupResult{}, fmt.Errorf("decode remote Actions cache lookup: %w", err)
@@ -194,8 +222,23 @@ func (storage *RemoteStorage) Lookup(ctx context.Context, request LookupRequest)
 		CreatedAt: body.CreationTime, ProducerDuration: producerDuration,
 	}
 	identity := remoteEntryIdentity{id: id, scope: request.Scope}
+	var direct *directtransfer.Descriptor
+	var directURL *url.URL
+	if optedIn && body.LayerCacheTransfer != nil {
+		if objectURL, err := body.LayerCacheTransfer.Validate(time.Now().UTC()); err == nil {
+			direct, directURL = body.LayerCacheTransfer, objectURL
+		} else {
+			storage.breaker.Fail()
+		}
+	}
 	storage.mu.Lock()
 	storage.rememberEntryLocked(identity, entry, location, remoteLookupMetadataTTL, time.Now().UTC())
+	if metadata, known := storage.locations[identity]; known && direct != nil {
+		metadata.direct, metadata.directURL = direct, directURL
+		metadata.digest, _ = directtransfer.ParseDigest(direct.Digest)
+		metadata.size = direct.Size
+		storage.locations[identity] = metadata
+	}
 	storage.mu.Unlock()
 	match, requestedKey := remoteMatchMetadata(response, request, entry.Key)
 	refScope := RefScope(response.Header.Get("X-LayerCache-Ref-Scope"))
@@ -462,6 +505,17 @@ func (storage *RemoteStorage) Open(ctx context.Context, request OpenRequest) (Ar
 			entry = entryMetadata.entry
 		}
 	}
+	if knownLocation && locationMetadata.direct != nil && location == locationMetadata.location {
+		archive, err := storage.openDirect(ctx, identity, entry, locationMetadata, request.Scope.Compatibility)
+		if err == nil {
+			return archive, nil
+		}
+		if ctx.Err() != nil {
+			return Archive{}, ctx.Err()
+		}
+		// Failed before any byte was delivered: repeat once through the
+		// proxied archive URL, verified against the same digest and size.
+	}
 	directRequest := location == nil
 	if location == nil {
 		location = storage.route(fmt.Sprintf("/_apis/artifactcache/caches/%d/archive", request.ID))
@@ -479,7 +533,7 @@ func (storage *RemoteStorage) Open(ctx context.Context, request OpenRequest) (Ar
 	response, err := storage.client.Do(httpRequest)
 	if err != nil {
 		cancel(nil)
-		return Archive{}, fmt.Errorf("open remote Actions cache: %w", err)
+		return Archive{}, fmt.Errorf("open remote Actions cache: %w", directtransfer.Redact(err))
 	}
 	if response.StatusCode == http.StatusNotFound {
 		response.Body.Close()
@@ -495,6 +549,18 @@ func (storage *RemoteStorage) Open(ctx context.Context, request OpenRequest) (Ar
 	if response.ContentLength >= 0 {
 		entry.Size = response.ContentLength
 	}
+	var archiveBody io.ReadCloser = response.Body
+	if knownLocation && locationMetadata.digest != "" {
+		if response.ContentLength >= 0 && response.ContentLength != locationMetadata.size {
+			response.Body.Close()
+			cancel(nil)
+			return Archive{}, ErrArchiveIntegrity
+		}
+		entry.Size = locationMetadata.size
+		archiveBody = &integrityReadCloser{
+			verifier: directtransfer.NewVerifier(response.Body, locationMetadata.digest, locationMetadata.size),
+		}
+	}
 	storage.mu.Lock()
 	delete(storage.locations, identity)
 	delete(storage.entries, identity)
@@ -503,10 +569,152 @@ func (storage *RemoteStorage) Open(ctx context.Context, request OpenRequest) (Ar
 	return Archive{
 		Entry: entry,
 		Body: &progressReadCloser{
-			body: response.Body, context: requestContext, cancel: cancel, watch: watch,
+			body: archiveBody, context: requestContext, cancel: cancel, watch: watch,
 		},
 	}, nil
 }
+
+// openDirect reads an archive from object storage with its lookup descriptor.
+// A failure before the body drops the descriptor and returns an error; a
+// failure while reading drops it and fails the body with
+// directtransfer.ErrFailed, so the caller repeats once through the proxied
+// archive URL. The URL itself is never retried.
+func (storage *RemoteStorage) openDirect(
+	ctx context.Context,
+	identity remoteEntryIdentity,
+	entry Entry,
+	metadata remoteLocationMetadata,
+	compatibilityID string,
+) (Archive, error) {
+	if !time.Now().UTC().Before(metadata.direct.ExpiresAt) {
+		storage.dropDirect(identity)
+		return Archive{}, directtransfer.ErrFailed
+	}
+	requestContext, cancel := context.WithCancelCause(ctx)
+	verifier, err := directtransfer.Get(requestContext, storage.direct, *metadata.direct, metadata.directURL)
+	if err != nil {
+		cancel(nil)
+		if ctx.Err() != nil {
+			return Archive{}, ctx.Err()
+		}
+		storage.breaker.Fail()
+		storage.dropDirect(identity)
+		return Archive{}, err
+	}
+	entry.Size = metadata.direct.Size
+	watch := newIdleWatch(cancel, storage.transferIdleTimeout)
+	return Archive{Entry: entry, Body: &directArchiveBody{
+		body:    &progressReadCloser{body: verifier, context: requestContext, cancel: cancel, watch: watch},
+		context: ctx, verifier: verifier, storage: storage, identity: identity,
+		descriptor: *metadata.direct, completion: metadata.location, compatibilityID: compatibilityID,
+	}}, nil
+}
+
+// dropDirect keeps the proxied archive URL and the declared digest and size.
+func (storage *RemoteStorage) dropDirect(identity remoteEntryIdentity) {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	if metadata, known := storage.locations[identity]; known {
+		metadata.direct, metadata.directURL = nil, nil
+		storage.locations[identity] = metadata
+	}
+}
+
+// completeDirect reports a verified direct read at the signed archive URL,
+// which carries the hit's signed outcome.
+func (storage *RemoteStorage) completeDirect(body *directArchiveBody) {
+	storage.mu.Lock()
+	delete(storage.locations, body.identity)
+	delete(storage.entries, body.identity)
+	storage.mu.Unlock()
+	payload, err := json.Marshal(struct {
+		Lease  string `json:"lease"`
+		Digest string `json:"digest"`
+		Size   int64  `json:"size"`
+	}{body.descriptor.Lease, body.descriptor.Digest, body.descriptor.Size})
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), directCompletionTimeout)
+	defer cancel()
+	// The completion needs the bearer token, which is only ever sent to the
+	// configured endpoint. A signed archive URL on another origin (a distinct
+	// ArchiveBaseURL) is served by the same gateway: its signature covers the
+	// path and query, not the host, so send it to the endpoint instead.
+	target := *body.completion
+	if target.Scheme != storage.endpoint.Scheme || target.Host != storage.endpoint.Host {
+		target.Scheme, target.Host = storage.endpoint.Scheme, storage.endpoint.Host
+	}
+	response, err := storage.do(ctx, http.MethodPost, &target, strings.NewReader(string(payload)), "application/json", body.compatibilityID)
+	if err != nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxRemoteResponseSize))
+	_ = response.Body.Close()
+}
+
+type directArchiveBody struct {
+	context         context.Context
+	body            io.ReadCloser
+	verifier        *directtransfer.Verifier
+	storage         *RemoteStorage
+	identity        remoteEntryIdentity
+	descriptor      directtransfer.Descriptor
+	completion      *url.URL
+	compatibilityID string
+	err             error
+	completed       bool
+}
+
+func (body *directArchiveBody) Read(buffer []byte) (int, error) {
+	if body.err != nil {
+		return 0, body.err
+	}
+	count, err := body.body.Read(buffer)
+	if err == nil {
+		return count, nil
+	}
+	if err == io.EOF && body.verifier.Verified() {
+		if !body.completed {
+			body.completed = true
+			body.storage.breaker.Succeed()
+			body.storage.completeDirect(body)
+		}
+		return count, io.EOF
+	}
+	if body.context.Err() != nil {
+		// The caller gave up; this is neither a storage failure nor a reason
+		// to repeat.
+		body.err = body.context.Err()
+		return 0, body.err
+	}
+	body.storage.breaker.Fail()
+	body.storage.dropDirect(body.identity)
+	if errors.Is(err, directtransfer.ErrFailed) {
+		body.err = err
+	} else {
+		body.err = fmt.Errorf("%w: %w", directtransfer.ErrFailed, directtransfer.Redact(err))
+	}
+	return 0, body.err
+}
+
+func (body *directArchiveBody) Close() error { return body.body.Close() }
+
+// integrityReadCloser fails a proxied archive whose bytes do not match the
+// digest and size the remote index declared.
+type integrityReadCloser struct {
+	verifier *directtransfer.Verifier
+}
+
+func (body *integrityReadCloser) Read(buffer []byte) (int, error) {
+	count, err := body.verifier.Read(buffer)
+	if body.verifier.Failed() {
+		return 0, ErrArchiveIntegrity
+	}
+	return count, err
+}
+
+func (body *integrityReadCloser) Close() error { return body.verifier.Close() }
 
 func (storage *RemoteStorage) rememberEntryLocked(
 	identity remoteEntryIdentity,
@@ -596,6 +804,10 @@ func (storage *RemoteStorage) do(ctx context.Context, method string, target *url
 	if err != nil {
 		return nil, err
 	}
+	return storage.send(request, contentType, compatibilityID)
+}
+
+func (storage *RemoteStorage) send(request *http.Request, contentType, compatibilityID string) (*http.Response, error) {
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}

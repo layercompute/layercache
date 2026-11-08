@@ -117,6 +117,15 @@ func requiredRequestCapability(request *http.Request) (access.Capability, string
 		// this does not grant artifact publication or arbitrary run authority.
 		return access.CapabilityRead, "turbo"
 	}
+	if request.Method == http.MethodPost && directReadCompletionPath(path) {
+		// A completion reports a verified direct read. It needs only the read
+		// authority the descriptor was issued under, and grants no write.
+		integration := "turbo"
+		if !strings.HasPrefix(path, "/v8/") {
+			integration = "actions"
+		}
+		return access.CapabilityRead, integration
+	}
 	integration := ""
 	switch {
 	case strings.HasPrefix(path, "/v8/"):
@@ -142,6 +151,17 @@ func requiredRequestCapability(request *http.Request) (access.Capability, string
 		return access.CapabilityRead, integration
 	}
 	return access.CapabilityWrite, integration
+}
+
+// directReadCompletionPath matches the Turbo completion route and the Actions
+// archive URL, which accepts a POST completion for a direct read.
+func directReadCompletionPath(path string) bool {
+	if rest, found := strings.CutPrefix(path, "/v8/artifacts/"); found {
+		parts := strings.Split(rest, "/")
+		return len(parts) == 4 && parts[0] != "" && parts[1] == "transfers" && parts[2] != "" && parts[3] == "complete"
+	}
+	_, err := actionscache.ArchiveIDFromPath(path)
+	return err == nil
 }
 
 func (server *Server) authorizesSelectors(request *http.Request, claims access.Claims) bool {

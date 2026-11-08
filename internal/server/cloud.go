@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,6 +87,20 @@ func cloudStoreConfig(cfg config.Config) cloud.Config {
 		IdleTTL:        cfg.CacheIdleTTL,
 		UnreusedTTL:    cfg.CacheUnreusedTTL,
 		SoftBytes:      cfg.CacheSoftBytes,
+		DirectTransfer: directTransferPolicy(cfg.DirectTransfer),
+	}
+}
+
+// directTransferEnvironment forces direct transfer off without a config edit,
+// so rollback is a restart.
+const directTransferEnvironment = "LAYER_CACHE_DIRECT_TRANSFER"
+
+func directTransferPolicy(direct config.DirectTransfer) cloud.DirectTransferPolicy {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(directTransferEnvironment)), "off") {
+		return cloud.DirectTransferPolicy{}
+	}
+	return cloud.DirectTransferPolicy{
+		Read: direct.Read, Write: direct.Write, MaxURL: time.Duration(direct.MaxURLSeconds) * time.Second,
 	}
 }
 

@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -29,6 +30,9 @@ type s3BlobStore struct {
 	client    *minio.Client
 	bucket    string
 	namespace string
+	// Presigned URLs are issued only with the pool's static key. Chain or
+	// temporary credentials could expire before the URL does.
+	presign bool
 }
 
 func newS3BlobStore(ctx context.Context, config Config, namespace string) (*s3BlobStore, error) {
@@ -67,7 +71,37 @@ func newS3BlobStore(ctx context.Context, config Config, namespace string) (*s3Bl
 	if !exists {
 		return nil, errors.New("configured cloud S3 bucket does not exist")
 	}
-	return &s3BlobStore{client: client, bucket: config.S3Bucket, namespace: namespace}, nil
+	return &s3BlobStore{
+		client: client, bucket: config.S3Bucket, namespace: namespace, presign: config.S3AccessKey != "",
+	}, nil
+}
+
+func (storage *s3BlobStore) PresignGet(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
+	if !storage.presign {
+		return nil, ErrDirectTransferUnavailable
+	}
+	return storage.client.PresignedGetObject(ctx, storage.bucket, key, expires, nil)
+}
+
+func (storage *s3BlobStore) PresignPut(
+	ctx context.Context,
+	key string,
+	digest [32]byte,
+	size int64,
+	expires time.Duration,
+) (*url.URL, http.Header, error) {
+	if !storage.presign {
+		return nil, nil, ErrDirectTransferUnavailable
+	}
+	// Both headers are signed: storage rejects any other body or length.
+	header := http.Header{}
+	header.Set("x-amz-checksum-sha256", base64.StdEncoding.EncodeToString(digest[:]))
+	header.Set("Content-Length", strconv.FormatInt(size, 10))
+	location, err := storage.client.PresignHeader(ctx, http.MethodPut, storage.bucket, key, expires, nil, header)
+	if err != nil {
+		return nil, nil, err
+	}
+	return location, header, nil
 }
 
 func (storage *s3BlobStore) Stage(
@@ -188,7 +222,19 @@ func (storage *s3BlobStore) Open(
 }
 
 func (storage *s3BlobStore) Stat(ctx context.Context, key string) (blobInfo, error) {
-	info, err := storage.client.StatObject(ctx, storage.bucket, key, minio.StatObjectOptions{})
+	return storage.stat(ctx, key, false)
+}
+
+// StatChecksum also asks storage for the object's stored SHA-256 checksum.
+// Backends that kept none report an empty SHA256.
+func (storage *s3BlobStore) StatChecksum(ctx context.Context, key string) (blobInfo, error) {
+	return storage.stat(ctx, key, true)
+}
+
+func (storage *s3BlobStore) stat(ctx context.Context, key string, checksum bool) (blobInfo, error) {
+	options := minio.StatObjectOptions{}
+	options.Checksum = checksum
+	info, err := storage.client.StatObject(ctx, storage.bucket, key, options)
 	if err != nil {
 		if s3NotFound(err) {
 			return blobInfo{}, ErrNotFound
@@ -199,7 +245,17 @@ func (storage *s3BlobStore) Stat(ctx context.Context, key string) (blobInfo, err
 	if digest == "" {
 		digest = info.UserMetadata["sha256"]
 	}
-	return blobInfo{Key: info.Key, Digest: digest, Size: info.Size, LastModified: info.LastModified.UTC()}, nil
+	result := blobInfo{Key: info.Key, Digest: digest, Size: info.Size, LastModified: info.LastModified.UTC()}
+	if checksum && info.ChecksumSHA256 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(info.ChecksumSHA256)
+		if err != nil || len(decoded) != sha256.Size {
+			// A multipart or otherwise composite checksum is not a digest of
+			// the object; it proves nothing either way.
+			return result, nil
+		}
+		result.SHA256 = hex.EncodeToString(decoded)
+	}
+	return result, nil
 }
 
 func (storage *s3BlobStore) Delete(ctx context.Context, key string) error {

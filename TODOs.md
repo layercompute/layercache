@@ -436,6 +436,12 @@ workspaces and filesystem migration are outside the current product scope.
   the local read-through store, and presigned writes. R2 enforcement of the
   signed SHA-256 checksum on presigned uploads is qualified. Design, tests and
   rollout are in [direct object transfer](docs/direct-object-transfer.md).
+  Direct reads and writes are implemented, off by default, in the gateway and the
+  Go clients (`internal/cloud/direct.go`, `internal/server/direct_transfer.go`,
+  `internal/remote/turbo_direct.go`, `internal/actionscache/remote.go`), with
+  PostgreSQL and S3 fixture tests. Remaining: the TypeScript clients, separate
+  direct-byte and fallback counts on the dashboard, and the real-R2
+  `qa/r2-native-oidc` qualification before enabling a pool.
 
 - [ ] **Launch hosted private caches with R2-backed storage pools.**
   Owner: LayerCache cloud/storage. The October 19 user priority is a usable
