@@ -1,9 +1,9 @@
 # Direct object transfer
 
-Status: sections 2 and 3 are implemented in the gateway and the Go clients
-(`remote.TurboClient`, `actionscache.RemoteStorage`), off by default. The
-TypeScript clients (`action/cache`, `native/client.ts`) are a follow-up against
-the [wire API](#wire-api). Owner: LayerCache cloud/storage.
+Status: sections 2 and 3 are implemented in the gateway, the Go clients
+(`remote.TurboClient`, `actionscache.RemoteStorage`) and `native/client.ts`, off
+by default. `action/cache` implements direct reads (section 2) only. Owner:
+LayerCache cloud/storage.
 
 Today the project gateway streams every hosted byte. With direct transfer, the
 gateway keeps all authority and moves only metadata. LayerCache's own clients get
@@ -222,8 +222,9 @@ would be refused too. The caller's own cancellation is never counted as a
 direct failure and is never repeated.
 
 **Clients in this slice:** the daemon's Team publication, both the immediate
-publish and the upload worker (Turbo), and `native/client.ts`. Actions chunked
-uploads and retained publication stay proxied for now.
+publish and the upload worker (Turbo), and `native/client.ts` (`save` and
+`saveImmutable`). Actions chunked uploads, including `action/cache`'s through the
+stock client, and retained publication stay proxied for now.
 
 ### Wire API
 

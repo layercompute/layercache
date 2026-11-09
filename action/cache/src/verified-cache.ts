@@ -32,6 +32,10 @@ const maxArchiveBytes = 10 * 1024 * 1024 * 1024;
 const defaultLookupTimeoutMilliseconds = 2_000;
 const archiveResponseTimeoutMilliseconds = 2_000;
 const downloadIdleTimeoutMilliseconds = 30_000;
+const directMediaType = "application/vnd.layercache.transfer.v1+json";
+const directCompletionTimeoutMilliseconds = 5_000;
+const directTransferId = /^(?!\.{1,2}$)[!-~]{1,128}$/;
+const rfc3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
 
 export interface VerifiedCacheIdentity {
   repository: string;
@@ -144,6 +148,15 @@ interface LookupResponse {
   archiveLocation: string;
   layerCacheOrigin?: string;
   layerCachePublic?: PublicMetadata;
+  layerCacheTransfer?: unknown;
+}
+
+interface DirectArchive {
+  url: URL;
+  digest: string;
+  hexDigest: string;
+  size: number;
+  lease: string;
 }
 
 interface Statement {
@@ -194,7 +207,10 @@ export class VerifiedCacheClient {
     target.searchParams.set("keys", [primaryKey, ...restoreKeys].join(","));
     target.searchParams.set("version", version);
     const requestInit: RequestInit = {
-      headers: { Authorization: `Bearer ${token}` },
+      // A lookup-only probe downloads nothing, so it must not issue a read lease.
+      headers: options.lookupOnly
+        ? { Authorization: `Bearer ${token}` }
+        : { Authorization: `Bearer ${token}`, Accept: `${directMediaType}, application/json` },
       redirect: "error",
       signal: AbortSignal.timeout(this.#lookupTimeoutMilliseconds),
     };
@@ -238,33 +254,40 @@ export class VerifiedCacheClient {
       if (archiveURL.origin !== endpointURL.origin || archiveURL.username !== "" || archiveURL.password !== "") {
         throw new Error("Layer Cache returned an archive URL outside the configured endpoint origin.");
       }
-      const downloadController = new AbortController();
-      const responseTimeout = setTimeout(
-        () => downloadController.abort(new Error("Layer Cache archive response timed out.")),
-        archiveResponseTimeoutMilliseconds,
-      );
-      let download: Response;
-      try {
-        download = await fetchSameOrigin(archiveURL, endpointURL, downloadController.signal);
-      } catch (error) {
-        if (downloadController.signal.aborted) {
-          throw new Error("Layer Cache archive response timed out.");
+      const idleMilliseconds = options.segmentTimeoutInMs ?? downloadIdleTimeoutMilliseconds;
+      const direct = lookup.layerCacheOrigin === "publicCache" ? undefined : directArchive(lookup.layerCacheTransfer);
+      let downloaded = direct === undefined ? undefined : await downloadDirect(direct, archivePath, idleMilliseconds);
+      if (direct !== undefined && downloaded !== undefined) {
+        await completeDirect(archiveURL, token, direct);
+      } else {
+        const downloadController = new AbortController();
+        const responseTimeout = setTimeout(
+          () => downloadController.abort(new Error("Layer Cache archive response timed out.")),
+          archiveResponseTimeoutMilliseconds,
+        );
+        let download: Response;
+        try {
+          download = await fetchSameOrigin(archiveURL, endpointURL, downloadController.signal);
+        } catch (error) {
+          if (downloadController.signal.aborted) {
+            throw new Error("Layer Cache archive response timed out.");
+          }
+          throw error;
+        } finally {
+          clearTimeout(responseTimeout);
         }
-        throw error;
-      } finally {
-        clearTimeout(responseTimeout);
+        if (!download.ok || download.body === null) {
+          await download.body?.cancel();
+          throw new Error(`Layer Cache archive download returned HTTP ${download.status}.`);
+        }
+        downloaded = await streamDownload(
+          download.body,
+          archivePath,
+          publication?.size ?? maxArchiveBytes,
+          idleMilliseconds,
+          downloadController,
+        );
       }
-      if (!download.ok || download.body === null) {
-        await download.body?.cancel();
-        throw new Error(`Layer Cache archive download returned HTTP ${download.status}.`);
-      }
-      const downloaded = await streamDownload(
-        download.body,
-        archivePath,
-        publication?.size ?? maxArchiveBytes,
-        options.segmentTimeoutInMs ?? downloadIdleTimeoutMilliseconds,
-        downloadController,
-      );
       if (publication !== undefined &&
           (downloaded.size !== publication.size || downloaded.digest !== publication.digest)) {
         throw new Error("Public Cache archive bytes do not match the signed publication.");
@@ -578,6 +601,77 @@ async function streamDownload(
     }
   }
   return { digest: hasher.digest("hex"), size };
+}
+
+// A presigned URL is a credential, so errors from fetching it are dropped and
+// never wrapped. No breaker: this process does a single restore and could never trip one.
+async function downloadDirect(
+  direct: DirectArchive,
+  archivePath: string,
+  idleTimeoutMilliseconds: number,
+): Promise<{ digest: string; size: number } | undefined> {
+  const controller = new AbortController();
+  const responseTimeout = setTimeout(() => controller.abort(), idleTimeoutMilliseconds);
+  try {
+    const response = await fetch(direct.url, { redirect: "error", signal: controller.signal });
+    clearTimeout(responseTimeout);
+    const length = response.headers.get("content-length");
+    if (response.status !== 200 || response.body === null || (length !== null && Number(length) !== direct.size)) {
+      await response.body?.cancel();
+      throw new Error("direct transfer failed");
+    }
+    const downloaded = await streamDownload(response.body, archivePath, direct.size, idleTimeoutMilliseconds, controller);
+    if (downloaded.size !== direct.size || downloaded.digest !== direct.hexDigest) {
+      throw new Error("direct transfer failed");
+    }
+    return downloaded;
+  } catch {
+    clearTimeout(responseTimeout);
+    await rm(archivePath, { force: true });
+    return undefined;
+  }
+}
+
+async function completeDirect(archiveURL: URL, token: string, direct: DirectArchive): Promise<void> {
+  try {
+    const response = await fetch(archiveURL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ lease: direct.lease, digest: direct.digest, size: direct.size }),
+      redirect: "error",
+      signal: AbortSignal.timeout(directCompletionTimeoutMilliseconds),
+    });
+    await response.body?.cancel();
+  } catch {
+    // A lost report leaves the read unrecorded; the restore still succeeds.
+  }
+}
+
+function directArchive(value: unknown): DirectArchive | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const { transfer, method, url, digest, size, expiresAt, lease } = value as Record<string, unknown>;
+  if (transfer !== "direct-v1" || method !== "GET" || typeof digest !== "string" ||
+      !/^sha256:[a-f0-9]{64}$/.test(digest) || typeof size !== "number" || !Number.isSafeInteger(size) ||
+      size <= 0 || size > maxArchiveBytes || typeof lease !== "string" || !directTransferId.test(lease) ||
+      typeof expiresAt !== "string" || !rfc3339.test(expiresAt) || !(Date.parse(expiresAt) > Date.now()) ||
+      typeof url !== "string") {
+    return undefined;
+  }
+  let location: URL;
+  try {
+    location = new URL(url);
+  } catch {
+    return undefined;
+  }
+  const loopback = location.hostname === "localhost" || location.hostname === "[::1]" ||
+    /^127\.\d+\.\d+\.\d+$/.test(location.hostname);
+  if (location.username !== "" || location.password !== "" || location.hash !== "" ||
+      (location.protocol !== "https:" && !(location.protocol === "http:" && loopback))) {
+    return undefined;
+  }
+  return { url: location, digest, hexDigest: digest.slice("sha256:".length), size, lease };
 }
 
 function ReadableFromWeb(body: ReadableStream<Uint8Array>): Readable {

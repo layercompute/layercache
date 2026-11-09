@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, openAsBlob } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createGunzip } from 'node:zlib';
 import * as tar from 'tar';
+import { TRANSFER_MEDIA_TYPE, directBreaker, isDescriptorResponse, readDescriptor, readUploadGrant } from './direct-transfer.ts';
 import { Extractions } from './extractions.ts';
 
 export interface Identity {
@@ -30,6 +31,11 @@ export class NativeCachePublicationError extends Error {
 export class NativeCacheConflictError extends Error {
   constructor() { super('Artifact key already has different content; use a new recording generation'); this.name = 'NativeCacheConflictError'; }
 }
+
+// The downloaded bytes were wrong, as distinct from a local install failure.
+class ArtifactIntegrityError extends Error {}
+
+const COMPLETION_TIMEOUT_MS = 5_000;
 
 export interface Result {
   hit: boolean;
@@ -108,6 +114,19 @@ export class NativeCache {
   private headers(identity: Identity): Record<string, string> {
     return { Authorization: `Bearer ${this.options.token}`, 'X-LayerCache-Compatibility': identity.compatibility };
   }
+  private requestSignal(signal?: AbortSignal): AbortSignal {
+    const timeout = AbortSignal.timeout(this.options.timeoutMs ?? 120_000);
+    return signal ? AbortSignal.any([signal, timeout]) : timeout;
+  }
+  // Selectors are authorized on these routes too, so they keep the artifact URL's query.
+  private transferUrl(artifact: URL, suffix: string): URL {
+    const url = new URL(artifact);
+    url.pathname = `${url.pathname}/transfers/${suffix}`;
+    return url;
+  }
+  private transferHeaders(identity: Identity): Record<string, string> {
+    return { ...this.headers(identity), 'Content-Type': 'application/json' };
+  }
   private async evict(reserve: number, keep?: string): Promise<void> {
     if (reserve > this.maxBytes) throw new Error('Artifact exceeds local cache budget');
     const entries = await Promise.all((await readdir(this.root)).filter(name => /^native-v1-[a-f0-9]{64}\.tgz$/.test(name)).map(async name => {
@@ -160,28 +179,8 @@ export class NativeCache {
       if (!digest) {
         const url = this.url(identity);
         if (!url) return { hit: false, source: 'miss', bytes: 0, elapsedMs: performance.now() - started };
-        const response = await fetch(url, { headers: this.headers(identity), redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 120_000)]) : AbortSignal.timeout(this.options.timeoutMs ?? 120_000) });
-        if (response.status === 404) { await response.body?.cancel(); return { hit: false, source: 'miss', bytes: 0, elapsedMs: performance.now() - started }; }
-        if (!response.ok) { await response.body?.cancel(); throw new Error(`Team Cache returned HTTP ${response.status}`); }
-        const expected = response.headers.get('x-layercache-digest') ?? '';
-        const size = Number(response.headers.get('content-length'));
-        if (!/^sha256:[a-f0-9]{64}$/.test(expected) || !Number.isSafeInteger(size) || size <= 0 || size > this.maxBytes || !response.body) {
-          await response.body?.cancel(); throw new Error('Invalid artifact digest or size');
-        }
-        await this.evict(size);
-        const temporary = `${path}.${randomUUID()}.partial`;
-        let received = 0;
-        try {
-          await pipeline(Readable.from(response.body), new Transform({ transform(chunk, _encoding, callback) {
-            received += chunk.length;
-            callback(received > size ? new Error('Artifact exceeds declared size') : null, chunk);
-          } }), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }), { signal });
-          signal?.throwIfAborted();
-          digest = await digestFile(temporary);
-          if (received !== size || `sha256:${digest}` !== expected) throw new Error('Artifact integrity check failed');
-          await rename(temporary, path);
-          await writeFile(`${path}.sha256`, digest, { mode: 0o600 });
-        } finally { await rm(temporary, { force: true }); }
+        digest = await this.download(identity, url, path, signal);
+        if (!digest) return { hit: false, source: 'miss', bytes: 0, elapsedMs: performance.now() - started };
         source = 'team';
       }
       await this.evict(0, path);
@@ -207,6 +206,127 @@ export class NativeCache {
       signal?.throwIfAborted();
       return { hit: true, source, path: destination ? resolve(destination) : path, digest, bytes: (await stat(path)).size, elapsedMs: performance.now() - started };
     }, signal);
+  }
+  private teamGet(identity: Identity, url: URL, optIn: boolean, signal?: AbortSignal): Promise<Response> {
+    const headers = optIn ? { ...this.headers(identity), Accept: TRANSFER_MEDIA_TYPE } : this.headers(identity);
+    return fetch(url, { headers, redirect: 'error', signal: this.requestSignal(signal) });
+  }
+  // Returns the installed digest, or null on a miss. A direct failure repeats
+  // the request once without the opt-in; the presigned URL is never retried.
+  private async download(identity: Identity, url: URL, path: string, signal?: AbortSignal): Promise<string | null> {
+    const optIn = directBreaker.allow();
+    const response = await this.teamGet(identity, url, optIn, signal);
+    if (optIn && isDescriptorResponse(response)) {
+      const digest = await this.readDirect(identity, url, response, path, signal);
+      return digest ?? this.installProxied(await this.teamGet(identity, url, false, signal), path, signal);
+    }
+    return this.installProxied(response, path, signal);
+  }
+  private async installProxied(response: Response, path: string, signal?: AbortSignal): Promise<string | null> {
+    if (response.status === 404) { await response.body?.cancel(); return null; }
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`Team Cache returned HTTP ${response.status}`); }
+    const expected = response.headers.get('x-layercache-digest') ?? '';
+    const size = Number(response.headers.get('content-length'));
+    if (!/^sha256:[a-f0-9]{64}$/.test(expected) || !Number.isSafeInteger(size) || size <= 0 || size > this.maxBytes || !response.body) {
+      await response.body?.cancel(); throw new Error('Invalid artifact digest or size');
+    }
+    await this.evict(size);
+    return this.installVerified(response.body, path, size, expected, signal);
+  }
+  // Every remote read installs through here: a fresh temporary file per attempt,
+  // renamed into place only after the exact size and digest match.
+  private async installVerified(source: AsyncIterable<Uint8Array>, path: string, size: number, expected: string, signal?: AbortSignal): Promise<string> {
+    const temporary = `${path}.${randomUUID()}.partial`;
+    let received = 0;
+    try {
+      await pipeline(Readable.from(source), new Transform({ transform(chunk, _encoding, callback) {
+        received += chunk.length;
+        callback(received > size ? new ArtifactIntegrityError('Artifact exceeds declared size') : null, chunk);
+      } }), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }), { signal });
+      signal?.throwIfAborted();
+      const digest = await digestFile(temporary);
+      if (received !== size || `sha256:${digest}` !== expected) throw new ArtifactIntegrityError('Artifact integrity check failed');
+      await rename(temporary, path);
+      await writeFile(`${path}.sha256`, digest, { mode: 0o600 });
+      return digest;
+    } finally { await rm(temporary, { force: true }); }
+  }
+  // Returns the installed digest, or null when the request must be repeated
+  // without the opt-in. A presigned URL is a credential, so errors from fetching
+  // it are dropped and never wrapped.
+  private async readDirect(identity: Identity, url: URL, response: Response, path: string, signal?: AbortSignal): Promise<string | null> {
+    const descriptor = await readDescriptor(response.body, this.maxBytes).catch(() => null);
+    signal?.throwIfAborted();
+    if (!descriptor) { directBreaker.fail(); return null; }
+    await this.evict(descriptor.size);
+    let object: Response;
+    try { object = await fetch(descriptor.url, { redirect: 'error', signal: this.requestSignal(signal) }); }
+    catch { signal?.throwIfAborted(); directBreaker.fail(); return null; }
+    const length = object.headers.get('content-length');
+    if (object.status !== 200 || !object.body || (length !== null && Number(length) !== descriptor.size)) {
+      await object.body?.cancel().catch(() => undefined);
+      signal?.throwIfAborted();
+      directBreaker.fail();
+      return null;
+    }
+    let transportFailed = false;
+    const body = object.body;
+    const tracked = async function* () {
+      try { yield* body; } catch (error) { transportFailed = true; throw error; }
+    };
+    let digest: string;
+    try { digest = await this.installVerified(tracked(), path, descriptor.size, descriptor.digest, signal); }
+    catch (error) {
+      signal?.throwIfAborted();
+      if (!transportFailed && !(error instanceof ArtifactIntegrityError)) throw error;
+      directBreaker.fail();
+      return null;
+    }
+    directBreaker.succeed();
+    await this.completeDirectRead(identity, url, descriptor.lease, descriptor.digest, descriptor.size);
+    return digest;
+  }
+  // Best effort: a lost report leaves the read unknown, never a failed restore.
+  private async completeDirectRead(identity: Identity, url: URL, lease: string, digest: string, size: number): Promise<void> {
+    try {
+      const response = await fetch(this.transferUrl(url, `${encodeURIComponent(lease)}/complete`), { method: 'POST', headers: this.transferHeaders(identity),
+        body: JSON.stringify({ digest, size }), redirect: 'error', signal: AbortSignal.timeout(COMPLETION_TIMEOUT_MS) });
+      await response.body?.cancel();
+    } catch { /* Best effort. */ }
+  }
+  private async publishProxied(identity: Identity, url: URL, file: string, size: number, signal?: AbortSignal): Promise<Response> {
+    return fetch(url, { method: 'PUT', headers: { ...this.headers(identity), 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) }, body: await openAsBlob(file),
+      redirect: 'error', signal: this.requestSignal(signal) });
+  }
+  // Returns the gateway's final answer for the publication, or null when it
+  // must be repeated through the proxied PUT.
+  private async publishDirect(identity: Identity, url: URL, file: string, digest: string, size: number, signal?: AbortSignal): Promise<Response | null> {
+    // A transport error rejects here: the gateway is unreachable, so a proxied PUT would be too.
+    const admission = await fetch(this.transferUrl(url, 'upload'), { method: 'POST', headers: this.transferHeaders(identity),
+      body: JSON.stringify({ digest: `sha256:${digest}`, size }), redirect: 'error', signal: this.requestSignal(signal) });
+    if (admission.status === 507) return admission;
+    if (admission.status !== 200) { await admission.body?.cancel(); return null; }
+    const grant = await readUploadGrant(admission.body, size).catch(() => null);
+    signal?.throwIfAborted();
+    if (!grant) { directBreaker.fail(); return null; }
+    const blob = await openAsBlob(file);
+    try {
+      const stored = await fetch(grant.url, { method: 'PUT', headers: grant.headers, body: blob, redirect: 'error', signal: this.requestSignal(signal) });
+      await stored.body?.cancel();
+      if (stored.status !== 200 && stored.status !== 201 && stored.status !== 204) throw new Error('direct transfer failed');
+    } catch { signal?.throwIfAborted(); directBreaker.fail(); return null; }
+    let commit: Response;
+    try {
+      commit = await fetch(this.transferUrl(url, `${encodeURIComponent(grant.upload)}/commit`), { method: 'POST', headers: this.transferHeaders(identity),
+        redirect: 'error', signal: this.requestSignal(signal) });
+    } catch { signal?.throwIfAborted(); directBreaker.fail(); return null; }
+    if (commit.status === 200 || commit.status === 201 || commit.status === 409) { directBreaker.succeed(); return commit; }
+    if (commit.status === 507) return commit;
+    await commit.body?.cancel();
+    // Authorization is the proxied PUT's to report; anything else leaves the
+    // outcome unknown, and repeating the same bytes is idempotent.
+    if (commit.status !== 401 && commit.status !== 403) directBreaker.fail();
+    return null;
   }
   async save(identity: Identity, input: string): Promise<Result> {
     return this.saveInternal(identity, input);
@@ -254,9 +374,9 @@ export class NativeCache {
         }
         const url = this.url(identity);
         if (url) {
-          const blob = await import('node:fs').then(fs => fs.openAsBlob(immutable ? temporary : path));
-          const response = await fetch(url, { method: 'PUT', headers: { ...this.headers(identity), 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) }, body: blob,
-            redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 120_000)]) : AbortSignal.timeout(this.options.timeoutMs ?? 120_000) });
+          const file = immutable ? temporary : path;
+          const response = (directBreaker.allow() ? await this.publishDirect(identity, url, file, digest, size, signal) : null) ??
+            await this.publishProxied(identity, url, file, size, signal);
           await response.body?.cancel();
           if (!response.ok && response.status !== 409) throw new Error(`Team Cache upload returned HTTP ${response.status}; ${immutable ? "recording not committed" : "Local Cache retained"}`);
           if (response.status === 409) {
