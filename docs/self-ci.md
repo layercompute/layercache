@@ -36,7 +36,7 @@ The profile is removed before source builds, while the action retains its
 restore key for post-job saving. Go retains source/compiler/flag invalidation.
 
 Tests still use `-count=1`; race detection and vet remain required. The
-[Go cache contract](https://pkg.go.dev/cmd/go@go1.25.13#hdr-Build_and_test_caching)
+[Go cache contract](https://pkg.go.dev/cmd/go@go1.26.10#hdr-Build_and_test_caching)
 separates compiler reuse from test-result replay. Native client, calibrated
 performance, release-installation and local-to-CI qualification jobs retain
 their independent cache setup. No fixture output is warmed by these caches.
