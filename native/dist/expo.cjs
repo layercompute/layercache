@@ -3020,6 +3020,92 @@ var To = (s3) => {
   s3.mtimeCache || (s3.mtimeCache = /* @__PURE__ */ new Map()), s3.filter = t ? (e, i) => t(e, i) && !((s3.mtimeCache?.get(e) ?? i.mtime ?? 0) > (i.mtime ?? 0)) : (e, i) => !((s3.mtimeCache?.get(e) ?? i.mtime ?? 0) > (i.mtime ?? 0));
 };
 
+// native/direct-transfer.ts
+var TRANSFER_MEDIA_TYPE = "application/vnd.layercache.transfer.v1+json";
+var MAX_TRANSFER_BODY_BYTES = 64 << 10;
+var BREAKER_THRESHOLD = 3;
+var BREAKER_COOLDOWN_MS = 10 * 6e4;
+var TRANSFER_ID = /^(?!\.{1,2}$)[!-~]{1,128}$/;
+var RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
+var failures = 0;
+var openUntil = 0;
+var directBreaker = {
+  allow() {
+    return Date.now() >= openUntil;
+  },
+  fail() {
+    failures += 1;
+    if (failures >= BREAKER_THRESHOLD) {
+      failures = 0;
+      openUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    }
+  },
+  succeed() {
+    failures = 0;
+  },
+  reset() {
+    failures = 0;
+    openUntil = 0;
+  }
+};
+function isDescriptorResponse(response) {
+  if (response.status !== 200) return false;
+  const [mediaType] = (response.headers.get("content-type") ?? "").split(";", 1);
+  return mediaType?.trim().toLowerCase() === TRANSFER_MEDIA_TYPE;
+}
+function objectUrl(raw) {
+  if (typeof raw !== "string") return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password || url.hash) return null;
+  const loopback = url.hostname === "localhost" || url.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(url.hostname);
+  return url.protocol === "https:" || url.protocol === "http:" && loopback ? url : null;
+}
+async function readCapped(body) {
+  if (!body) return null;
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of body) {
+    total += chunk.length;
+    if (total > MAX_TRANSFER_BODY_BYTES) return null;
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+async function readDescriptor(body, maxBytes) {
+  const value = await readCapped(body);
+  if (!isRecord(value)) return null;
+  const { transfer, method, digest, size, expiresAt, lease } = value;
+  if (transfer !== "direct-v1" || method !== "GET" || typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(digest) || typeof size !== "number" || !Number.isSafeInteger(size) || size <= 0 || size > maxBytes || typeof lease !== "string" || !TRANSFER_ID.test(lease) || typeof expiresAt !== "string" || !RFC3339.test(expiresAt) || !(Date.parse(expiresAt) > Date.now())) return null;
+  const url = objectUrl(value.url);
+  return url && { url, digest, size, lease };
+}
+async function readUploadGrant(body, size) {
+  const value = await readCapped(body);
+  if (!isRecord(value) || typeof value.upload !== "string" || !TRANSFER_ID.test(value.upload)) return null;
+  const url = objectUrl(value.url);
+  const declared = value.headers ?? {};
+  if (!url || !isRecord(declared)) return null;
+  const headers = {};
+  for (const [name, header] of Object.entries(declared)) {
+    if (typeof header !== "string") return null;
+    if (name.toLowerCase() !== "content-length") headers[name] = header;
+    else if (header !== String(size)) return null;
+  }
+  return { url, headers, upload: value.upload };
+}
+
 // native/extractions.ts
 var import_node_crypto2 = require("node:crypto");
 var import_promises2 = require("node:fs/promises");
@@ -3107,6 +3193,9 @@ var NativeCacheConflictError = class extends Error {
     this.name = "NativeCacheConflictError";
   }
 };
+var ArtifactIntegrityError = class extends Error {
+};
+var COMPLETION_TIMEOUT_MS = 5e3;
 function environmentOptions(options = {}, env = process.env) {
   if (env.LAYER_CACHE_TOKEN) return { ...options, endpoint: env.LAYER_CACHE_URL ?? options.endpoint, token: env.LAYER_CACHE_TOKEN };
   if (env.TURBO_TOKEN && env.TURBO_API) return { ...options, endpoint: env.TURBO_API, token: env.TURBO_TOKEN };
@@ -3172,6 +3261,19 @@ var NativeCache = class {
   headers(identity) {
     return { Authorization: `Bearer ${this.options.token}`, "X-LayerCache-Compatibility": identity.compatibility };
   }
+  requestSignal(signal) {
+    const timeout = AbortSignal.timeout(this.options.timeoutMs ?? 12e4);
+    return signal ? AbortSignal.any([signal, timeout]) : timeout;
+  }
+  // Selectors are authorized on these routes too, so they keep the artifact URL's query.
+  transferUrl(artifact, suffix) {
+    const url = new URL(artifact);
+    url.pathname = `${url.pathname}/transfers/${suffix}`;
+    return url;
+  }
+  transferHeaders(identity) {
+    return { ...this.headers(identity), "Content-Type": "application/json" };
+  }
   async evict(reserve, keep) {
     if (reserve > this.maxBytes) throw new Error("Artifact exceeds local cache budget");
     const entries = await Promise.all((await (0, import_promises3.readdir)(this.root)).filter((name) => /^native-v1-[a-f0-9]{64}\.tgz$/.test(name)).map(async (name) => {
@@ -3223,37 +3325,8 @@ var NativeCache = class {
       if (!digest) {
         const url = this.url(identity);
         if (!url) return { hit: false, source: "miss", bytes: 0, elapsedMs: performance.now() - started };
-        const response = await fetch(url, { headers: this.headers(identity), redirect: "error", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 12e4)]) : AbortSignal.timeout(this.options.timeoutMs ?? 12e4) });
-        if (response.status === 404) {
-          await response.body?.cancel();
-          return { hit: false, source: "miss", bytes: 0, elapsedMs: performance.now() - started };
-        }
-        if (!response.ok) {
-          await response.body?.cancel();
-          throw new Error(`Team Cache returned HTTP ${response.status}`);
-        }
-        const expected = response.headers.get("x-layercache-digest") ?? "";
-        const size = Number(response.headers.get("content-length"));
-        if (!/^sha256:[a-f0-9]{64}$/.test(expected) || !Number.isSafeInteger(size) || size <= 0 || size > this.maxBytes || !response.body) {
-          await response.body?.cancel();
-          throw new Error("Invalid artifact digest or size");
-        }
-        await this.evict(size);
-        const temporary = `${path}.${(0, import_node_crypto3.randomUUID)()}.partial`;
-        let received = 0;
-        try {
-          await (0, import_promises4.pipeline)(import_node_stream2.Readable.from(response.body), new import_node_stream2.Transform({ transform(chunk, _encoding, callback) {
-            received += chunk.length;
-            callback(received > size ? new Error("Artifact exceeds declared size") : null, chunk);
-          } }), (0, import_node_fs7.createWriteStream)(temporary, { flags: "wx", mode: 384 }), { signal });
-          signal?.throwIfAborted();
-          digest = await digestFile(temporary);
-          if (received !== size || `sha256:${digest}` !== expected) throw new Error("Artifact integrity check failed");
-          await (0, import_promises3.rename)(temporary, path);
-          await (0, import_promises3.writeFile)(`${path}.sha256`, digest, { mode: 384 });
-        } finally {
-          await (0, import_promises3.rm)(temporary, { force: true });
-        }
+        digest = await this.download(identity, url, path, signal);
+        if (!digest) return { hit: false, source: "miss", bytes: 0, elapsedMs: performance.now() - started };
         source = "team";
       }
       await this.evict(0, path);
@@ -3276,6 +3349,184 @@ var NativeCache = class {
       signal?.throwIfAborted();
       return { hit: true, source, path: destination ? (0, import_node_path11.resolve)(destination) : path, digest, bytes: (await (0, import_promises3.stat)(path)).size, elapsedMs: performance.now() - started };
     }, signal);
+  }
+  teamGet(identity, url, optIn, signal) {
+    const headers = optIn ? { ...this.headers(identity), Accept: TRANSFER_MEDIA_TYPE } : this.headers(identity);
+    return fetch(url, { headers, redirect: "error", signal: this.requestSignal(signal) });
+  }
+  // Returns the installed digest, or null on a miss. A direct failure repeats
+  // the request once without the opt-in; the presigned URL is never retried.
+  async download(identity, url, path, signal) {
+    const optIn = directBreaker.allow();
+    const response = await this.teamGet(identity, url, optIn, signal);
+    if (optIn && isDescriptorResponse(response)) {
+      const digest = await this.readDirect(identity, url, response, path, signal);
+      return digest ?? this.installProxied(await this.teamGet(identity, url, false, signal), path, signal);
+    }
+    return this.installProxied(response, path, signal);
+  }
+  async installProxied(response, path, signal) {
+    if (response.status === 404) {
+      await response.body?.cancel();
+      return null;
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`Team Cache returned HTTP ${response.status}`);
+    }
+    const expected = response.headers.get("x-layercache-digest") ?? "";
+    const size = Number(response.headers.get("content-length"));
+    if (!/^sha256:[a-f0-9]{64}$/.test(expected) || !Number.isSafeInteger(size) || size <= 0 || size > this.maxBytes || !response.body) {
+      await response.body?.cancel();
+      throw new Error("Invalid artifact digest or size");
+    }
+    await this.evict(size);
+    return this.installVerified(response.body, path, size, expected, signal);
+  }
+  // Every remote read installs through here: a fresh temporary file per attempt,
+  // renamed into place only after the exact size and digest match.
+  async installVerified(source, path, size, expected, signal) {
+    const temporary = `${path}.${(0, import_node_crypto3.randomUUID)()}.partial`;
+    let received = 0;
+    try {
+      await (0, import_promises4.pipeline)(import_node_stream2.Readable.from(source), new import_node_stream2.Transform({ transform(chunk, _encoding, callback) {
+        received += chunk.length;
+        callback(received > size ? new ArtifactIntegrityError("Artifact exceeds declared size") : null, chunk);
+      } }), (0, import_node_fs7.createWriteStream)(temporary, { flags: "wx", mode: 384 }), { signal });
+      signal?.throwIfAborted();
+      const digest = await digestFile(temporary);
+      if (received !== size || `sha256:${digest}` !== expected) throw new ArtifactIntegrityError("Artifact integrity check failed");
+      await (0, import_promises3.rename)(temporary, path);
+      await (0, import_promises3.writeFile)(`${path}.sha256`, digest, { mode: 384 });
+      return digest;
+    } finally {
+      await (0, import_promises3.rm)(temporary, { force: true });
+    }
+  }
+  // Returns the installed digest, or null when the request must be repeated
+  // without the opt-in. A presigned URL is a credential, so errors from fetching
+  // it are dropped and never wrapped.
+  async readDirect(identity, url, response, path, signal) {
+    const descriptor = await readDescriptor(response.body, this.maxBytes).catch(() => null);
+    signal?.throwIfAborted();
+    if (!descriptor) {
+      directBreaker.fail();
+      return null;
+    }
+    await this.evict(descriptor.size);
+    let object;
+    try {
+      object = await fetch(descriptor.url, { redirect: "error", signal: this.requestSignal(signal) });
+    } catch {
+      signal?.throwIfAborted();
+      directBreaker.fail();
+      return null;
+    }
+    const length = object.headers.get("content-length");
+    if (object.status !== 200 || !object.body || length !== null && Number(length) !== descriptor.size) {
+      await object.body?.cancel().catch(() => void 0);
+      signal?.throwIfAborted();
+      directBreaker.fail();
+      return null;
+    }
+    let transportFailed = false;
+    const body = object.body;
+    const tracked = async function* () {
+      try {
+        yield* body;
+      } catch (error) {
+        transportFailed = true;
+        throw error;
+      }
+    };
+    let digest;
+    try {
+      digest = await this.installVerified(tracked(), path, descriptor.size, descriptor.digest, signal);
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (!transportFailed && !(error instanceof ArtifactIntegrityError)) throw error;
+      directBreaker.fail();
+      return null;
+    }
+    directBreaker.succeed();
+    await this.completeDirectRead(identity, url, descriptor.lease, descriptor.digest, descriptor.size);
+    return digest;
+  }
+  // Best effort: a lost report leaves the read unknown, never a failed restore.
+  async completeDirectRead(identity, url, lease, digest, size) {
+    try {
+      const response = await fetch(this.transferUrl(url, `${encodeURIComponent(lease)}/complete`), {
+        method: "POST",
+        headers: this.transferHeaders(identity),
+        body: JSON.stringify({ digest, size }),
+        redirect: "error",
+        signal: AbortSignal.timeout(COMPLETION_TIMEOUT_MS)
+      });
+      await response.body?.cancel();
+    } catch {
+    }
+  }
+  async publishProxied(identity, url, file, size, signal) {
+    return fetch(url, {
+      method: "PUT",
+      headers: { ...this.headers(identity), "Content-Type": "application/octet-stream", "Content-Length": String(size) },
+      body: await (0, import_node_fs7.openAsBlob)(file),
+      redirect: "error",
+      signal: this.requestSignal(signal)
+    });
+  }
+  // Returns the gateway's final answer for the publication, or null when it
+  // must be repeated through the proxied PUT.
+  async publishDirect(identity, url, file, digest, size, signal) {
+    const admission = await fetch(this.transferUrl(url, "upload"), {
+      method: "POST",
+      headers: this.transferHeaders(identity),
+      body: JSON.stringify({ digest: `sha256:${digest}`, size }),
+      redirect: "error",
+      signal: this.requestSignal(signal)
+    });
+    if (admission.status === 507) return admission;
+    if (admission.status !== 200) {
+      await admission.body?.cancel();
+      return null;
+    }
+    const grant = await readUploadGrant(admission.body, size).catch(() => null);
+    signal?.throwIfAborted();
+    if (!grant) {
+      directBreaker.fail();
+      return null;
+    }
+    const blob = await (0, import_node_fs7.openAsBlob)(file);
+    try {
+      const stored = await fetch(grant.url, { method: "PUT", headers: grant.headers, body: blob, redirect: "error", signal: this.requestSignal(signal) });
+      await stored.body?.cancel();
+      if (stored.status !== 200 && stored.status !== 201 && stored.status !== 204) throw new Error("direct transfer failed");
+    } catch {
+      signal?.throwIfAborted();
+      directBreaker.fail();
+      return null;
+    }
+    let commit;
+    try {
+      commit = await fetch(this.transferUrl(url, `${encodeURIComponent(grant.upload)}/commit`), {
+        method: "POST",
+        headers: this.transferHeaders(identity),
+        redirect: "error",
+        signal: this.requestSignal(signal)
+      });
+    } catch {
+      signal?.throwIfAborted();
+      directBreaker.fail();
+      return null;
+    }
+    if (commit.status === 200 || commit.status === 201 || commit.status === 409) {
+      directBreaker.succeed();
+      return commit;
+    }
+    if (commit.status === 507) return commit;
+    await commit.body?.cancel();
+    if (commit.status !== 401 && commit.status !== 403) directBreaker.fail();
+    return null;
   }
   async save(identity, input) {
     return this.saveInternal(identity, input);
@@ -3320,14 +3571,8 @@ var NativeCache = class {
         }
         const url = this.url(identity);
         if (url) {
-          const blob = await import("node:fs").then((fs2) => fs2.openAsBlob(immutable ? temporary : path));
-          const response = await fetch(url, {
-            method: "PUT",
-            headers: { ...this.headers(identity), "Content-Type": "application/octet-stream", "Content-Length": String(size) },
-            body: blob,
-            redirect: "error",
-            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs ?? 12e4)]) : AbortSignal.timeout(this.options.timeoutMs ?? 12e4)
-          });
+          const file = immutable ? temporary : path;
+          const response = (directBreaker.allow() ? await this.publishDirect(identity, url, file, digest, size, signal) : null) ?? await this.publishProxied(identity, url, file, size, signal);
           await response.body?.cancel();
           if (!response.ok && response.status !== 409) throw new Error(`Team Cache upload returned HTTP ${response.status}; ${immutable ? "recording not committed" : "Local Cache retained"}`);
           if (response.status === 409) {
