@@ -66,6 +66,9 @@ type DirectTransferPolicy struct {
 	Read   bool
 	Write  bool
 	MaxURL time.Duration
+	// TurboRedirect lets the gateway answer stock Turbo reads with a redirect
+	// to a presigned URL. It only applies while Read is on.
+	TurboRedirect bool
 }
 
 // Store is the cloud persistence interface used by protocol gateways. Put is

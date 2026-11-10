@@ -120,6 +120,10 @@ type DirectTransfer struct {
 	// MaxURLSeconds caps every presigned URL, and so bounds how long a revoked
 	// member can still start a direct read. Zero means 120 seconds.
 	MaxURLSeconds int `json:"maxURLSeconds,omitempty"`
+	// TurboRedirect answers GETs from stock Turbo binaries with a 302 to a
+	// presigned object URL. Those reads skip the gateway's verification, so it
+	// is separate from Read and needs Read on.
+	TurboRedirect bool `json:"turboRedirect,omitempty"`
 }
 
 // MaximumDirectTransferURLSeconds keeps revocation of direct reads prompt.
@@ -470,6 +474,8 @@ func (cfg Config) Validate() error {
 		return fmt.Errorf("directTransfer.maxURLSeconds must be from 0 through %d", MaximumDirectTransferURLSeconds)
 	} else if (direct.Read || direct.Write) && (cfg.Role != "team" || cfg.CloudS3Endpoint == "") {
 		return errors.New("directTransfer requires a Team role with hosted PostgreSQL/S3 storage")
+	} else if direct.TurboRedirect && !direct.Read {
+		return errors.New("directTransfer.turboRedirect requires directTransfer.read")
 	}
 	seenAdapters := make(map[string]struct{}, len(cfg.BypassAdapters))
 	for _, adapter := range cfg.BypassAdapters {
