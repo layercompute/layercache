@@ -8,7 +8,12 @@ under complete input identities, while current runtime checks remain distinct.
 ## Language
 
 **Standalone cache**:
-An open-source cache operated without a Layer Cache account, on a local machine or one user-managed remote host.
+An open-source cache operated without a Layer Cache account, using the user's
+own storage and explicitly configured user-managed remote cache hosts. Internal
+storage, removable SSDs and manual self-hosted SSH cache access remain free OSS.
+The current CLI supports one private remote per configuration; optional SSD
+routing, an SSH peer workflow and broader manual placement are [planned](docs/personal-storage-design.md),
+not delivered capabilities. That implementation limit is not a paid entitlement.
 _Avoid_: Free Team Cache, account-required Local Cache
 
 **Cloud account**:
@@ -36,8 +41,22 @@ The portion of a storage plan's capacity reserved for one project's cache. Alloc
 _Avoid_: Current usage, reclaimed storage
 
 **Local Cache**:
-A bounded cache on one machine that stores reusable artifacts from authorized visibility tiers.
+A bounded cache coordinated on one machine that stores reusable artifacts from
+authorized visibility tiers. Its proposed storage locations can span internal
+and removable filesystems without changing artifact authority.
 _Avoid_: Local Store, local tier
+
+**Storage location**:
+An explicitly configured place for authorized cache bytes, such as an internal
+filesystem, removable SSD or authenticated remote cache host. Location does not
+determine Personal, Team or Public access and does not establish retention.
+_Avoid_: Visibility tier, backup
+
+**Materialization**:
+An owned filesystem view produced from a verified immutable artifact. Read-only
+shared paths need a consumer-lifetime lease; writable views need isolated
+inodes through a qualified native CoW clone or an ordinary accounted copy.
+_Avoid_: Hardlinked writable output, retained artifact
 
 **Personal Cache**:
 A private cache owned by one stable user identity and reusable across that user's machines and authorized CI.
