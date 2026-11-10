@@ -55,7 +55,7 @@ go test -count=1 ./...
 ```
 
 Keep race checks and vet when they are part of the lane's contract. The
-[Go cache contract](https://pkg.go.dev/cmd/go@go1.25.13#hdr-Build_and_test_caching)
+[Go cache contract](https://pkg.go.dev/cmd/go@go1.26.10#hdr-Build_and_test_caching)
 describes the distinction. Use the pinned `actions/setup-go` cache integration
 before building another archive client. Its native key includes Go version,
 OS/architecture and dependency-file hashes. Add the actual runner image and

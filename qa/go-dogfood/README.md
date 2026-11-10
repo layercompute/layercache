@@ -6,7 +6,7 @@ client and an account-free loopback LayerCache daemon. Go owns compiler keys
 and executes every test with `-count=1`. No workflow, installed daemon,
 operator configuration or host cache is changed.
 
-Use Linux amd64, the repository's Go 1.25.13 and Node 24, and installed GNU tar
+Use Linux amd64, the repository's Go 1.26.10 and Node 24, and installed GNU tar
 and zstd. Install the existing Action's locked dependencies if needed:
 
 ```sh
