@@ -145,11 +145,11 @@ try {
   const failed = workspace('failed', files);
   const goContext = JSON.parse((await execute('go-context', 'go', ['env', '-json', 'GOVERSION', 'GOOS', 'GOARCH', 'GOAMD64',
     'CGO_ENABLED', 'GOFLAGS', 'GOEXPERIMENT', 'GOTOOLCHAIN', 'GOCACHEPROG'], { cwd: producer, env: goEnv(producer) })).text);
-  assert.equal(goContext.GOVERSION, 'go1.25.13', 'use the repository pinned Go');
+  assert.equal(goContext.GOVERSION, 'go1.26.10', 'use the repository pinned Go');
   assert.equal(goContext.GOAMD64, 'v1', 'baseline native architecture profile');
   assert.equal(goContext.GOFLAGS, '', 'baseline has no extra compiler flags or trimpath');
   assert.equal(goContext.GOEXPERIMENT, '', 'baseline has no compiler experiments');
-  const profile = `linux-amd64-go1.25.13-v1-cgo${goContext.CGO_ENABLED}-actions-v1-schema1`;
+  const profile = `linux-amd64-go1.26.10-v1-cgo${goContext.CGO_ENABLED}-actions-v1-schema1`;
   const coldBuild = await go('cold-build', producer, ['build', '-x', './internal/compatibility']);
   const coldTest = await go('cold-test', producer, ['test', '-x', '-v', '-count=1', './internal/compatibility']);
   assert.ok(coldBuild.compilerInvocations > 1);

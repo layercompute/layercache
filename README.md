@@ -92,7 +92,7 @@ guidance.
 
 ## Build and configure
 
-The pinned development toolchain is Go 1.25.13, Node.js 24.13.0, and pnpm 10.34.5.
+The pinned development toolchain is Go 1.26.10, Node.js 24.13.0, and pnpm 10.34.5.
 
 ```bash
 mise install
