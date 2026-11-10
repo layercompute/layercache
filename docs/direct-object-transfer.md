@@ -248,6 +248,38 @@ descriptor, reads from R2, verifies, and fills the bounded local store with
 `PutVerified`. Repeat reads then never leave the machine. Native binaries reach it
 through `action/setup`'s local daemon, not by talking to the gateway directly.
 
+## Stock Turbo redirect
+
+Hosted CI runs the stock Turbo binary, which cannot read a descriptor. With
+`turboRedirect` on, the gateway answers its `GET` with a `302` to a presigned
+object URL. It runs the same lookup, lease and membership check as a descriptor.
+Tested behaviour for each pinned Turbo version is in
+[`qa/turbo-redirect/RESULT.md`](../qa/turbo-redirect/RESULT.md).
+
+Only a `User-Agent` of `turbo <version>` at or above 2.9.14 gets the redirect,
+because LayerCache's own clients reject cross-origin redirects. These stay on the
+proxied path:
+
+- `PUT`. Turbo treats a 3xx on upload as success and stores nothing.
+- `HEAD`. A URL signed for `GET` fails on `HEAD`.
+- Signed artifacts. Turbo reads `x-artifact-tag` from the final response, and
+  object storage cannot send it.
+- Public-origin entries, as with descriptors.
+
+These reads skip the gateway's digest check, and Turbo does not check one itself.
+An altered object that is still a valid archive restores as a normal hit.
+
+Turbo reports nothing when a redirected restore fails. It rebuilds and uploads. The
+gateway treats a `PUT` within an hour of a redirect for the same key as that
+failure, and the next read of that key is proxied. The proxied read verifies the
+object and deletes a corrupt entry, so the following rebuild can replace it. Three
+such failures within 10 minutes stop all redirects for that project for 10
+minutes. This state is per gateway process and resets on restart.
+
+Turbo's Run Summary still decides hit or miss. Object storage cannot send
+`x-artifact-duration`, so Turbo reports `timeSaved: 0`. The redirect's observation
+carries the entry's recorded build time, and reconciliation uses it for that hit.
+
 ## Switch, rollout and recovery
 
 - **Pool config:** `directTransfer: {read: bool, write: bool, maxURLSeconds: int}`
@@ -257,6 +289,9 @@ through `action/setup`'s local daemon, not by talking to the gateway directly.
   turning it on or off only needs a restart.
 - **Env override:** `LAYER_CACHE_DIRECT_TRANSFER=off` on the gateway forces it off
   without editing config.
+- **Turbo redirect:** `directTransfer.turboRedirect` needs `read` and is off by
+  default. `LAYER_CACHE_TURBO_REDIRECT=off` on the gateway forces only the redirect
+  off. See [Stock Turbo redirect](#stock-turbo-redirect).
 - **Credentials:** presigning needs the pool's static S3 key with `GetObject` and
   `PutObject`. With chain or temporary credentials, direct transfer stays off.
 - **Rollout:** enable read and write on one low-traffic operator project, watch

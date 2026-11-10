@@ -261,3 +261,14 @@ func TestRemoteOnlyRequiresClientConfigurationAndExactRemote(t *testing.T) {
 		t.Fatal("remoteOnly accepted an operational storage backend")
 	}
 }
+
+func TestTurboRedirectRequiresDirectRead(t *testing.T) {
+	cfg, err := config.Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DirectTransfer = config.DirectTransfer{TurboRedirect: true}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "turboRedirect") {
+		t.Fatalf("Validate() = %v, want a turboRedirect error", err)
+	}
+}

@@ -49,6 +49,7 @@ type publicBuildCoordinator interface {
 }
 
 type Server struct {
+	turboRedirects    *turboRedirectGuard
 	projectAuthority  ProjectAuthority
 	storagePool       StoragePoolConfig
 	config            config.Config
@@ -162,6 +163,7 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 		return nil, fmt.Errorf("generate runtime instance identity: %w", err)
 	}
 	server := &Server{
+		turboRedirects:   newTurboRedirectGuard(),
 		projectAuthority: authority,
 		config:           cfg, runtimeLock: runtimeLock, store: localStore, localStore: localStore, mux: http.NewServeMux(), startedAt: time.Now().UTC(),
 		teamToken: cfg.TeamToken, runtimePID: os.Getpid(), runtimeInstanceID: "runtime-" + runtimeToken,
@@ -677,6 +679,7 @@ func (server *Server) requestCompatibility(request *http.Request) (string, error
 func (server *Server) putTurbo(writer http.ResponseWriter, request *http.Request, key artifact.Key) {
 	startedAt := time.Now().UTC()
 	defer request.Body.Close()
+	server.observeTurboUpload(key, startedAt)
 	metadata := turboRequestMetadata(request)
 	maximum, err := server.cacheLimit(request.Context())
 	if err != nil {
@@ -748,8 +751,15 @@ func (server *Server) getTurbo(writer http.ResponseWriter, request *http.Request
 		// The body differs between the descriptor and the proxied bytes. With
 		// direct read off, the response stays exactly today's.
 		writer.Header().Add("Vary", "Accept")
-		if !head && directtransfer.Accepts(request.Header) && server.serveDirectTurboRead(writer, request, key, startedAt) {
+		optedIn := directtransfer.Accepts(request.Header)
+		if !head && optedIn && server.serveDirectTurboRead(writer, request, key, startedAt) {
 			return
+		}
+		if server.cloudStore.DirectTransferPolicy().TurboRedirect {
+			writer.Header().Add("Vary", "User-Agent")
+			if !head && !optedIn && server.serveTurboRedirect(writer, request, key, startedAt) {
+				return
+			}
 		}
 	}
 	if head && server.cloudStore != nil && server.team == nil {

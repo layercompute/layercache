@@ -104,6 +104,24 @@ func (repository *SQLiteRepository) initialize() error {
 	if err := repository.ensureFinalOutcomeColumns(); err != nil {
 		return err
 	}
+	return repository.ensureTurboObservationColumns()
+}
+
+func (repository *SQLiteRepository) ensureTurboObservationColumns() error {
+	var present int
+	if err := repository.database.QueryRow(
+		`SELECT count(*) FROM pragma_table_info('measurement_turbo_observations_v1') WHERE name = 'producer_duration_ns'`,
+	).Scan(&present); err != nil {
+		return fmt.Errorf("inspect Turbo observation columns: %w", err)
+	}
+	if present > 0 {
+		return nil
+	}
+	if _, err := repository.database.Exec(
+		`ALTER TABLE measurement_turbo_observations_v1 ADD COLUMN producer_duration_ns INTEGER CHECK (producer_duration_ns >= 0)`,
+	); err != nil {
+		return fmt.Errorf("add Turbo observation producer duration: %w", err)
+	}
 	return nil
 }
 

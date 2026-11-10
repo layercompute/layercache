@@ -458,3 +458,151 @@ func TestLocalDaemonPublishesAndRestoresDirectlyThroughTheHostedGateway(t *testi
 		t.Fatalf("repeat local read = %d after %d gateway requests", response.Code, before)
 	}
 }
+
+var stockTurbo = http.Header{"User-Agent": {"turbo 2.10.12 1.97.0-nightly linux x86_64"}}
+
+// getWithoutFollowing shows the gateway's own answer, as a client would see it
+// before following a redirect.
+func (gateway *directGateway) getWithoutFollowing(t *testing.T, method, path, token string, header http.Header) *http.Response {
+	t.Helper()
+	request := authenticatedRequest(t, token, method, gateway.endpoint.URL+path, nil)
+	request.Header.Set("X-LayerCache-Compatibility", gateway.cfg.CompatibilityID)
+	for name := range header {
+		request.Header.Set(name, header.Get(name))
+	}
+	client := http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(directtransfer.Redact(err))
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	return response
+}
+
+func TestHostedGatewayRedirectsStockTurboReadsToObjectStorage(t *testing.T) {
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	gateway := newDirectGateway(t, config.DirectTransfer{Read: true, TurboRedirect: true, MaxURLSeconds: 60})
+	writer := gateway.token(t, "writer", access.CapabilityWrite, time.Hour)
+	reader := gateway.token(t, "reader", access.CapabilityRead, time.Hour)
+	payload := bytes.Repeat([]byte("stock turbo read"), 2048)
+	if response := gateway.do(t, http.MethodPut, "/v8/artifacts/seeded", writer, payload, stockTurbo); response.StatusCode != http.StatusOK {
+		t.Fatalf("PUT = %d, want the proxied upload", response.StatusCode)
+	}
+
+	redirect := gateway.getWithoutFollowing(t, http.MethodGet, "/v8/artifacts/seeded", reader, stockTurbo)
+	location := redirect.Header.Get("Location")
+	if redirect.StatusCode != http.StatusFound || !strings.Contains(location, "X-Amz-Signature") {
+		t.Fatalf("stock Turbo GET = %d, redirected: %v", redirect.StatusCode, location != "")
+	}
+	if redirect.Header.Get("Cache-Control") != "no-store" || !strings.Contains(strings.Join(redirect.Header.Values("Vary"), ","), "User-Agent") {
+		t.Fatalf("redirect caching headers = %q, Vary %q", redirect.Header.Get("Cache-Control"), redirect.Header.Values("Vary"))
+	}
+	object, err := http.Get(location)
+	if err != nil {
+		t.Fatal(directtransfer.Redact(err))
+	}
+	body, _ := io.ReadAll(object.Body)
+	object.Body.Close()
+	if object.StatusCode != http.StatusOK || !bytes.Equal(body, payload) {
+		t.Fatalf("presigned GET = %d, %d bytes", object.StatusCode, len(body))
+	}
+
+	for name, header := range map[string]http.Header{
+		"no user agent":     {"User-Agent": {""}},
+		"another client":    {"User-Agent": {"Go-http-client/1.1"}},
+		"untested Turbo":    {"User-Agent": {"turbo 2.9.13 1.95.0-nightly linux x86_64"}},
+		"pre-release Turbo": {"User-Agent": {"turbo 2.10.12-canary.1 1.97.0 linux x86_64"}},
+	} {
+		response := gateway.getWithoutFollowing(t, http.MethodGet, "/v8/artifacts/seeded", reader, header)
+		proxied, _ := io.ReadAll(response.Body)
+		if response.StatusCode != http.StatusOK || !bytes.Equal(proxied, payload) {
+			t.Fatalf("%s GET = %d, %d bytes, want the proxied read", name, response.StatusCode, len(proxied))
+		}
+	}
+	descriptor := decodeDescriptor(t, gateway.do(t, http.MethodGet, "/v8/artifacts/seeded", reader, nil, http.Header{
+		"Accept": {directtransfer.MediaType}, "User-Agent": {stockTurbo.Get("User-Agent")},
+	}))
+	if descriptor.Lease == "" {
+		t.Fatal("an opted-in client lost its descriptor")
+	}
+
+	probe := gateway.getWithoutFollowing(t, http.MethodHead, "/v8/artifacts/seeded", reader, stockTurbo)
+	if probe.StatusCode != http.StatusOK || probe.Header.Get("Location") != "" ||
+		probe.Header.Get("Content-Length") != strconv.Itoa(len(payload)) {
+		t.Fatalf("stock Turbo HEAD = %d, Location set: %v", probe.StatusCode, probe.Header.Get("Location") != "")
+	}
+	if miss := gateway.getWithoutFollowing(t, http.MethodGet, "/v8/artifacts/absent", reader, stockTurbo); miss.StatusCode != http.StatusNotFound {
+		t.Fatalf("stock Turbo miss = %d", miss.StatusCode)
+	}
+
+	for _, leaked := range []string{"X-Amz-Signature", "X-Amz-Credential", gateway.cfg.CloudS3SecretKey} {
+		if strings.Contains(logs.String(), leaked) {
+			t.Fatalf("gateway logs contain presigned URL material %q", leaked)
+		}
+	}
+}
+
+func TestSignedTurboArtifactsStayProxied(t *testing.T) {
+	gateway := newDirectGateway(t, config.DirectTransfer{Read: true, TurboRedirect: true})
+	writer := gateway.token(t, "writer", access.CapabilityWrite, time.Hour)
+	payload := []byte("signed artifact")
+	upload := http.Header{"X-Artifact-Tag": {"signature"}, "User-Agent": {stockTurbo.Get("User-Agent")}}
+	if response := gateway.do(t, http.MethodPut, "/v8/artifacts/signed", writer, payload, upload); response.StatusCode != http.StatusOK {
+		t.Fatalf("PUT = %d", response.StatusCode)
+	}
+	response := gateway.getWithoutFollowing(t, http.MethodGet, "/v8/artifacts/signed", writer, stockTurbo)
+	body, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusOK || !bytes.Equal(body, payload) || response.Header.Get("x-artifact-tag") != "signature" {
+		t.Fatalf("signed GET = %d, %d bytes, tag %q", response.StatusCode, len(body), response.Header.Get("x-artifact-tag"))
+	}
+}
+
+func TestUploadAfterATurboRedirectProxiesTheNextRead(t *testing.T) {
+	gateway := newDirectGateway(t, config.DirectTransfer{Read: true, TurboRedirect: true})
+	writer := gateway.token(t, "writer", access.CapabilityWrite, time.Hour)
+	payload := []byte("failed restore")
+	upload := func(step string) {
+		t.Helper()
+		response := gateway.do(t, http.MethodPut, "/v8/artifacts/failed", writer, payload, stockTurbo)
+		if response.StatusCode != http.StatusOK {
+			message, _ := io.ReadAll(response.Body)
+			t.Fatalf("%s PUT = %d: %s", step, response.StatusCode, message)
+		}
+	}
+	upload("seeding")
+	if first := gateway.getWithoutFollowing(t, http.MethodGet, "/v8/artifacts/failed", writer, stockTurbo); first.StatusCode != http.StatusFound {
+		message, _ := io.ReadAll(first.Body)
+		t.Fatalf("first GET = %d: %s", first.StatusCode, message)
+	}
+	upload("failure-signalling")
+	second := gateway.getWithoutFollowing(t, http.MethodGet, "/v8/artifacts/failed", writer, stockTurbo)
+	body, _ := io.ReadAll(second.Body)
+	if second.StatusCode != http.StatusOK || !bytes.Equal(body, payload) {
+		t.Fatalf("GET after a suspected failure = %d, %d bytes (%q), want the verified proxied read", second.StatusCode, len(body), body)
+	}
+}
+
+func TestTurboRedirectStaysOffWithoutItsSwitch(t *testing.T) {
+	for name, setup := range map[string]func(t *testing.T) config.DirectTransfer{
+		"read only": func(*testing.T) config.DirectTransfer { return config.DirectTransfer{Read: true} },
+		"environment override": func(t *testing.T) config.DirectTransfer {
+			t.Setenv("LAYER_CACHE_TURBO_REDIRECT", "off")
+			return config.DirectTransfer{Read: true, TurboRedirect: true}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gateway := newDirectGateway(t, setup(t))
+			writer := gateway.token(t, "writer", access.CapabilityWrite, time.Hour)
+			payload := []byte("stays proxied")
+			gateway.do(t, http.MethodPut, "/v8/artifacts/proxied", writer, payload, stockTurbo)
+			response := gateway.getWithoutFollowing(t, http.MethodGet, "/v8/artifacts/proxied", writer, stockTurbo)
+			body, _ := io.ReadAll(response.Body)
+			if response.StatusCode != http.StatusOK || !bytes.Equal(body, payload) ||
+				strings.Contains(strings.Join(response.Header.Values("Vary"), ","), "User-Agent") {
+				t.Fatalf("GET = %d, %d bytes, Vary %q", response.StatusCode, len(body), response.Header.Values("Vary"))
+			}
+		})
+	}
+}
