@@ -69,12 +69,18 @@ See the [migration procedure](cloud-migration.md) before retiring old storage.
 
 ## Standalone and managed service
 
-The open-source CLI and daemon work without a Layer Cache account, with local
-storage or one user-managed remote cache host. Remote access still needs the
-operator's authentication and network controls.
+The open-source CLI and daemon work without a Layer Cache account. Users' own
+internal storage, removable SSDs and explicitly configured self-hosted SSH cache
+access stay free OSS. Remote access still needs the operator's authentication
+and network controls. The current implementation has one Local root and one
+private remote per configuration. Optional SSD routing, an SSH peer workflow
+and future manual routing are planned in the [personal storage design](personal-storage-design.md);
+this implementation limit is not a paid host-count entitlement.
 
-The managed service requires signup and a scoped token for Team collaboration,
-multiple enrolled cache hosts and Layer Cache-hosted storage. An account can
+The managed service requires signup and a scoped token for managed Team
+collaboration, automatic host enrollment/coordination and Layer Cache-hosted
+storage. This service policy does not prohibit self-hosted collaboration or
+require an account for manually configured user-owned storage. An account can
 bring its own hosts, choose hosted storage, or combine them. Personal, Team and
 trusted-publisher Public visibility remain separate from the hosting choice.
 The CLI connects to the cloud service with that authority; the account controls

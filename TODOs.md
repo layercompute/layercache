@@ -12,6 +12,13 @@ through established build/test/model clients. Prioritize expensive immutable
 outputs, bounded native stores and run-owned generated data. Measure net benefit
 before adding another integration. Transparent sharing of arbitrary mutable
 workspaces and filesystem migration are outside the current product scope.
+The October 23 storage review keeps manually configured internal, removable SSD
+and self-hosted remote storage in free, account-free OSS. Prioritize one bounded
+local owner and optional SSD reuse before a personal mesh or filesystem engine;
+qualify native CoW and owned immutable materializations before writable sharing.
+Existing correctness, required handoff and operation-measurement work stays ahead
+of broader adoption. The [personal storage design](docs/personal-storage-design.md)
+records the proposal; implementation and actual-device savings remain open.
 
 ## P0: reliable compute and storage reuse
 
@@ -191,8 +198,33 @@ workspaces and filesystem migration are outside the current product scope.
   were dispatched to populate inventory.
 
 - [ ] **Share one bounded local artifact cache across worktrees and projects.**
-  Owner: LayerCache storage/native clients. The latest user outcome adds local
-  hot-byte reuse to hosted R2 storage: fetch a compatible immutable artifact once,
+  Owner: LayerCache storage/native clients. October 23 user outcome: keep the
+  Mac's internal working set small, reuse optional artifacts directly from an
+  attached SSD, and share compatible results with a manually configured
+  self-hosted SSH cache and VM without a LayerCache account or subscription.
+  [Design and milestone acceptance](docs/personal-storage-design.md#milestones-and-acceptance)
+  extend this existing item rather than create a second backlog. Source research
+  is recorded in the [OSS/storage audit](docs/research/personal-storage-oss-20261023.md).
+  M0 design/source review is complete: LayerCache baseline and cloned LayerFS
+  revision are recorded, local documentation links/anchors and whitespace checks
+  pass, and independent source/acceptance reviews have no remaining findings.
+  This is documentation evidence only; no runtime or hardware trial was run.
+  Workload-specific estimates and actual-device measurements remain open;
+  establish incremental benefit after existing native sharing before offload.
+  M1-M5 runtime acceptance stays open.
+  M1: one scoped local owner and budget through Turbo, including an explicit
+  transition from the separate TypeScript native archive/extraction owner.
+  M2: one optional enrolled SSD pool with verified offload, direct reads,
+  per-filesystem accounting, missing-volume refusal and interruption recovery.
+  M3: one explicitly configured account-free self-hosted endpoint, with Mac/VM
+  producer-consumer qualification, scoped credentials and bounded outage fallback.
+  Completion requires authorized cross-worktree reuse, scope isolation, concurrent
+  single-fetch behavior, corruption/quota/restart/active-reader controls and
+  sustained measured internal allocation reduction on a representative workload.
+  Record full command time, temporary peaks and offline tradeoffs. Source gates,
+  installed binaries and actual SSD/SSH/VM adoption are separate receipts; none
+  of M1-M3 is completed by this design-only change. Reuse local hot bytes
+  alongside hosted R2 storage: fetch a compatible immutable artifact once,
   reuse it across workspaces, and avoid multiplying independent disk budgets.
   Reuse the existing content-addressed store, verified read-through, LRU and
   reader protection. Start with the complete native Turbo path, then connect
@@ -539,8 +571,25 @@ workspaces and filesystem migration are outside the current product scope.
   records source qualification, not a released CLI or reclaimed storage.
 
 - [ ] **Prevent repeated local outputs and abandoned build-slot growth.**
-  Owner: LayerCache, coordinated with application execution owners. User outcome:
-  materially less compute and allocated storage across short-lived workspaces.
+  Owner: LayerCache storage/materialization, coordinated with native and
+  application execution owners. October 23 user outcome: share immutable
+  expanded data across worktrees and avoid repeated extraction or full copies
+  without allowing one consumer to mutate another's bytes. M4 in the
+  [personal storage design](docs/personal-storage-design.md#milestones-and-acceptance)
+  covers leased read-only generations, versioned safe tree identity and native
+  APFS/Btrfs/XFS CoW adapters with explicit require-clone versus copy-fallback
+  policy. Preserve native package-store sharing; ordinary permission bits do not
+  make hardlinked writable outputs safe. Accept only after mutation, mmap,
+  truncation, rename, mode/metadata, concurrent divergence, cross-volume fallback,
+  ENOSPC, cancellation, crash/restart and lease/GC isolation controls, plus total
+  allocation and full-command evidence including packed and expanded baselines.
+  M5 is a conditional source-pinned OSS workspace experiment only after M4
+  evidence justifies it: evaluate LayerFS and alternatives against durability,
+  platform, bounded-history/GC, native semantics and dependency-license gates.
+  [The source audit](docs/research/personal-storage-oss-20261023.md) records
+  LayerFS's current disposable Linux Store limits; no engine is adopted or run.
+  Deliver materially less compute and allocated storage across short-lived
+  workspaces.
   Rank immutable final outputs and native package/task caches before writable
   workspace sharing. Use complete native identities and one bounded managed
   copy where existing clients support it. New managed materializations require
@@ -761,10 +810,21 @@ workspaces and filesystem migration are outside the current product scope.
   network/setup cost before enrolling another transport.
 
 - [ ] **Keep standalone OSS independent from managed cloud enrollment.**
-  Owner: LayerCache product and control plane. Standalone CLI/daemon use is
-  account-free on local storage or one self-hosted remote. Signup and scoped
-  tokens authorize Team collaboration, multiple managed cache hosts and hosted
-  storage. Accounts can bring their own hosts, choose hosted storage, or both.
+  Owner: LayerCache product and control plane. October 23 product decision:
+  users' own internal storage, removable SSDs and explicitly configured
+  self-hosted SSH cache endpoints remain free, account-free OSS, with no online
+  entitlement check for those capabilities. One private remote per configuration
+  is the current implementation limit, not a paid host-count restriction.
+  Future manual routing must stay OSS; automatic managed enrollment/coordination
+  and LayerCache-hosted storage retain their cloud-service gates. Signup and
+  scoped tokens authorize the managed service's collaboration and capacity;
+  they do not prohibit self-hosted collaboration. Accounts can bring their own
+  hosts, choose hosted storage, or both. Acceptance: consistent product docs,
+  account-free internal+SSD+one-peer qualification in M1-M3 of the
+  [design](docs/personal-storage-design.md#milestones-and-acceptance), and refusal
+  to turn an unavailable cloud login into a requirement for local native builds.
+  Documentation is updated; runtime routing, enrollment and device acceptance
+  remain open.
   Preserve Personal/Team/Public visibility and complete native input context.
   Document the boundary now; qualify account enrollment, host registration,
   project authorization, token revocation and storage routing before claiming a

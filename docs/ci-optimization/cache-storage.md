@@ -96,10 +96,13 @@ administration tools; do not build another storage controller in each workflow.
 
 ## Separate storage location from access
 
-Standalone OSS use is account-free on local storage or one user-managed remote
-host. Managed collaboration, enrolled multiple hosts and hosted capacity use
-signup and scoped tokens. Authentication and network controls still apply to
-self-managed remote access.
+Users' own internal storage, removable SSDs and explicitly configured self-hosted
+SSH caches remain free, account-free OSS. The current CLI has one local root and
+one private remote per configuration; optional SSD routing, an SSH peer workflow
+and shared CoW materializations are proposed in the [personal storage design](../personal-storage-design.md).
+Managed collaboration, automatic host enrollment/coordination and hosted
+capacity use signup and scoped tokens. Authentication and network controls
+still apply to self-managed remote access.
 
 Personal, Team and trusted-publisher Public define visibility. They do not name
 different disk technologies. Keep private project/profile boundaries and full
