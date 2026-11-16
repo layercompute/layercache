@@ -26,7 +26,8 @@ sys.dont_write_bytecode = True
 PROJECT = "github.com/layercache/xcode-standalone-qa"
 GENERATION = "xcode-snapshots/qualification-1"
 BUDGET = 512 << 20
-EXPECTED = {"xcodeBuild": "27A266a", "sdkBuild": "24A430", "hostBuild": "26A434"}
+EXPECTED = {"xcodeBuild": "27A266a", "sdkBuild": "24A430"}
+REVIEWED_HOSTS = {"26A434": "27.0.1", "26B123": "27.2"}
 
 
 def require(condition, message):
@@ -300,7 +301,9 @@ class Probe:
         require(facts["archiveNodeVersion"] == "v24.13.0", "unexpected archive Node runtime")
         require(facts["hostArchitecture"] == "arm64" and facts["xcodeVersion"] == "Xcode 27.0", "expected Xcode 27 arm64 host")
         require(all(facts[key] == value for key, value in EXPECTED.items()), "runner differs from requested Xcode Cloud build/SDK/OS profile")
-        require(facts["sdkVersion"] == "27.0" and facts["hostVersion"] == "27.0.1", "unexpected SDK/host version")
+        require(facts["sdkVersion"] == "27.0", "unexpected SDK version")
+        require(REVIEWED_HOSTS.get(facts["hostBuild"]) == facts["hostVersion"],
+                f"unreviewed host build {facts['hostBuild']} version {facts['hostVersion']}")
         compiler_facts = {key: value for key, value in facts.items() if key != "archiveNodeVersion"}
         self.profile = "xcode-standalone-v1-" + hashlib.sha256(json.dumps(compiler_facts, sort_keys=True).encode()).hexdigest()
 

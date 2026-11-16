@@ -22,6 +22,52 @@ spec.loader.exec_module(probe)
 
 
 class EvidenceControls(unittest.TestCase):
+    def fingerprint(self, host_build, host_version, **overrides):
+        outputs = {"clang-path": "/fixture/clang", "xcodebuild-path": "/fixture/xcodebuild",
+                   "xcode-version": "Xcode 27.0\nBuild version 27A266a\n",
+                   "clang-version": "Apple clang fixture", "sdk-version": "27.0", "sdk-build": "24A430",
+                   "host-version": host_version, "host-build": host_build,
+                   "host-architecture": "arm64", "node-version": "v24.13.0"}
+        outputs.update(overrides)
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = probe.Probe(Path("unused"), Path("unused"), Path(temporary) / "evidence")
+            try:
+                with mock.patch.object(fixture, "run", side_effect=lambda name, _: outputs[name]), \
+                     mock.patch.object(probe, "digest", return_value="0" * 64):
+                    fixture.fingerprint()
+                return fixture.profile, json.loads((fixture.root / "toolchain.json").read_text())
+            finally:
+                fixture.close()
+
+    def test_fingerprint_accepts_both_reviewed_hosts_with_distinct_profiles(self):
+        profiles = set()
+        for build, version in (("26A434", "27.0.1"), ("26B123", "27.2")):
+            with self.subTest(build=build, version=version):
+                profile, facts = self.fingerprint(build, version)
+                self.assertEqual((facts["hostBuild"], facts["hostVersion"]), (build, version))
+                self.assertRegex(profile, r"^xcode-standalone-v1-[0-9a-f]{64}$")
+                profiles.add(profile)
+        self.assertEqual(len(profiles), 2)
+
+    def test_fingerprint_rejects_unknown_host_build(self):
+        with self.assertRaisesRegex(RuntimeError, r"unreviewed host build 26B999 version 27\.2"):
+            self.fingerprint("26B999", "27.2")
+
+    def test_fingerprint_rejects_reviewed_build_with_wrong_version(self):
+        for build, version in (("26A434", "27.2"), ("26B123", "27.0.1")):
+            with self.subTest(build=build, version=version):
+                with self.assertRaisesRegex(RuntimeError, f"unreviewed host build {build} version {version}"):
+                    self.fingerprint(build, version)
+
+    def test_fingerprint_keeps_exact_compiler_architecture_and_node_checks(self):
+        for name, value in (("xcode-version", "Xcode 27.0\nBuild version 27A999"),
+                            ("xcode-version", "Xcode 27.1\nBuild version 27A266a"),
+                            ("sdk-build", "24A999"), ("sdk-version", "27.1"),
+                            ("host-architecture", "x86_64"), ("node-version", "v24.13.1")):
+            with self.subTest(name=name, value=value):
+                with self.assertRaises(RuntimeError):
+                    self.fingerprint("26B123", "27.2", **{name: value})
+
     def test_archive_node_version_is_fixed_semver_only(self):
         self.assertEqual(probe.node_runtime_version("v24.13.0\n"), "v24.13.0")
         for output in ("v24.13.0 secret", "v24.13.0\n/private/secret", "24.13.0", "v024.13.0", "v24.13.0-canary"):
