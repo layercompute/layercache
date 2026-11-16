@@ -60,11 +60,14 @@ Only the macOS workflow can qualify the actual Apple compiler.
 standalone lifecycle and the existing native archive client. The normal
 `Xcode compiler cache` workflow adds one bounded `xcode-27` job alongside the
 unchanged Xcode 26 pressure fixture. The selected release is checked against
-actual Xcode build `27A266a`, macOS build `26A434` and iPhoneSimulator SDK build
-`24A430`. The job records compiler version and executable SHA256, host and target
-facts, minimum iOS 16.4 and Release `-O2`. A runner label alone cannot pass it.
+actual Xcode 27.0 build `27A266a` and iPhoneSimulator 27.0 SDK build `24A430`.
+Reviewed hosts are macOS 27.0.1 build `26A434` and macOS 27.2 build `26B123`;
+each host build must match its exact version. The job records compiler version
+and executable SHA256, host and target facts, minimum iOS 16.4 and Release `-O2`.
+A runner label alone cannot pass it.
 The [published runner image](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
-was checked on 2026-10-20; image changes require reviewing the expected profile.
+was reviewed on 16 Nov 2026 for image version `20261112.0361.1`, updated on
+12 Nov 2026; image changes require reviewing the expected profile.
 
 ```sh
 python3 qa/xcode/standalone-snapshot-probe.py \
