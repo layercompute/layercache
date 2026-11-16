@@ -203,6 +203,71 @@ func TestTurboRunSummaryPreservesOmittedTransitDependencies(t *testing.T) {
 	testTurboOmittedTransitDependencies(t, repository)
 }
 
+func TestRedirectedTurboHitTakesProducerDurationFromTheGateway(t *testing.T) {
+	t.Parallel()
+	repository, err := measurement.OpenSQLiteRepository(filepath.Join(t.TempDir(), "measurements.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+
+	const project, compatibility = "github.com/acme/widget", "linux-amd64-schema1"
+	base := time.Date(2026, time.November, 9, 12, 0, 0, 0, time.UTC)
+	producer := 1500 * time.Millisecond
+	for _, hash := range []string{"hash-redirected", "hash-failed", "hash-reported"} {
+		if err := repository.ObserveTurbo(measurement.TurboObservation{
+			RunID: "run-redirect", ArtifactID: measurement.TurboArtifactIdentity(project, compatibility, hash),
+			Result: measurement.ResultHit, Source: measurement.SourceTeamCache,
+			StartedAt: base.Add(10 * time.Millisecond), FinishedAt: base.Add(20 * time.Millisecond),
+			Timing: measurement.Timing{Lookup: 10 * time.Millisecond}, Bytes: measurement.Bytes{Downloaded: 42},
+			ProducerDuration: &producer,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	document := turboSummaryDocument(t, map[string]any{
+		"id": "summary-redirect", "version": "1",
+		"execution": map[string]any{"startTime": base.UnixMilli(), "endTime": base.Add(time.Second).UnixMilli()},
+		"tasks": []any{
+			turboTask("pkg#redirected", "hash-redirected", nil, true, "HIT", false, true, "REMOTE", 0,
+				base, base.Add(50*time.Millisecond), 0),
+			turboTask("pkg#failed", "hash-failed", nil, true, "MISS", false, false, "", 0,
+				base, base.Add(50*time.Millisecond), 0),
+			turboTask("pkg#reported", "hash-reported", nil, true, "HIT", false, true, "REMOTE", 900,
+				base, base.Add(50*time.Millisecond), 0),
+		},
+	})
+	if _, err := repository.ReconcileTurboSummaries("run-redirect", measurement.TurboReconcileOptions{
+		Project: project, CompatibilityID: compatibility,
+		RunStartedAt: base.Add(-time.Second), RunFinishedAt: base.Add(2 * time.Second),
+	}, [][]byte{document}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := repository.RunReport("run-redirect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Hits != 2 || report.Misses != 1 {
+		t.Fatalf("report counts = %d hits, %d misses, want the Run Summary's result", report.Hits, report.Misses)
+	}
+	durations := map[string]int64{}
+	for _, outcome := range report.Outcomes {
+		if outcome.Result != measurement.ResultHit {
+			continue
+		}
+		if outcome.Source != measurement.SourceTeamCache || outcome.ProducerDurationMS == nil {
+			t.Fatalf("redirected hit = %#v", outcome)
+		}
+		durations[outcome.ArtifactID] = *outcome.ProducerDurationMS
+	}
+	if got := durations[measurement.TurboArtifactIdentity(project, compatibility, "hash-redirected")]; got != 1500 {
+		t.Fatalf("redirected producer duration = %dms, want the gateway's 1500ms", got)
+	}
+	if got := durations[measurement.TurboArtifactIdentity(project, compatibility, "hash-reported")]; got != 900 {
+		t.Fatalf("reported producer duration = %dms, want the Run Summary's 900ms", got)
+	}
+}
+
 type turboMeasurementRepository interface {
 	ReconcileTurboSummaries(string, measurement.TurboReconcileOptions, [][]byte) (int, error)
 	RunReport(string) (measurement.RunReport, error)

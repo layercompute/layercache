@@ -93,10 +93,33 @@ func (store *Store) IssueDirectRead(ctx context.Context, key artifact.Key, notAf
 	return store.issueDirectRead(ctx, key, notAfter, false)
 }
 
+// IssueTurboRedirect is IssueDirectRead for a stock Turbo binary. Turbo reads
+// x-artifact-tag from the final response, and object storage cannot send it, so
+// a signed artifact stays on the proxied read. Turbo never reports completion:
+// the lease expires by itself and the access is recorded at issue.
+func (store *Store) IssueTurboRedirect(ctx context.Context, key artifact.Key) (DirectRead, error) {
+	if !store.config.DirectTransfer.TurboRedirect {
+		return DirectRead{}, ErrDirectTransferUnavailable
+	}
+	return store.issueEligibleDirectRead(ctx, key, time.Time{}, false, func(entry artifact.Entry) bool {
+		return entry.Metadata.Tag == ""
+	})
+}
+
 // issueDirectRead with deferAccess leases the object without recording an
 // access; completeDirectRead then records it. A lookup that may never be
 // followed by a download must not refresh retention.
 func (store *Store) issueDirectRead(ctx context.Context, key artifact.Key, notAfter time.Time, deferAccess bool) (DirectRead, error) {
+	return store.issueEligibleDirectRead(ctx, key, notAfter, deferAccess, func(artifact.Entry) bool { return true })
+}
+
+func (store *Store) issueEligibleDirectRead(
+	ctx context.Context,
+	key artifact.Key,
+	notAfter time.Time,
+	deferAccess bool,
+	eligible func(artifact.Entry) bool,
+) (DirectRead, error) {
 	if !store.config.DirectTransfer.Read {
 		return DirectRead{}, ErrDirectTransferUnavailable
 	}
@@ -117,7 +140,7 @@ func (store *Store) issueDirectRead(ctx context.Context, key artifact.Key, notAf
 		return DirectRead{}, err
 	}
 	// Public-origin entries keep the proxied path and its trust checks.
-	if entry.Metadata.Values["origin"] == "public" {
+	if entry.Metadata.Values["origin"] == "public" || !eligible(entry) {
 		store.releaseReadLease(leaseID)
 		return DirectRead{}, ErrDirectTransferUnavailable
 	}
