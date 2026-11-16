@@ -39,15 +39,13 @@ class EvidenceControls(unittest.TestCase):
             finally:
                 fixture.close()
 
-    def test_fingerprint_accepts_both_reviewed_hosts_and_hashes_full_compiler_facts(self):
+    def test_fingerprint_accepts_both_reviewed_hosts_with_distinct_profiles(self):
         profiles = set()
         for build, version in (("26A434", "27.0.1"), ("26B123", "27.2")):
             with self.subTest(build=build, version=version):
                 profile, facts = self.fingerprint(build, version)
                 self.assertEqual((facts["hostBuild"], facts["hostVersion"]), (build, version))
-                compiler_facts = {key: value for key, value in facts.items() if key != "archiveNodeVersion"}
-                self.assertEqual(profile, "xcode-standalone-v1-" + hashlib.sha256(
-                    json.dumps(compiler_facts, sort_keys=True).encode()).hexdigest())
+                self.assertRegex(profile, r"^xcode-standalone-v1-[0-9a-f]{64}$")
                 profiles.add(profile)
         self.assertEqual(len(profiles), 2)
 

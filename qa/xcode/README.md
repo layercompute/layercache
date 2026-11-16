@@ -65,7 +65,7 @@ Reviewed hosts are macOS 27.0.1 build `26A434` and macOS 27.2 build `26B123`;
 each host build must match its exact version. The job records compiler version
 and executable SHA256, host and target facts, minimum iOS 16.4 and Release `-O2`.
 A runner label alone cannot pass it.
-The [published runner image](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+The [published runner image](https://github.com/actions/runner-images/releases/tag/xcode-27-arm64%2F20261112.0361)
 was reviewed on 16 Nov 2026 for image version `20261112.0361.1`, updated on
 12 Nov 2026; image changes require reviewing the expected profile.
 
