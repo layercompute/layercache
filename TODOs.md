@@ -354,6 +354,26 @@ records the proposal; implementation and actual-device savings remain open.
   [migration guide](docs/cloud-migration.md) records the reusable checks.
   This completes the bounded operator cohort, not public signup or paid plans.
 
+- [ ] **Point current install instructions at immutable beta.11.**
+  Owner: LayerCache release documentation. November 17 user outcome: install
+  beta.11 through the documented CLI and Actions examples, pinned to protected
+  main source [`646a83db14d17ea52468e89265e36d28ee1c92f6`](https://github.com/layercompute/layercache/commit/646a83db14d17ea52468e89265e36d28ee1c92f6), while retaining
+  historical provenance controls and evidence. The
+  [release workflow](https://github.com/layercompute/layercache/actions/runs/43978101971)
+  passed before immutable publication. The
+  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/43981108422)
+  targets that tag and source with native bundle SHA256
+  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`;
+  all three supported platforms passed. Current pins in
+  [the install docs](scripts/README.md) and [runner setup](action/setup/README.md)
+  are updated. Both [installer policy tests](scripts/install.test.mjs) passed
+  with `node --test scripts/install.test.mjs`; `bash qa/lint.sh` passed. The
+  setup and CI controls passed serially with 37 passes and one installed-binary
+  skip after an intermittent worker-exit assertion in the first parallel run.
+  All remaining previous-release references are historical. Completion target:
+  required PR checks pass before landing. CLI installation and service deployment
+  remain separate outcomes.
+
 - [ ] **Finish the LayerCache move to `layercompute/layercache`.**
   Owner: LayerCache source, release and cloud/operator, coordinated with the
   application CI owners. October 29 user outcome: make the transferred repository

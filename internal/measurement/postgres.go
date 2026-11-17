@@ -199,6 +199,8 @@ func (repository *PostgresRepository) initialize(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS layercache_measurement_turbo_run_v1
 			ON layercache_measurement_turbo_observations_v1 (project_id, run_id, artifact_id, sequence)`,
+		`ALTER TABLE layercache_measurement_turbo_observations_v1
+			ADD COLUMN IF NOT EXISTS producer_duration_ns BIGINT CHECK (producer_duration_ns >= 0)`,
 	}
 	for _, statement := range statements {
 		if _, err := transaction.ExecContext(ctx, statement); err != nil {
@@ -555,10 +557,10 @@ func (repository *PostgresRepository) ObserveTurbo(observation TurboObservation)
 			started_at_unix_seconds, started_at_nanosecond,
 			finished_at_unix_seconds, finished_at_nanosecond,
 			lookup_ns, download_ns, verification_ns, restore_ns, upload_ns,
-			downloaded_bytes, uploaded_bytes, degraded
+			downloaded_bytes, uploaded_bytes, degraded, producer_duration_ns
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-			$11, $12, $13, $14, $15, $16, $17, $18, $19
+			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20
 		)`,
 		repository.project,
 		observation.RunID,
@@ -579,6 +581,7 @@ func (repository *PostgresRepository) ObserveTurbo(observation TurboObservation)
 		observation.Bytes.Downloaded,
 		observation.Bytes.Uploaded,
 		observation.Degraded,
+		nullableDuration(observation.ProducerDuration),
 	)
 	if err != nil {
 		return repository.safeError("record Turbo transport observation", err)
@@ -675,7 +678,7 @@ func (repository *PostgresRepository) loadTurboObservations(
 		SELECT
 			artifact_id, result, source, started_at, finished_at,
 			lookup_ns, download_ns, verification_ns, restore_ns, upload_ns,
-			downloaded_bytes, uploaded_bytes, degraded
+			downloaded_bytes, uploaded_bytes, degraded, producer_duration_ns
 		FROM layercache_measurement_turbo_observations_v1
 		WHERE project_id = $1 AND run_id = $2
 		ORDER BY sequence`, repository.project, runID)

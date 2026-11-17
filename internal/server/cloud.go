@@ -95,12 +95,16 @@ func cloudStoreConfig(cfg config.Config) cloud.Config {
 // so rollback is a restart.
 const directTransferEnvironment = "LAYER_CACHE_DIRECT_TRANSFER"
 
+// turboRedirectEnvironment forces only the Turbo redirect off, gateway-wide.
+const turboRedirectEnvironment = "LAYER_CACHE_TURBO_REDIRECT"
+
 func directTransferPolicy(direct config.DirectTransfer) cloud.DirectTransferPolicy {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv(directTransferEnvironment)), "off") {
 		return cloud.DirectTransferPolicy{}
 	}
 	return cloud.DirectTransferPolicy{
 		Read: direct.Read, Write: direct.Write, MaxURL: time.Duration(direct.MaxURLSeconds) * time.Second,
+		TurboRedirect: direct.TurboRedirect && !strings.EqualFold(strings.TrimSpace(os.Getenv(turboRedirectEnvironment)), "off"),
 	}
 }
 

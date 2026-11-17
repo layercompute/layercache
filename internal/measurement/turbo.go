@@ -42,6 +42,9 @@ type TurboObservation struct {
 	Timing     Timing
 	Bytes      Bytes
 	Degraded   bool
+	// ProducerDuration is the entry's recorded build time. Only a redirected
+	// read sets it, because Turbo then reports timeSaved as zero.
+	ProducerDuration *time.Duration
 }
 
 // ObserveTurbo records transport evidence from the Turbo cache gateway. An
@@ -66,8 +69,8 @@ func (repository *SQLiteRepository) ObserveTurbo(observation TurboObservation) e
 		INSERT INTO measurement_turbo_observations_v1 (
 			run_id, artifact_id, result, source, started_at, finished_at,
 			lookup_ns, download_ns, verification_ns, restore_ns, upload_ns,
-			downloaded_bytes, uploaded_bytes, degraded
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			downloaded_bytes, uploaded_bytes, degraded, producer_duration_ns
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		observation.RunID,
 		observation.ArtifactID,
 		observation.Result,
@@ -82,6 +85,7 @@ func (repository *SQLiteRepository) ObserveTurbo(observation TurboObservation) e
 		observation.Bytes.Downloaded,
 		observation.Bytes.Uploaded,
 		observation.Degraded,
+		nullableDuration(observation.ProducerDuration),
 	)
 	if err != nil {
 		return fmt.Errorf("record Turbo transport observation: %w", err)
@@ -95,6 +99,7 @@ func validateTurboObservation(observation TurboObservation) error {
 		Result: observation.Result, Source: observation.Source,
 		StartedAt: observation.StartedAt, FinishedAt: observation.FinishedAt,
 		Timing: observation.Timing, Bytes: observation.Bytes, Degraded: observation.Degraded,
+		ProducerDuration: observation.ProducerDuration,
 	})
 }
 
@@ -397,7 +402,7 @@ func loadTurboObservations(transaction *sql.Tx, runID string) ([]turboObservatio
 		SELECT
 			artifact_id, result, source, started_at, finished_at,
 			lookup_ns, download_ns, verification_ns, restore_ns, upload_ns,
-			downloaded_bytes, uploaded_bytes, degraded
+			downloaded_bytes, uploaded_bytes, degraded, producer_duration_ns
 		FROM measurement_turbo_observations_v1
 		WHERE run_id = ?
 		ORDER BY sequence`, runID)
@@ -470,6 +475,7 @@ func scanTurboObservation(row observationScanner, runID string) (FinalOutcome, e
 	var restore int64
 	var upload int64
 	var degraded bool
+	var producerDuration sql.NullInt64
 	if err := row.Scan(
 		&outcome.ArtifactID,
 		&outcome.Result,
@@ -484,10 +490,12 @@ func scanTurboObservation(row observationScanner, runID string) (FinalOutcome, e
 		&outcome.Bytes.Downloaded,
 		&outcome.Bytes.Uploaded,
 		&degraded,
+		&producerDuration,
 	); err != nil {
 		return FinalOutcome{}, fmt.Errorf("decode Turbo transport observation: %w", err)
 	}
 	outcome.RunID = runID
+	outcome.ProducerDuration = durationFromNull(producerDuration)
 	if err := outcome.StartedAt.UnmarshalBinary(startedAt); err != nil {
 		return FinalOutcome{}, fmt.Errorf("decode Turbo observation start: %w", err)
 	}
@@ -649,6 +657,9 @@ func reconcileTurboTask(
 		outcome.Source = SourceUnattributed
 		outcome.Timing.Restore = taskDuration
 		return outcome, validateOutcome(outcome)
+	}
+	if outcome.ProducerDuration == nil {
+		outcome.ProducerDuration = cloneDuration(observation.ProducerDuration)
 	}
 	outcome.Source = observation.Source
 	if outcome.Source == SourceNone || !validSource(outcome.Source) {

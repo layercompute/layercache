@@ -205,6 +205,8 @@ fixture and toolchain. Phase timings are observations from this small fixture
 and establish no application savings. Fresh-worker restoration, managed Xcode
 Cloud acceptance, signed builds and external Swift replay remain unqualified.
 
+On 16 Nov 2026, [PR #101's standalone job](https://github.com/layercompute/layercache/actions/runs/43941968859/job/133564462872) passed with 10/10 action hits, 20/20 CAS hits, main-source/PCH hit diagnostics and the changed-source miss on macOS 27.0.1 `26A434`; replay qualification on macOS 27.2 `26B123`, image `20261112.0361.1`, remains pending allocation of that runner image.
+
 Scoped reader and trusted-publisher grants are now active on the healthy
 backend running the merged source. Thirteen live gateway controls passed.
 An independent read-only audit checked SQL and R2 metadata and verified SHA256
