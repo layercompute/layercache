@@ -518,17 +518,21 @@ records the proposal; implementation and actual-device savings remain open.
   persistent storage pools and enforce plan capacity/admission independently
   of Local Cache size. Separate operator-provisioned beta access from public
   signup, paid entitlement/billing and launched self-serve claims.
-  November 17 reliability target: allow operator projects to change
-  `minFreeBytes` on restart without an identity migration, and warn when a
-  proxied verified read is refused by the free-space reserve or staging limit.
-  Owner: LayerCache cloud/storage. In progress in
-  [operator identity](internal/portal/operator.go) and
-  [verified reads](internal/server/artifact_verification.go). Acceptance:
-  unchanged fingerprints and successful reloads after reserve changes;
-  one warning per project per minute with cause, artifact size and available
-  reserve diagnostics; unchanged HTTP/degraded/health behavior; pinned Go
-  build, vet, portal/server/artifact tests and required PR checks. Deployment
-  and operator configuration updates are separate outcomes.
+  November 17 reliability slice is source-qualified in
+  [`d9c23bf`](https://github.com/layercompute/layercache/commit/d9c23bf56fc444e46c3f1cc9dfd3250011083437).
+  Owner: LayerCache cloud/storage. Operator projects can change `minFreeBytes`
+  on restart without changing identity. Refused proxied verified reads warn
+  once per project per minute with cause, artifact size and reserve diagnostics.
+  [Operator regressions](internal/portal/operator_test.go),
+  [HTTP/logging controls](internal/server/turbo_verification_test.go) and
+  [filesystem diagnostics](internal/artifact/store_space_test.go) pass with
+  Go 1.26.11, alongside `go build ./...`, `go vet ./...`, portal/server/artifact
+  tests and focused race tests. Required PR checks remain the landing gate.
+  An old persisted fingerprint is normalized on the first upgraded restart
+  with the reserve unchanged; changing it during that first upgrade is
+  unsupported. Later restarts allow reserve changes. HTTP status, degraded
+  headers and health behavior are unchanged. Deployment and operator
+  configuration updates remain separate outcomes.
   Named pools and operator-assigned capacity plans now persist backend identity
   and project allocations. SQLite/PostgreSQL controls cover atomic admission,
   restart, credential rotation and managed quota enforcement. Two private R2
