@@ -103,6 +103,32 @@ func TestExplicitReserveReplacesPercentageFloor(t *testing.T) {
 	}
 }
 
+func TestFreeSpaceReportsEffectiveReserve(t *testing.T) {
+	const gib = int64(1 << 30)
+	for _, test := range []struct{ configured, want int64 }{
+		{0, 50 * gib}, {10 * gib, 10 * gib}, {1, 5 * gib},
+	} {
+		store := &Store{root: "cache-root", minFreeBytes: test.configured}
+		probes := 0
+		store.probeSpace = func(root string) (filesystemSpace, error) {
+			probes++
+			if root != store.root {
+				t.Fatalf("probed %q, want the cache filesystem", root)
+			}
+			return filesystemSpace{availableBytes: 7 * gib, totalBytes: 1000 * gib}, nil
+		}
+		available, reserve, err := store.FreeSpace()
+		if err != nil || available != 7*gib || reserve != test.want || probes != 1 {
+			t.Fatalf("configured %d: FreeSpace = %d, %d, %v with %d probes; want %d, %d and one probe", test.configured, available, reserve, err, probes, 7*gib, test.want)
+		}
+		probeErr := errors.New("filesystem unavailable")
+		store.probeSpace = func(string) (filesystemSpace, error) { return filesystemSpace{}, probeErr }
+		if _, _, err := store.FreeSpace(); !errors.Is(err, probeErr) {
+			t.Fatalf("FreeSpace error = %v, want the probe error", err)
+		}
+	}
+}
+
 func TestPutAdmitsBytesWhenAllocationLeavesTheReserveIntact(t *testing.T) {
 	const fiveGiB = int64(5 * 1024 * 1024 * 1024)
 

@@ -6,12 +6,52 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/layercache/layercache/internal/artifact"
 )
+
+// Each Server serves one project, so the warning budget belongs to that
+// project and is shared by both verification quota causes and all requests.
+type verificationWarningLimiter struct {
+	mu   sync.Mutex
+	next time.Time
+}
+
+func (limiter *verificationWarningLimiter) allow(now time.Time) bool {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if now.Before(limiter.next) {
+		return false
+	}
+	limiter.next = now.Add(time.Minute)
+	return true
+}
+
+func (server *Server) warnRefusedVerifiedRead(entry artifact.Entry, err error) {
+	if !server.verifyWarnings.allow(time.Now()) {
+		return
+	}
+	cause := "quota"
+	switch {
+	case errors.Is(err, artifact.ErrMinFreeSpace):
+		cause = "min-free-space"
+		if server.localStore != nil {
+			available, reserve, probeErr := server.localStore.FreeSpace()
+			if probeErr == nil {
+				log.Printf("WARNING: verified read refused project=%q cause=%s artifact_bytes=%d available_bytes=%d reserve_bytes=%d", server.config.ProjectID, cause, entry.Size, available, reserve)
+				return
+			}
+		}
+	case errors.Is(err, artifact.ErrStagingQuota):
+		cause = "staging-quota"
+	}
+	log.Printf("WARNING: verified read refused project=%q cause=%s artifact_bytes=%d", server.config.ProjectID, cause, entry.Size)
+}
 
 // stageVerifiedArtifactRead keeps cloud-backed bytes behind the HTTP boundary
 // until their complete size and digest have been verified. Streaming an S3

@@ -518,6 +518,17 @@ records the proposal; implementation and actual-device savings remain open.
   persistent storage pools and enforce plan capacity/admission independently
   of Local Cache size. Separate operator-provisioned beta access from public
   signup, paid entitlement/billing and launched self-serve claims.
+  November 17 reliability target: allow operator projects to change
+  `minFreeBytes` on restart without an identity migration, and warn when a
+  proxied verified read is refused by the free-space reserve or staging limit.
+  Owner: LayerCache cloud/storage. In progress in
+  [operator identity](internal/portal/operator.go) and
+  [verified reads](internal/server/artifact_verification.go). Acceptance:
+  unchanged fingerprints and successful reloads after reserve changes;
+  one warning per project per minute with cause, artifact size and available
+  reserve diagnostics; unchanged HTTP/degraded/health behavior; pinned Go
+  build, vet, portal/server/artifact tests and required PR checks. Deployment
+  and operator configuration updates are separate outcomes.
   Named pools and operator-assigned capacity plans now persist backend identity
   and project allocations. SQLite/PostgreSQL controls cover atomic admission,
   restart, credential rotation and managed quota enforcement. Two private R2
