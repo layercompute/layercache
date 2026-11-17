@@ -1,8 +1,8 @@
 # Personal storage, shared artifacts and safe worktree materialization
 
 Status: proposed design; no implementation or device configuration in this change.
-Reviewed: 2026-10-23. Owners: LayerCache storage/native clients, CLI and product.
-Repository baseline: `26b8386cb7e65e20b6ad9382d9ac9dd5356cf2cc`.
+Reviewed: 2026-11-17. Owners: LayerCache storage/native clients, CLI and product.
+Repository baseline: `f7a067447cae955c0a0ff1e0d3aacb945a83b190`.
 
 [TODOs](../TODOs.md) owns priority, milestone state and outstanding work.
 [Source research](research/personal-storage-oss-20261023.md) records upstream
@@ -31,10 +31,10 @@ independent of physical placement.
 
 | User location | Proposed responsibility |
 | --- | --- |
-| Mac internal filesystem | Coordinator state and a small bounded hot/offline set |
-| Often-attached SSD | Larger optional immutable cache; direct reads while attached |
-| Self-hosted SSH box | Authenticated remote cache host, storing and producing compatible results |
-| SSD-backed Mac VM | Independent native client/producer; its disk is not additional physical capacity |
+| A laptop's internal disk | Coordinator state and a small bounded hot/offline set |
+| Optional removable SSD | Larger optional immutable cache; direct reads while attached |
+| One self-hosted cache host | Authenticated remote cache host, storing and producing compatible results |
+| A local VM | Independent native client/producer; its disk is not additional physical capacity |
 | Optional hosted service | Authorized private capacity and managed sharing; separately qualified Public reads |
 
 An attached SSD expands the warm set and can avoid network fetches or rebuilding.
@@ -43,26 +43,31 @@ remote execution, launch simulators, or establish cross-platform compatibility.
 
 ## Current implementation and gaps
 
-The following observations refer to the repository baseline above. Subsequent
-mainline work added separately gated [direct object transfer](direct-object-transfer.md)
-for hosted cache bytes; this proposal must coexist with that path.
+The following observations refer to the repository baseline above, which includes
+separately gated [direct object transfer](direct-object-transfer.md) for hosted
+cache bytes. Pool selection must preserve its install and failure contracts,
+as described in [Remote reads and direct transfer](#remote-reads-and-direct-transfer).
 
 | Existing behavior | Required change or limit |
 | --- | --- |
-| Go [artifact.Store](../internal/artifact/store.go) maps native references to SHA-256 blobs, verifies reads, deduplicates equal payloads and protects readers | One root per daemon; shared routing and multiple local pools do not exist |
+| Go [artifact.Store](../internal/artifact/store.go) maps native references to SHA-256 blobs, verifies reads, deduplicates equal payloads and protects readers; the daemon already shares artifacts across worktrees of one project | One root per daemon; shared routing and multiple local pools do not exist |
 | [Turbo read-through](../internal/server/server.go) and [durable upload queue](../internal/server/uploads.go) connect a Local daemon to one private endpoint and verified Public | Use this complete native path first; multiple private destinations require explicit routing/publication policy |
 | [Configuration](../internal/config/config.go) has one `DataDir`, `TeamURL`, `MaxBytes` and `MinFreeBytes` | Changing `DataDir` is not hotplug, migration or an aggregate physical cap |
-| [NativeCache](../native/client.ts) has a separate archive cache and budget; Expo uses [process-pinned extractions](../native/extractions.ts) | Archives are named by native key plus digest sidecars, not one canonical blob owner; migration/connection must be explicit |
+| [NativeCache](../native/client.ts) has a separate archive cache with a default 5 GiB budget; Expo uses [process-pinned extractions](../native/extractions.ts) | Archives are named by native key plus digest sidecars, not one canonical blob owner; migration/connection must be explicit |
 | Native CLI/action restore destinations can be caller-owned | Their output bytes and lifetimes remain separate from managed archive accounting |
 | [Graph read leases](../internal/artifact/read_leases.go) protect an exact object set for at most two minutes | A returned filesystem path needs consumer-lifetime protection; ordinary reads do not renew graph leases |
+| [Store open](../internal/artifact/store.go) calls `cleanStaging` and `reconcileBlobs` before returning | Establish exclusive pool ownership before opening, including after reconnect |
+| [go.mod](../go.mod) pins `golang.org/x/sys v0.49.0` | Reuse its native clone wrappers when qualifying a later materialization adapter |
 | [storage inspect](../internal/cli/storage.go) inventories explicit paths without opening a store | It proves neither deletion eligibility nor exclusive/reclaimable allocation |
 | [vm-route issue](../internal/cli/vm_route.go) issues short-lived, scoped standalone Turbo/Actions credentials | Useful peer credential seam; it is not host enrollment or instant per-device revocation |
 | Gradle/Nx support Local and direct private protocols | Their Local-to-private forwarding remains separate work; Xcode external Swift replay remains unqualified |
 
 The current `artifact.Key` lacks origin/visibility fields because distinct
-configuration/store roots supply isolation. A shared owner must restore that
-isolation explicitly before enabling cross-project lookup. Hosted CAS remains
-project-isolated; local work does not introduce global hosted deduplication.
+configuration/store roots supply isolation. Adding an origin field to the
+artifact `Key` is an explicit precondition before any owner serves more than
+one remote. A shared owner must preserve origin and visibility isolation before
+enabling cross-project lookup. Hosted CAS remains project-isolated; local work
+does not introduce global hosted deduplication.
 
 ## Scope and invariants
 
@@ -116,9 +121,10 @@ flowchart TD
   V[VM native client] --> R
 ```
 
-Keep coordinator configuration, namespace policy and transfer journal internal.
-Initially reuse one existing `artifact.Store` per local pool, including that
-pool's metadata, staging and blobs on its filesystem. An internal catalog may
+Keep coordinator configuration and namespace policy internal. Later relocation
+work adds an internal transfer journal. Initially reuse one existing
+`artifact.Store` per local pool, including that pool's metadata, staging and
+blobs on its filesystem. An internal catalog may
 remember SSD references while absent, but those records are availability hints,
 not proof of residency. Each pool must be recoverable without an atomic
 transaction spanning two filesystems.
@@ -138,6 +144,8 @@ This is not a generic filesystem interface. Native tools still request their
 normal artifacts and execute their normal commands. Long-lived path consumers
 need renewal/release or an explicitly qualified process-lifetime adapter;
 the two-minute graph lease cannot be reused for that purpose.
+Plan/status output and plan JSON never include presigned URLs or tokens; follow
+the [direct-transfer rule](direct-object-transfer.md).
 
 ### Identity, ownership and deduplication
 
@@ -191,6 +199,25 @@ M3 selects one private remote, self-hosted or hosted; simultaneous SSH-plus-host
 private lookup is deferred until multi-destination precedence/publication is
 qualified. Future manual routing stays OSS.
 
+### Remote reads and direct transfer
+
+Remote hits arrive through `TurboClient.Fetch` and then `store.PutVerified`, at
+the `server.team.Fetch` call in [the server](../internal/server/server.go).
+Choose a local pool at that verified-install seam. With direct transfer, those
+bytes may come straight from object storage; pool choice does not change that.
+
+[`Fetch`](../internal/remote/turbo_direct.go) requires install to leave nothing
+behind on error. A pool write failure, including an SSD removed mid-install, is
+an install error. `Fetch` returns that error unchanged, without a proxied retry
+or a failure counted against the direct-transfer circuit breaker. Never publish
+a partial entry. Clean accessible staging on failure; leftover staging on a
+removed SSD is cleaned when the pool is next opened under exclusive ownership.
+
+The local owner always serves and verifies bytes itself. It never redirects a
+client, including stock Turbo, to a pool path, a peer or a presigned URL. The
+[server-side stock-Turbo redirect](../qa/turbo-redirect/RESULT.md) is a
+hosted-gateway feature only.
+
 ### Removable pool lifecycle
 
 Pool states: absent, probing, ready, draining, unavailable and quarantined.
@@ -228,6 +255,8 @@ pin source -> reserve destination -> stage on destination -> verify digest/size
 Crash before destination commit leaves reclaimable staging. Crash after commit
 may leave two valid copies. Recovery prefers a recoverable duplicate to loss.
 Offloading removes a replica, not every logical reference or every other copy.
+Relocation and import preserve metadata byte for byte, including the Turbo
+signature tag in [`Metadata.Tag`](../internal/artifact/store.go).
 Optional cache content remains rebuildable even when its only cached replica
 is on an absent SSD. Required retained data follows its separate contract.
 
@@ -239,9 +268,10 @@ protocol through a tunnel or explicitly protected network endpoint. Do not mount
 a remote cache database or invent cross-host SQLite/file synchronization.
 Tailscale/SSH connectivity does not itself authorize project reads or writes.
 
-A later bounded helper may mint project/profile/integration-scoped capabilities
-on the remote side using the existing `vm-route issue` model. Keep administrator
-and `LocalToken` secrets on the cache host. Initial support is limited to the
+A later bounded helper may mint capabilities bound to the compatibility ID
+on the remote side using the existing
+[`vm-route issue`](../internal/cli/vm_route.go) model. Keep administrator and
+`LocalToken` secrets on the cache host. Initial support is limited to the
 qualified native integration; it does not imply a generic credential adapter.
 Endpoints have stable authority distinct from a changing tunnel address.
 
@@ -431,12 +461,16 @@ fallback and unknown reclaimed bytes. Apply revalidates identities, authority,
 leases and space; a stale preview never authorizes deleting newly active data.
 Use protected credential references outside examples/repositories. Read routes
 do not imply publication authority. No full host paths need upload to cloud.
+Plan/status output and plan JSON never include presigned URLs or tokens; follow
+the [direct-transfer rule](direct-object-transfer.md).
 
 Migrate stopped legacy Go/TS stores by verified resumable import under exclusive
 ownership. Do not copy live SQLite files piecemeal, let two old/new owners GC
 the same root, or silently rewrite operator configurations. Keep source stores
 until verified import and explicit retirement. Record old standalone support
 and old-client fallback; never require cloud enrollment to complete migration.
+Preserve metadata byte for byte, including the Turbo signature tag in
+[`Metadata.Tag`](../internal/artifact/store.go).
 
 Legacy ordinary TS archives contain a non-reversible hash of project/profile/key
 and a digest sidecar; they do not record origin/visibility or complete logical
@@ -472,27 +506,54 @@ compatibility, maintenance and security before adoption. GPL/LGPL/native system
 tools can be research or external-client references without being a permissive
 vendored library. This design adds no dependency, copied engine code or daemon.
 
+## First slice
+
+Scope is the Go daemon only, Turbo traffic only. Add one optional config list,
+`storagePools`, with at most one extra pool, such as a removable SSD, beside the
+existing `DataDir`. With no `storagePools`, behavior is exactly today's single
+`DataDir`; that is the kill switch.
+
+New verified installs and uploads go to the SSD pool while it is mounted and
+has room. Existing entries are never moved. There is no relocation journal,
+legacy import or TypeScript NativeCache merge in this slice.
+
+Reads check the internal store, then the SSD pool if present, then the remote.
+A missing or unmounted SSD is skipped and logged once, and is never an error to
+the build. Use the existing internal admission policy when the SSD is absent or
+full. An install interrupted by removal follows the install-error contract
+above and becomes a clean cache miss rather than a partial hit.
+
+The exit test is one real Turbo workload run three ways: SSD present, SSD
+unplugged between runs, and SSD unplugged mid-run. Pass when every run either
+hits or misses cleanly and verifies every byte, with no stale staging left on
+the internal store. Reopening a removed pool cleans its interrupted staging.
+
+M2-M5 are direction, not gates for this slice. Design each one when the slice
+before it has shipped and been used.
+
 ## Milestones and acceptance
 
 All runtime milestones remain open in [TODOs](../TODOs.md). M0 records design
-research only. Dependencies are delivery gates, not dates or permission to
-change user hardware. Each gate needs source qualification, a verified installed
-release, and actual workload acceptance separately; hosted rollout adds another
-receipt where relevant.
+research only. Deliver the first slice above next; the broader milestones below
+describe later work and its proposed evidence. M2-M5 are designed in turn after
+the preceding slice has shipped and been used. Each runtime milestone needs
+source qualification, a verified installed release and actual workload
+acceptance separately; hosted rollout adds another receipt where relevant.
 
 | Milestone | Owner and dependency | Completion target |
 | --- | --- | --- |
 | M0: design/source audit | Product + storage/native; this documentation change | Record current source, upstream revisions/licenses, OSS policy, unsupported behavior, interfaces and acceptance; no runtime savings/adoption claim |
-| M1: one bounded local owner through Turbo | Storage/native; M0 | Share compatible work across independent worktrees, remove duplicate cache ownership/budgets, preserve scoped references and qualify safe migration |
+| M1: one bounded local owner through Turbo | Storage/native; M0 | The Go daemon already shares artifacts across worktrees of one project; bring TypeScript NativeCache under the same owner and budget, preserve scoped references and qualify safe migration |
 | M2: optional SSD pool | Storage/CLI; M1 lifecycle/accounting | Verified enrollment/offload/direct reads, graceful absence/reconnect, and sustained measured reduction in internal allocation |
 | M3: one free OSS SSH peer + VM client | CLI/auth/native; M1, M2 when needed for SSD-backed VM | Exact compatible producer/consumer reuse without LayerCache signup; scoped credentials, bounded fallback and honest physical accounting |
 | M4: immutable expanded generations and native CoW | Materialization/native owner; M1 plus measured extraction/copy bottleneck | One leased read-only baseline or independent clone/copy per writer, with write isolation and demonstrated net footprint/time tradeoff |
 | M5: conditional OSS workspace-engine experiment | Storage/native research; M4 evidence and explicit workload | Decide whether a pinned engine adds enough value under platform, durability, GC/quota, semantics and license gates; adopt none by default |
 
-M3 need not wait for all removable-storage work when qualifying an independent
-remote host. Gradle forwarding follows the complete Turbo path. Other native
-adapters, automatic managed coordination and trusted Public production keep their
-own acceptance gates; they cannot be closed by a generic storage fixture.
+The later SSH slice can qualify an independent remote host without extending
+removable-storage behavior. Gradle forwarding follows the complete Turbo path.
+Other native adapters, automatic managed coordination and trusted Public
+production keep their own acceptance gates; they cannot be closed by a generic
+storage fixture.
 
 ### M1-M3 qualification matrix
 
@@ -507,7 +568,7 @@ own acceptance gates; they cannot be closed by a generic storage fixture.
 | SSD interruption | Remove during lookup, verification, transfer, commit and read; reconnect/restart recovers without publishing partial results or internal mountpoint spill |
 | Remote authority | Read-only and writer roles, expired/known-revoked capability, SSH host identity change, slow/offline peer and cancelled transfers; documented revocation limits |
 | VM ownership | Host/VM cannot own one pool concurrently; compatible native reuse proven rather than assumed from repository name |
-| Lifecycle/migration | Crash at every transfer/import phase; rollback preserves legacy source; unattributable hash-only archives cold-miss, scoped snapshot origin/auth preserved; old config and remote-only behavior retained |
+| Lifecycle/migration | Preserve metadata byte for byte, including the Turbo signature tag in `Metadata.Tag`; crash at every transfer/import phase; rollback preserves legacy source; unattributable hash-only archives cold-miss, scoped snapshot origin/auth preserved; old config and remote-only behavior retained |
 | Standalone availability | Internal, SSD and one peer operate without cloud account; absent optional cache preserves native build usability and native failure status |
 
 ### M4-M5 qualification matrix
@@ -547,10 +608,3 @@ be reported as a measured tradeoff; claim a speedup only for a matched observed
 comparison. No hit-count-derived CPU, price, portability, backup or fleet-wide
 savings claims. Independent review and normal required repository checks precede
 implementation delivery; no runtime tests or hardware trials belong to M0.
-
-M0 documentation receipt, 2026-10-23: source-alignment and acceptance/policy
-reviews have no remaining findings after clarifying direct-SSD path lifetime
-and provenance-safe legacy import. All 142 local links/anchors across the eight
-affected Markdown files, code fences and whitespace checks pass. These checks
-qualify the documentation only. No implementation, dependency installation,
-runtime test, benchmark, user-storage scan, mount or SSH configuration was made.

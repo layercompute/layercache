@@ -199,24 +199,37 @@ records the proposal; implementation and actual-device savings remain open.
 
 - [ ] **Share one bounded local artifact cache across worktrees and projects.**
   Owner: LayerCache storage/native clients. October 23 user outcome: keep the
-  Mac's internal working set small, reuse optional artifacts directly from an
-  attached SSD, and share compatible results with a manually configured
-  self-hosted SSH cache and VM without a LayerCache account or subscription.
+  laptop's internal working set small, reuse optional artifacts directly from a
+  removable SSD, and share compatible results with one manually configured
+  self-hosted cache host and a local VM without a LayerCache account or
+  subscription.
   [Design and milestone acceptance](docs/personal-storage-design.md#milestones-and-acceptance)
   extend this existing item rather than create a second backlog. Source research
   is recorded in the [OSS/storage audit](docs/research/personal-storage-oss-20261023.md).
-  M0 design/source review is complete: LayerCache baseline and cloned LayerFS
-  revision are recorded, local documentation links/anchors and whitespace checks
-  pass, and independent source/acceptance reviews have no remaining findings.
-  This is documentation evidence only; no runtime or hardware trial was run.
+  M0 records the LayerCache baseline, upstream revisions/licenses and proposed
+  acceptance targets; it does not certify review or runtime qualification.
+  November 17 user outcome: refresh the design against main
+  [`f7a0674`](https://github.com/layercompute/layercache/commit/f7a067447cae955c0a0ff1e0d3aacb945a83b190)
+  and define the [first Go/Turbo slice](docs/personal-storage-design.md#first-slice).
+  The design refresh in [PR #99](https://github.com/layercompute/layercache/pull/99)
+  now records the baseline's verified-install seam and failure behavior.
+  Completion target: a source-aligned Go/Turbo first slice, explicit install
+  and no-redirect contracts, origin isolation and signature-preserving migration.
+  Runtime implementation and hardware qualification remain open.
   Workload-specific estimates and actual-device measurements remain open;
   establish incremental benefit after existing native sharing before offload.
-  M1-M5 runtime acceptance stays open.
-  M1: one scoped local owner and budget through Turbo, including an explicit
-  transition from the separate TypeScript native archive/extraction owner.
+  First runtime target: one optional SSD pool beside `DataDir` for the Go
+  daemon's Turbo traffic, with new writes only and clean hits/misses with the
+  SSD present, unplugged between runs and unplugged mid-run. Omitting
+  `storagePools` preserves today's single-store behavior. No relocation,
+  legacy import or TypeScript NativeCache integration belongs to this slice.
+  M1-M5 runtime acceptance stays open. M1's new work brings TypeScript
+  NativeCache under the same owner and budget; the Go daemon already shares
+  artifacts across worktrees of one project. M2-M5 are direction, not gates;
+  design each after the preceding slice has shipped and been used.
   M2: one optional enrolled SSD pool with verified offload, direct reads,
   per-filesystem accounting, missing-volume refusal and interruption recovery.
-  M3: one explicitly configured account-free self-hosted endpoint, with Mac/VM
+  M3: one explicitly configured account-free self-hosted endpoint, with laptop/VM
   producer-consumer qualification, scoped credentials and bounded outage fallback.
   Completion requires authorized cross-worktree reuse, scope isolation, concurrent
   single-fetch behavior, corruption/quota/restart/active-reader controls and
@@ -593,8 +606,10 @@ records the proposal; implementation and actual-device savings remain open.
 - [ ] **Prevent repeated local outputs and abandoned build-slot growth.**
   Owner: LayerCache storage/materialization, coordinated with native and
   application execution owners. October 23 user outcome: share immutable
-  expanded data across worktrees and avoid repeated extraction or full copies
-  without allowing one consumer to mutate another's bytes. M4 in the
+  expanded data across worktrees on a laptop's internal disk, an optional
+  removable SSD, one self-hosted cache host and a local VM; avoid repeated
+  extraction or full copies without allowing one consumer to mutate another's
+  bytes. M4 in the
   [personal storage design](docs/personal-storage-design.md#milestones-and-acceptance)
   covers leased read-only generations, versioned safe tree identity and native
   APFS/Btrfs/XFS CoW adapters with explicit require-clone versus copy-fallback
