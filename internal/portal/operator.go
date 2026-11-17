@@ -55,17 +55,24 @@ func operatorFingerprint(project OperatorProject) (string, string, error) {
 	}
 	// Bind behavior and signing identity, while permitting credential rotation
 	// and preserving current SQL memberships instead of reapplying this file.
-	// The direct transfer switch is a runtime rollout control, not identity:
-	// turning it on or off must be a restart, never a migration.
+	// Direct transfer and the Local Cache free-space reserve are runtime
+	// controls, not identity: changing either needs a restart, never a migration.
+	cfg.DirectTransfer = config.DirectTransfer{}
+	cfg.MinFreeBytes = 0
+	return operatorConfigFingerprint(project, cfg, backend), backend, nil
+}
+
+// operatorConfigFingerprint also reproduces the old binding when cfg retains
+// MinFreeBytes. Only a match for that complete old configuration can upgrade it.
+func operatorConfigFingerprint(project OperatorProject, cfg config.Config, backend string) string {
 	cfg.CloudPostgresURL, cfg.CloudS3Endpoint, cfg.CloudS3Bucket, cfg.CloudS3Region = "", "", "", ""
 	cfg.CloudS3AccessKey, cfg.CloudS3SecretKey, cfg.TeamMembers = "", "", nil
 	cfg.Listen, cfg.ActionsArchiveBaseURL, cfg.SnapshotCredentialsFile = "", "", ""
-	cfg.DirectTransfer = config.DirectTransfer{}
 	return storageFingerprint(struct {
 		Project OperatorProject
 		Config  config.Config
 		Backend string
-	}{OperatorProject{Name: project.Name, RepositoryID: project.RepositoryID, Owner: project.Owner, TeamID: project.TeamID, TeamName: project.TeamName, Alias: project.Alias}, cfg, backend}), backend, nil
+	}{OperatorProject{Name: project.Name, RepositoryID: project.RepositoryID, Owner: project.Owner, TeamID: project.TeamID, TeamName: project.TeamName, Alias: project.Alias}, cfg, backend})
 }
 
 func validateOperatorProjects(projects []OperatorProject) error {
@@ -133,7 +140,14 @@ func (s *Store) adoptOperatorProjects(ctx context.Context, projects []OperatorPr
 		cfg := project.Config
 		if existing, found := bindings[cfg.ProjectID]; found {
 			if existing != fingerprint {
-				return errors.New("operator project binding changed; explicit migration is required")
+				// Upgrade a binding written before the reserve became runtime
+				// policy. The first restart must retain the old reserve; accepting
+				// an arbitrary hash would also permit unrelated identity changes.
+				legacy := cfg
+				legacy.DirectTransfer = config.DirectTransfer{}
+				if existing != operatorConfigFingerprint(project, legacy, backend) {
+					return errors.New("operator project binding changed; explicit migration is required")
+				}
 			}
 			var matches int
 			if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM lc_portal_projects p JOIN lc_portal_teams t ON p.team_id=t.id WHERE p.id=$1 AND p.operator_managed=TRUE AND t.operator_managed=TRUE AND p.team_id=$2 AND p.repository_id=$3 AND p.secret=$4 AND p.storage_backend_fingerprint=$5 AND t.created_by=$6 AND p.name=$7 AND p.repository=$8 AND p.default_ref=$9 AND t.name=$10 AND t.kind='team' AND p.storage_pool_id='legacy' AND p.allocated_cache_bytes=0`, cfg.ProjectID, project.TeamID, project.RepositoryID, cfg.LocalToken, backend, project.Owner.ID, project.Name, cfg.ActionsRepository, cfg.ActionsDefaultRef, project.TeamName).Scan(&matches); err != nil {
@@ -141,6 +155,11 @@ func (s *Store) adoptOperatorProjects(ctx context.Context, projects []OperatorPr
 			}
 			if matches != 1 {
 				return errors.New("persisted operator project identity is missing or changed")
+			}
+			if existing != fingerprint {
+				if _, err = tx.ExecContext(ctx, `UPDATE lc_portal_operator_projects SET fingerprint=$2 WHERE project_id=$1`, cfg.ProjectID, fingerprint); err != nil {
+					return err
+				}
 			}
 			delete(bindings, cfg.ProjectID)
 			continue

@@ -49,6 +49,7 @@ type publicBuildCoordinator interface {
 }
 
 type Server struct {
+	verifyWarnings    verificationWarningLimiter
 	turboRedirects    *turboRedirectGuard
 	projectAuthority  ProjectAuthority
 	storagePool       StoragePoolConfig
@@ -818,6 +819,7 @@ func (server *Server) getTurbo(writer http.ResponseWriter, request *http.Request
 				cleanup()
 			}
 			if errors.Is(verifyErr, artifact.ErrQuota) {
+				server.warnRefusedVerifiedRead(entry, verifyErr)
 				writer.Header().Set("x-layercache-degraded", "verification-staging-full")
 				writeJSON(writer, http.StatusInsufficientStorage, map[string]string{"error": "insufficient verification staging space"})
 				return

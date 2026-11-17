@@ -16,6 +16,17 @@ type filesystemSpace struct {
 	allocationUnit int64
 }
 
+// FreeSpace reports the filesystem's available bytes and the effective
+// minimum free-space reserve using one filesystem probe, without scanning
+// cache contents. The values are a snapshot and do not reserve any bytes.
+func (store *Store) FreeSpace() (availableBytes, reserveBytes int64, err error) {
+	space, err := store.readFilesystemSpace()
+	if err != nil {
+		return 0, 0, err
+	}
+	return space.availableBytes, store.effectiveReserve(space.totalBytes), nil
+}
+
 type spaceCheckedWriter struct {
 	ctx         context.Context
 	store       *Store

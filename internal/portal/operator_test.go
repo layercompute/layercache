@@ -134,6 +134,85 @@ func TestStoreOperatorAdoptionPreservesRepositoryCase(t *testing.T) {
 	}
 }
 
+func TestStoreOperatorReserveChangesDoNotChangeIdentity(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	p := operatorTestProject(t)
+	p.Config.MinFreeBytes = 10 << 30
+	before, backend, err := operatorFingerprint(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.adoptOperatorProjects(ctx, []OperatorProject{p}); err != nil {
+		t.Fatal(err)
+	}
+	for _, reserve := range []int64{5 << 30, 0, 20 << 30, 10 << 30} {
+		p.Config.MinFreeBytes = reserve
+		after, currentBackend, err := operatorFingerprint(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after != before || currentBackend != backend {
+			t.Errorf("reserve %d changed the operator or backend fingerprint", reserve)
+		}
+		if err := s.adoptOperatorProjects(ctx, []OperatorProject{p}); err != nil {
+			t.Fatalf("reserve %d rejected on reload: %v", reserve, err)
+		}
+	}
+}
+
+func TestStoreOperatorReserveUpgradeNormalizesExistingFingerprint(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	p := operatorTestProject(t)
+	p.Config.MinFreeBytes = 10 << 30
+	current, backend, err := operatorFingerprint(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.adoptOperatorProjects(ctx, []OperatorProject{p}); err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce the persisted format from before MinFreeBytes was excluded.
+	legacyConfig := p.Config
+	legacyConfig.CloudPostgresURL, legacyConfig.CloudS3Endpoint, legacyConfig.CloudS3Bucket, legacyConfig.CloudS3Region = "", "", "", ""
+	legacyConfig.CloudS3AccessKey, legacyConfig.CloudS3SecretKey, legacyConfig.TeamMembers = "", "", nil
+	legacyConfig.Listen, legacyConfig.ActionsArchiveBaseURL, legacyConfig.SnapshotCredentialsFile = "", "", ""
+	legacyConfig.DirectTransfer = config.DirectTransfer{}
+	legacy := storageFingerprint(struct {
+		Project OperatorProject
+		Config  config.Config
+		Backend string
+	}{OperatorProject{Name: p.Name, RepositoryID: p.RepositoryID, Owner: p.Owner, TeamID: p.TeamID, TeamName: p.TeamName, Alias: p.Alias}, legacyConfig, backend})
+	if _, err := s.db.Exec(`UPDATE lc_portal_operator_projects SET fingerprint=$1 WHERE project_id=$2`, legacy, p.Config.ProjectID); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*OperatorProject){
+		func(p *OperatorProject) { p.Config.MinFreeBytes = 5 << 30 },
+		func(p *OperatorProject) { p.Config.MaxBytes++ },
+		func(p *OperatorProject) { p.Config.CacheSoftBytes++ },
+		func(p *OperatorProject) { p.Config.CacheIdleTTL = time.Hour },
+		func(p *OperatorProject) { p.Config.LocalToken = "replacement-signing-key" },
+	} {
+		changed := p
+		mutate(&changed)
+		if err := s.adoptOperatorProjects(ctx, []OperatorProject{changed}); err == nil {
+			t.Fatal("accepted changed configuration while normalizing a legacy binding")
+		}
+	}
+	if err := s.adoptOperatorProjects(ctx, []OperatorProject{p}); err != nil {
+		t.Fatal("unchanged legacy configuration rejected on upgrade", err)
+	}
+	var persisted string
+	if err := s.db.QueryRow(`SELECT fingerprint FROM lc_portal_operator_projects WHERE project_id=$1`, p.Config.ProjectID).Scan(&persisted); err != nil || persisted != current {
+		t.Fatal("upgrade did not persist the runtime-independent fingerprint", err)
+	}
+	p.Config.MinFreeBytes = 5 << 30
+	if err := s.adoptOperatorProjects(ctx, []OperatorProject{p}); err != nil {
+		t.Fatal("reserve change rejected after normalization", err)
+	}
+}
+
 func TestStoreOperatorRuntimePreservesNativeBytesAndSQLRevocation(t *testing.T) {
 	postgresURL := os.Getenv("LAYERCACHE_PORTAL_TEST_POSTGRES_URL")
 	if postgresURL == "" {

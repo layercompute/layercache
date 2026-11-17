@@ -6,12 +6,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/cloud"
@@ -92,6 +98,101 @@ func TestCloudTurboReadIsVerifiedBeforeHTTPResponse(t *testing.T) {
 				t.Fatalf("verification staging retained %d files after response", len(stagingFiles))
 			}
 		})
+	}
+}
+
+func TestRefusedVerifiedReadsLogOncePerMinute(t *testing.T) {
+	good := []byte("verified-cloud-turbo-artifact")
+	digest := sha256.Sum256(good)
+	key := artifact.Key{
+		Integration: "turbo", Project: "github.com/acme/widgets",
+		Compatibility: "linux-amd64-schema1", Native: "private-task-hash",
+	}
+	entry := artifact.Entry{Key: key, Digest: hex.EncodeToString(digest[:]), Size: int64(len(good))}
+	for _, test := range []struct {
+		name         string
+		minFreeBytes int64
+		maxBytes     int64
+		wantCause    string
+	}{
+		{name: "free-space reserve", minFreeBytes: math.MaxInt64, maxBytes: 1 << 20, wantCause: "min-free-space"},
+		{name: "staging limit", maxBytes: 1, wantCause: "staging-quota"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			previousOutput := log.Writer()
+			log.SetOutput(&logs)
+			t.Cleanup(func() { log.SetOutput(previousOutput) })
+			root := t.TempDir()
+			local, err := artifact.Open(context.Background(), root, test.maxBytes, test.minFreeBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = local.Close() })
+			store := &turboStreamingStore{entry: entry, open: func() io.ReadCloser { return io.NopCloser(bytes.NewReader(good)) }}
+			instance := &Server{
+				config: config.Config{Role: "team", ProjectID: key.Project, DataDir: root, LocalToken: "private-token"},
+				store:  store, localStore: local, cloudStore: &cloud.Store{},
+			}
+			for range 2 {
+				request := httptest.NewRequest(http.MethodGet, "https://private.example/v8/artifacts/"+key.Native+"?token=private-token", nil)
+				request.Header.Set("Authorization", "Bearer private-token")
+				response := httptest.NewRecorder()
+				instance.getTurbo(response, request, key, false)
+				if response.Code != http.StatusInsufficientStorage || response.Header().Get("x-layercache-degraded") != "verification-staging-full" ||
+					response.Body.String() != "{\"error\":\"insufficient verification staging space\"}\n" {
+					t.Fatalf("refused read = %d %v %q", response.Code, response.Header(), response.Body.String())
+				}
+			}
+			line := logs.String()
+			if strings.Count(line, "\n") != 1 {
+				t.Fatalf("two refusals logged %d lines, want one: %q", strings.Count(line, "\n"), line)
+			}
+			for _, want := range []string{"WARNING", "project=" + strconv.Quote(key.Project), "cause=" + test.wantCause, "artifact_bytes=" + strconv.FormatInt(entry.Size, 10)} {
+				if !strings.Contains(line, want) {
+					t.Errorf("warning %q missing %q", line, want)
+				}
+			}
+			if test.minFreeBytes > 0 && (!strings.Contains(line, "available_bytes=") || !strings.Contains(line, "reserve_bytes=9223372036854775807")) {
+				t.Errorf("reserve warning missing filesystem diagnostics: %q", line)
+			}
+			for _, private := range []string{key.Native, entry.Digest, "private-token", "https://private.example"} {
+				if strings.Contains(line, private) {
+					t.Errorf("warning contains private request material %q", private)
+				}
+			}
+			if store.deleted {
+				t.Fatal("staging refusal deleted the cloud artifact")
+			}
+		})
+	}
+}
+
+func TestVerificationWarningsShareOneMinuteBudgetPerProject(t *testing.T) {
+	var limiter verificationWarningLimiter
+	now := time.Now()
+	var allowed atomic.Int32
+	var requests sync.WaitGroup
+	for range 32 {
+		requests.Go(func() {
+			if limiter.allow(now) {
+				allowed.Add(1)
+			}
+		})
+	}
+	requests.Wait()
+	if got := allowed.Load(); got != 1 {
+		t.Fatalf("concurrent requests emitted %d warnings, want one", got)
+	}
+	if limiter.allow(now.Add(time.Minute - time.Nanosecond)) {
+		t.Fatal("warning allowed before a full minute elapsed")
+	}
+	if !limiter.allow(now.Add(time.Minute)) {
+		t.Fatal("warning still suppressed after a full minute")
+	}
+	var otherProject verificationWarningLimiter
+	if !otherProject.allow(now) {
+		t.Fatal("one project's warning suppressed another project's warning")
 	}
 }
 
