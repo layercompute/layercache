@@ -53,6 +53,15 @@ the dashboard and use separate configurations. Combining several private
 endpoints in one lookup chain remains future work and requires explicit
 precedence and per-destination publication policy.
 
+Users' own internal storage, removable SSDs and manually configured self-hosted
+SSH cache access remain free, account-free OSS. The single-endpoint limit above
+describes current delivery, not a paid restriction on manual storage placement.
+The [personal storage design](personal-storage-design.md) proposes one shared
+local owner, an optional SSD and one SSH peer workflow first; these are planned,
+not qualified capabilities. Automatic
+managed host enrollment/coordination and hosted capacity retain separate cloud
+qualification. No proposed placement changes Personal/Team/Public authority.
+
 ## Public publication stays separate
 
 Personal and team cache writes never publish to Public Cache. Consumer tokens

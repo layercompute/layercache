@@ -13,9 +13,13 @@ measured results separate from proposed improvements.
 Layer Cache reuses build work across short-lived worktrees, clones, VMs, and CI jobs. A local daemon owns a bounded content-addressed cache and speaks native cache protocols. Cache visibility has three tiers: Personal Cache, Team Cache and verified Public Cache.
 
 The CLI and daemon are open source. Standalone use needs no Layer Cache account:
-keep storage on your own machine or run a daemon on one self-hosted remote.
-The managed service requires signup and a scoped token for team collaboration,
-multiple enrolled cache hosts or Layer Cache-hosted storage. A Cloud account can
+users' own internal storage, removable SSDs and explicitly configured self-hosted
+SSH caches belong in free OSS. Today each configuration has one Local Cache root
+and one private remote; safe optional SSD routing, an SSH peer workflow and shared
+materializations are proposed in the [personal storage design](docs/personal-storage-design.md),
+not implemented by selecting another data directory. The managed service requires
+signup and a scoped token for managed team collaboration, host enrollment and
+coordination, or Layer Cache-hosted storage. A Cloud account can
 use its own hosts, hosted storage, or both. Those service capabilities have
 separate delivery gates in [the launch plan](docs/launch-plan.md); the hosted
 self-serve service is not live yet. Storage hosting does not change the three
