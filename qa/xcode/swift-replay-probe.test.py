@@ -14,6 +14,10 @@ probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
 
 
+def counts(hit=0, miss=0, unknown=0):
+    return {"hit": hit, "miss": miss, "unknown": unknown}
+
+
 class TaskDiagnostics(unittest.TestCase):
     def test_separates_swift_compile_emit_module_and_clang_by_task(self):
         log = """SwiftEmitModule normal arm64 Emitting module for SwiftReplayLib (in target 'SwiftReplayLib' from project 'Probe')
@@ -26,13 +30,46 @@ CompileC /tmp/control.o /tmp/control.m normal arm64 objective-c
 remark: cache hit: control.m
 """
         diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
-        self.assertEqual(diagnostics["SwiftEmitModule"], {"hit": 1, "miss": 0})
-        self.assertEqual(diagnostics["SwiftCompile"], {"hit": 1, "miss": 1})
-        self.assertEqual(diagnostics["CompileC"], {"hit": 1, "miss": 0})
-        self.assertEqual(by_file["Feature1.swift"], {"hit": 0, "miss": 1})
-        self.assertEqual(by_file["Feature2.swift"], {"hit": 1, "miss": 0})
-        self.assertEqual(by_target["SwiftReplayLib"], {"hit": 1, "miss": 0})
-        self.assertEqual(by_target["SwiftReplayApp"], {"hit": 1, "miss": 1})
+        self.assertEqual(diagnostics["SwiftEmitModule"], counts(hit=1))
+        self.assertEqual(diagnostics["SwiftCompile"], counts(hit=1, miss=1))
+        self.assertEqual(diagnostics["CompileC"], counts(hit=1))
+        self.assertEqual(by_file["Feature1.swift"], counts(miss=1))
+        self.assertEqual(by_file["Feature2.swift"], counts(hit=1))
+        self.assertEqual(by_target["SwiftReplayLib"], counts(hit=1))
+        self.assertEqual(by_target["SwiftReplayApp"], counts(hit=1, miss=1))
+
+    def test_real_build_double_remark_shape_counts_one_instance_not_two(self):
+        """A real Xcode 27.2 Swift replay printed a "Local cache found for
+        key: ..." line AND a separate "Replay cache hit ..." line inside the
+        very same SwiftCompile task's block, with mixed casing and some
+        lines carrying the "(in target '...' from project '...')" suffix.
+        Counting remarks instead of task instances would report 2 hits for
+        this 1 task."""
+        log = """SwiftCompile normal arm64 Compiling\\ Feature1.swift Feature1.swift (in target 'SwiftReplayApp' from project 'Probe')
+note: Local cache found for key: abc123 (in target 'SwiftReplayApp' from project 'Probe')
+NOTE: REPLAY CACHE HIT for action abc123
+SwiftEmitModule normal arm64 Emitting module for SwiftReplayApp (in target 'SwiftReplayApp' from project 'Probe')
+note: cache key query hit for module key
+Note: Local Cache Found for key: def456
+CompileC /tmp/control.o /tmp/control.m normal arm64 objective-c (in target 'SwiftReplayControl' from project 'Probe')
+note: cache hit: control.m
+remark: replayed cache hit: control.m
+"""
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        self.assertEqual(diagnostics["SwiftCompile"], counts(hit=1))
+        self.assertEqual(diagnostics["SwiftEmitModule"], counts(hit=1))
+        self.assertEqual(diagnostics["CompileC"], counts(hit=1))
+        self.assertEqual(by_file["Feature1.swift"], counts(hit=1))
+        self.assertEqual(by_target["SwiftReplayApp"], counts(hit=2))
+
+    def test_miss_type_remark_wins_over_an_earlier_hit_type_remark(self):
+        log = """SwiftCompile normal arm64 Compiling\\ Feature1.swift Feature1.swift (in target 'SwiftReplayApp' from project 'Probe')
+note: cache key query hit for module key
+note: Local cache not found for key: abc123
+"""
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        self.assertEqual(diagnostics["SwiftCompile"], counts(miss=1))
+        self.assertEqual(by_file["Feature1.swift"], counts(miss=1))
 
     def test_unrelated_task_headers_do_not_leak_into_open_block(self):
         log = """SwiftCompile normal arm64 Compiling\\ main.swift main.swift (in target 'SwiftReplayApp' from project 'Probe')
@@ -40,16 +77,16 @@ Ld /tmp/SwiftReplayApp normal
 note: replayed cache hit: main.swift
 """
         diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
-        self.assertEqual(diagnostics["SwiftCompile"], {"hit": 0, "miss": 0})
-        self.assertEqual(by_file, {})
-        self.assertEqual(by_target, {})
+        self.assertEqual(diagnostics["SwiftCompile"], counts(unknown=1))
+        self.assertEqual(by_file["main.swift"], counts(unknown=1))
+        self.assertEqual(by_target["SwiftReplayApp"], counts(unknown=1))
 
     def test_requires_exact_task_name_match(self):
         log = """SwiftCompileFoo normal arm64 something
 note: replayed cache hit: something
 """
         diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
-        self.assertEqual(diagnostics["SwiftCompile"], {"hit": 0, "miss": 0})
+        self.assertEqual(diagnostics["SwiftCompile"], counts())
         self.assertEqual(by_file, {})
         self.assertEqual(by_target, {})
 
@@ -60,18 +97,26 @@ SwiftCompile normal arm64 Compiling\\ Feature1.swift Feature1.swift (in target '
 note: Local cache not found: Feature1.swift
 """
         diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
-        self.assertEqual(diagnostics["SwiftEmitModule"], {"hit": 1, "miss": 0})
-        self.assertEqual(diagnostics["SwiftCompile"], {"hit": 0, "miss": 1})
-        self.assertEqual(by_target["SwiftReplayLib"], {"hit": 1, "miss": 0})
-        self.assertEqual(by_target["SwiftReplayApp"], {"hit": 0, "miss": 1})
+        self.assertEqual(diagnostics["SwiftEmitModule"], counts(hit=1))
+        self.assertEqual(diagnostics["SwiftCompile"], counts(miss=1))
+        self.assertEqual(by_target["SwiftReplayLib"], counts(hit=1))
+        self.assertEqual(by_target["SwiftReplayApp"], counts(miss=1))
 
     def test_compilec_target_is_not_folded_into_by_target(self):
         log = """CompileC /tmp/control.o /tmp/control.m normal arm64 objective-c (in target 'SwiftReplayControl' from project 'Probe')
 remark: cache hit: control.m
 """
         diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
-        self.assertEqual(diagnostics["CompileC"], {"hit": 1, "miss": 0})
+        self.assertEqual(diagnostics["CompileC"], counts(hit=1))
         self.assertNotIn("SwiftReplayControl", by_target)
+
+    def test_task_with_no_matching_remark_is_unknown_not_dropped(self):
+        log = """SwiftEmitModule normal arm64 Emitting module for SwiftReplayApp (in target 'SwiftReplayApp' from project 'Probe')
+note: some unrelated diagnostic
+"""
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        self.assertEqual(diagnostics["SwiftEmitModule"], counts(unknown=1))
+        self.assertEqual(by_target["SwiftReplayApp"], counts(unknown=1))
 
 
 class RequireMatched(unittest.TestCase):
@@ -86,6 +131,10 @@ class RequireMatched(unittest.TestCase):
     def test_raises_on_empty_iterable(self):
         with self.assertRaises(RuntimeError):
             probe.require_matched("empty phase", [])
+
+    def test_unknown_only_counts_do_not_count_as_matched(self):
+        with self.assertRaises(RuntimeError):
+            probe.require_matched("some phase", [counts(unknown=5)])
 
 
 class CasPathEvidence(unittest.TestCase):
@@ -139,30 +188,41 @@ class ChangedSourceVerdict(unittest.TestCase):
     synthetic per-module/per-file counts, without needing a Mac."""
 
     def verdict(self, by_file, by_target):
-        feature_one_misses = by_file.get("Feature1.swift", {}).get("miss", 0)
-        lib_target = by_target.get("SwiftReplayLib", {"hit": 0, "miss": 0})
+        feature_one_misses = by_file.get("Feature1.swift", counts()).get("miss", 0)
+        lib_target = by_target.get("SwiftReplayLib", counts())
         probe.require_matched("changed-source phase (SwiftReplayLib target)", [lib_target])
-        other_module_files_hit = lib_target["miss"] == 0 and lib_target["hit"] > 0
+        other_module_files_hit = lib_target["miss"] == 0 and lib_target["unknown"] == 0 and lib_target["hit"] > 0
         return feature_one_misses > 0 and other_module_files_hit
 
     def test_qualifies_when_edited_file_misses_and_other_module_all_hits(self):
-        by_file = {"Feature1.swift": {"hit": 0, "miss": 1}, "Feature2.swift": {"hit": 1, "miss": 0}, "main.swift": {"hit": 0, "miss": 1}}
-        by_target = {"SwiftReplayLib": {"hit": 1, "miss": 0}, "SwiftReplayApp": {"hit": 1, "miss": 1}}
+        by_file = {"Feature1.swift": counts(miss=1), "Feature2.swift": counts(hit=1), "main.swift": counts(miss=1)}
+        by_target = {"SwiftReplayLib": counts(hit=1), "SwiftReplayApp": counts(hit=1, miss=1)}
         self.assertTrue(self.verdict(by_file, by_target))
 
     def test_fails_when_the_other_module_also_misses(self):
-        by_file = {"Feature1.swift": {"hit": 0, "miss": 1}}
-        by_target = {"SwiftReplayLib": {"hit": 0, "miss": 1}}
+        by_file = {"Feature1.swift": counts(miss=1)}
+        by_target = {"SwiftReplayLib": counts(miss=1)}
         self.assertFalse(self.verdict(by_file, by_target))
 
     def test_fails_when_the_edited_file_did_not_miss(self):
-        by_file = {"Feature1.swift": {"hit": 1, "miss": 0}}
-        by_target = {"SwiftReplayLib": {"hit": 1, "miss": 0}}
+        by_file = {"Feature1.swift": counts(hit=1)}
+        by_target = {"SwiftReplayLib": counts(hit=1)}
+        self.assertFalse(self.verdict(by_file, by_target))
+
+    def test_fails_when_the_other_module_is_unknown_rather_than_a_clean_hit(self):
+        by_file = {"Feature1.swift": counts(miss=1)}
+        by_target = {"SwiftReplayLib": counts(hit=1, unknown=1)}
         self.assertFalse(self.verdict(by_file, by_target))
 
     def test_raises_rather_than_vacuously_passing_when_lib_target_unmatched(self):
-        by_file = {"Feature1.swift": {"hit": 0, "miss": 1}}
+        by_file = {"Feature1.swift": counts(miss=1)}
         by_target = {}
+        with self.assertRaises(RuntimeError):
+            self.verdict(by_file, by_target)
+
+    def test_raises_rather_than_vacuously_passing_when_lib_target_is_all_unknown(self):
+        by_file = {"Feature1.swift": counts(miss=1)}
+        by_target = {"SwiftReplayLib": counts(unknown=3)}
         with self.assertRaises(RuntimeError):
             self.verdict(by_file, by_target)
 

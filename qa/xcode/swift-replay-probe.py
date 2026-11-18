@@ -86,58 +86,85 @@ def write_json(path, value):
     path.chmod(0o600)
 
 
-REMARK_PATTERNS = ("note|remark: [replayed] cache hit|miss", "note|remark: Local cache found|not found")
-_REMARK = re.compile(r"^(?:note|remark):\s+(?:(?:replay(?:ed)? )?cache (hit|miss)|Local cache (found|not found))\b", re.I)
+REMARK_PATTERNS = ("note|remark: [replayed] cache [key query] hit|miss", "note|remark: Local cache found|not found")
+_REMARK_HIT = re.compile(r"^(?:note|remark):\s*(?:(?:replay(?:ed)?\s+)?cache\s+(?:key\s+query\s+)?hit|local\s+cache\s+found)\b", re.I)
+_REMARK_MISS = re.compile(r"^(?:note|remark):\s*(?:(?:replay(?:ed)?\s+)?cache\s+(?:key\s+query\s+)?miss|local\s+cache\s+not\s+found)\b", re.I)
+_EMPTY_COUNTS = {"hit": 0, "miss": 0, "unknown": 0}
 
 
 def task_diagnostics(log, task_names):
-    """Associate cache hit/miss remarks with the task that produced them.
+    """One verdict per task instance (header block), not per remark line.
 
-    Mirrors standalone-snapshot-probe.py's clang_diagnostics: a task header line
-    opens a block, any other capitalized header line closes it, and only
-    diagnostics inside an open block of one of `task_names` are counted.
-    Each SwiftCompile task also records the `.swift` paths and the owning
-    target named on its header line, since non-batched compilation produces
-    one task per source file and Xcode always names the target there.
+    A real build log can print more than one matching remark inside the same
+    task's block: a real Xcode 27.2 Swift replay reported both a
+    "Local cache found for key: ..." line and a separate "Replay cache hit
+    ..." line for the very same SwiftCompile task, and a hit C-family task
+    can likewise print both "cache hit" and "replayed cache hit: ...".
+    Counting remarks instead of task instances overcounts hits. Each block
+    gets exactly one verdict: `hit` if it has at least one hit-type remark and
+    no miss-type remark, `miss` if it has any miss-type remark, `unknown`
+    otherwise (surfaced rather than silently dropped). "cache key query hit"
+    counts as hit-type evidence for its block.
+
+    Mirrors standalone-snapshot-probe.py's clang_diagnostics for finding task
+    boundaries: a task header line opens a block, any other capitalized
+    header line closes it. Each SwiftCompile task also records the `.swift`
+    paths and the owning target named on its header line, since non-batched
+    compilation produces one task per source file and Xcode always names the
+    target there.
     """
-    result = {name: {"hit": 0, "miss": 0} for name in task_names}
+    result = {name: dict(_EMPTY_COUNTS) for name in task_names}
     by_file = {}
     by_target = {}
-    current = None
-    current_target = None
+
+    def bump(entries, key, verdict):
+        entries.setdefault(key, dict(_EMPTY_COUNTS))[verdict] += 1
+
+    def finalize(kind, files, target, has_hit, has_miss):
+        if kind is None:
+            return
+        verdict = "miss" if has_miss else ("hit" if has_hit else "unknown")
+        result[kind][verdict] += 1
+        if target and kind in ("SwiftCompile", "SwiftEmitModule"):
+            bump(by_target, target, verdict)
+        for name in files:
+            bump(by_file, name, verdict)
+
+    current_kind, current_target, current_files = None, None, ()
+    has_hit = has_miss = False
     for line in log.splitlines():
         header = re.match(r"^([A-Z][A-Za-z0-9]+)\b.*$", line)
         if header:
+            finalize(current_kind, current_files, current_target, has_hit, has_miss)
             name = header.group(1)
-            current = name if name in task_names else None
+            current_kind = name if name in task_names else None
             target_match = re.search(r"in target '([^']+)'", line)
             current_target = target_match.group(1) if target_match else None
-            if current == "SwiftCompile":
+            current_files = ()
+            has_hit = has_miss = False
+            if current_kind == "SwiftCompile":
                 files = re.findall(r"(\S+\.swift)\b", line)
                 # The header line can repeat one file (escaped "Compiling\ X.swift"
                 # alongside the real path); dedupe so by-file counts stay exact.
-                current = ("SwiftCompile", tuple(dict.fromkeys(Path(f).name for f in files)))
+                current_files = tuple(dict.fromkeys(Path(f).name for f in files))
             continue
-        diagnostic = _REMARK.match(line)
-        if current and diagnostic:
-            hit_miss, found_not_found = diagnostic.groups()
-            verdict = hit_miss.lower() if hit_miss else ("hit" if found_not_found.lower() == "found" else "miss")
-            task_name = current[0] if isinstance(current, tuple) else current
-            result[task_name][verdict] += 1
-            if current_target and task_name in ("SwiftCompile", "SwiftEmitModule"):
-                entry = by_target.setdefault(current_target, {"hit": 0, "miss": 0})
-                entry[verdict] += 1
-            if isinstance(current, tuple):
-                for name in current[1]:
-                    entry = by_file.setdefault(name, {"hit": 0, "miss": 0})
-                    entry[verdict] += 1
+        if current_kind is None:
+            continue
+        if _REMARK_HIT.match(line):
+            has_hit = True
+        elif _REMARK_MISS.match(line):
+            has_miss = True
+    finalize(current_kind, current_files, current_target, has_hit, has_miss)
     return result, by_file, by_target
 
 
 def require_matched(label, counts_iterable):
-    """A task-kind/file/target dict with zero observed remarks cannot support
-    any hit/miss verdict; `all()` over an empty or all-zero iterable is
-    vacuously true, so this must be checked before trusting such a verdict."""
+    """A task-kind/file/target dict with zero observed hit/miss verdicts
+    cannot support any hit/miss conclusion; `all()` over an empty or
+    all-zero iterable is vacuously true, so this must be checked before
+    trusting such a verdict. `unknown` instances don't count as matched:
+    they are task instances that ran but whose remarks matched neither
+    pattern, which is the exact vacuous-pass case this guards against."""
     total = sum(counts["hit"] + counts["miss"] for counts in counts_iterable)
     require(total > 0, f"{label} matched zero Swift cache remarks; tried patterns: {REMARK_PATTERNS}")
     return total
@@ -408,7 +435,7 @@ class Probe:
         require(same_path["output"] == producer["output"], "same-path consumer produced the wrong value")
         same_path_tasks = {name: counts for name, counts in same_path["diagnostics"].items() if name in ("SwiftCompile", "SwiftEmitModule")}
         require_matched("same-path phase", same_path_tasks.values())
-        same_path_all_swift_hit = all(counts["miss"] == 0 and counts["hit"] > 0 for counts in same_path_tasks.values())
+        same_path_all_swift_hit = all(counts["miss"] == 0 and counts["unknown"] == 0 and counts["hit"] > 0 for counts in same_path_tasks.values())
         same_path_action_hits_cover_swift = same_path_stats["actionHits"] >= sum(counts["hit"] for counts in same_path_tasks.values())
         same_path_comparison = compare_build_outputs(producer_derived_saved, shared_derived)
         same_path_cas_evidence = cas_path_evidence(same_path["log"], derivedData=shared_derived, nativeCasPath=shared_cas)
@@ -428,11 +455,11 @@ class Probe:
         # secondary input, so Feature2.swift/main.swift (SwiftReplayApp) can
         # legitimately also miss; that is recorded as measured, not gating.
         feature_one_misses = changed["byFile"].get("Feature1.swift", {}).get("miss", 0)
-        lib_target = changed["byTarget"].get("SwiftReplayLib", {"hit": 0, "miss": 0})
+        lib_target = changed["byTarget"].get("SwiftReplayLib", dict(_EMPTY_COUNTS))
         require_matched("changed-source phase (SwiftReplayLib target)", [lib_target])
-        other_module_files_hit = lib_target["miss"] == 0 and lib_target["hit"] > 0
+        other_module_files_hit = lib_target["miss"] == 0 and lib_target["unknown"] == 0 and lib_target["hit"] > 0
         changed_source_qualified = feature_one_misses > 0 and other_module_files_hit
-        other_edited_module_files = {name: changed["byFile"].get(name, {"hit": 0, "miss": 0}) for name in ("Feature2.swift", "main.swift")}
+        other_edited_module_files = {name: changed["byFile"].get(name, dict(_EMPTY_COUNTS)) for name in ("Feature2.swift", "main.swift")}
 
         moved_root = self.private / "moved"
         moved_project_parent = moved_root / "fixture"
@@ -450,6 +477,7 @@ class Probe:
         moved_tasks = {name: counts for name, counts in moved["diagnostics"].items() if name in ("SwiftCompile", "SwiftEmitModule")}
         moved_swift_hits = sum(counts["hit"] for counts in moved_tasks.values())
         moved_swift_misses = sum(counts["miss"] for counts in moved_tasks.values())
+        moved_swift_unknown = sum(counts["unknown"] for counts in moved_tasks.values())
         moved_comparison = compare_build_outputs(producer_derived_saved, moved_derived)
         try:
             moved_cas_evidence = cas_path_evidence(moved["log"], derivedData=moved_derived, nativeCasPath=moved_cas)
@@ -465,7 +493,7 @@ class Probe:
         require_matched("toolchain-identity phase", identity_tasks.values())
         identity_misses = sum(counts["miss"] for counts in identity_tasks.values())
         require(identity_misses > 0, "toolchain-identity phase recorded matched remarks but no Swift cache misses")
-        identity_all_miss = all(counts["hit"] == 0 for counts in identity_tasks.values())
+        identity_all_miss = all(counts["hit"] == 0 and counts["unknown"] == 0 for counts in identity_tasks.values())
         identity_cas_evidence = cas_path_evidence(identity["log"], derivedData=shared_derived, nativeCasPath=shared_cas)
 
         write_json(self.root / "result.json", {
@@ -491,7 +519,7 @@ class Probe:
                 "movedPath": {"diagnostics": moved["diagnostics"], "stats": {
                     "actionHits": moved_stats["actionHits"], "casHits": moved_stats["casHits"],
                     "cacheErrors": moved_stats["cacheErrors"]},
-                    "swiftHits": moved_swift_hits, "swiftMisses": moved_swift_misses,
+                    "swiftHits": moved_swift_hits, "swiftMisses": moved_swift_misses, "swiftUnknown": moved_swift_unknown,
                     "outputsByteIdentical": moved_comparison, "casPathEvidence": moved_cas_evidence, "measuredNotGating": True},
                 "toolchainIdentity": {"diagnostics": identity["diagnostics"], "stats": {
                     "actionHits": identity_stats["actionHits"], "actionWrites": identity_stats["actionWrites"],
