@@ -146,6 +146,7 @@ jobs:
             ${{ runner.temp }}/xcode-standalone-evidence/changed-closure.json
             ${{ runner.temp }}/xcode-standalone-evidence/writer-archive.json
             ${{ runner.temp }}/xcode-standalone-evidence/reader-archive.json
+          retention-days: 3
   swift-replay:
     name: Xcode 27 Swift compilation replay qualification
     needs: build
@@ -177,5 +178,4 @@ jobs:
             ${{ runner.temp }}/xcode-swift-replay-evidence/*-build.log
             ${{ runner.temp }}/xcode-swift-replay-evidence/*-output.log
             ${{ runner.temp }}/xcode-swift-replay-evidence/*-stats.json
-          retention-days: 3
           retention-days: 3
