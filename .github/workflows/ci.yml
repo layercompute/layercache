@@ -154,7 +154,7 @@ jobs:
   dashboard:
     name: Dashboard / ${{ matrix.browser }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -182,6 +182,7 @@ jobs:
         if: steps.scope.outputs.mode != 'docs'
       - run: pnpm exec playwright install --with-deps "${{ matrix.browser }}"
         if: steps.scope.outputs.mode != 'docs'
+        timeout-minutes: 20
       - run: pnpm typecheck && pnpm build
         if: steps.scope.outputs.mode != 'docs'
       - name: Build dashboard candidate
