@@ -1,6 +1,9 @@
 package xcodecache
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // Stats reports protocol reuse, not estimated compilation time saved.
 // Rejection counters report fixed validation stages, never cache keys, paths or
@@ -17,6 +20,13 @@ type Stats struct {
 	GraphAdmissionRejects  uint64 `json:"graphAdmissionRejects"`
 	GraphDeadlineRejects   uint64 `json:"graphDeadlineRejects"`
 
+	// GraphRejectReasons breaks GraphReferenceRejects down by the specific rule
+	// each refused node violated. GraphRejectSamples holds a bounded, structure
+	// -only shape sample for the first rejection of each distinct reason. Both
+	// are omitted entirely when no graph reference has ever been rejected.
+	GraphRejectReasons map[string]uint64   `json:"graphRejectReasons,omitempty"`
+	GraphRejectSamples []graphRejectSample `json:"graphRejectSamples,omitempty"`
+
 	CASReads             uint64 `json:"casReads"`
 	CASHits              uint64 `json:"casHits"`
 	CASWrites            uint64 `json:"casWrites"`
@@ -32,6 +42,8 @@ type Stats struct {
 	GraphLeaseMisses     uint64 `json:"graphLeaseMisses"`
 }
 
+const maxGraphRejectSamples = 8
+
 type diagnosticCounters struct {
 	actionLookupMisses     atomic.Uint64
 	actionValueRejects     atomic.Uint64
@@ -42,9 +54,50 @@ type diagnosticCounters struct {
 	graphBudgetRejects     atomic.Uint64
 	graphAdmissionRejects  atomic.Uint64
 	graphDeadlineRejects   atomic.Uint64
+
+	rejectMu      sync.Mutex
+	rejectReasons map[graphRejectReason]uint64
+	rejectSamples []graphRejectSample
+}
+
+// recordReject tallies one rejection by its specific reason and, for at most
+// maxGraphRejectSamples distinct reasons, retains the first sample seen.
+func (d *diagnosticCounters) recordReject(reason graphRejectReason, sample graphRejectSample) {
+	d.rejectMu.Lock()
+	defer d.rejectMu.Unlock()
+	if d.rejectReasons == nil {
+		d.rejectReasons = make(map[graphRejectReason]uint64)
+	}
+	d.rejectReasons[reason]++
+	for _, existing := range d.rejectSamples {
+		if existing.Reason == string(reason) {
+			return
+		}
+	}
+	if len(d.rejectSamples) < maxGraphRejectSamples {
+		d.rejectSamples = append(d.rejectSamples, sample)
+	}
+}
+
+func (d *diagnosticCounters) snapshotRejects() (map[string]uint64, []graphRejectSample) {
+	d.rejectMu.Lock()
+	defer d.rejectMu.Unlock()
+	var reasons map[string]uint64
+	if len(d.rejectReasons) > 0 {
+		reasons = make(map[string]uint64, len(d.rejectReasons))
+		for reason, count := range d.rejectReasons {
+			reasons[string(reason)] = count
+		}
+	}
+	var samples []graphRejectSample
+	if len(d.rejectSamples) > 0 {
+		samples = append(samples, d.rejectSamples...)
+	}
+	return reasons, samples
 }
 
 func (s *Service) Stats() Stats {
+	reasons, samples := s.diagnostics.snapshotRejects()
 	return Stats{
 		ActionLookupMisses:     s.diagnostics.actionLookupMisses.Load(),
 		ActionValueRejects:     s.diagnostics.actionValueRejects.Load(),
@@ -55,6 +108,8 @@ func (s *Service) Stats() Stats {
 		GraphBudgetRejects:     s.diagnostics.graphBudgetRejects.Load(),
 		GraphAdmissionRejects:  s.diagnostics.graphAdmissionRejects.Load(),
 		GraphDeadlineRejects:   s.diagnostics.graphDeadlineRejects.Load(),
+		GraphRejectReasons:     reasons,
+		GraphRejectSamples:     samples,
 
 		CASReads: s.casReads.Load(), CASHits: s.casHits.Load(), CASWrites: s.casWrites.Load(),
 		ActionReads: s.actionReads.Load(), ActionHits: s.actionHits.Load(), ActionWrites: s.actionWrites.Load(),

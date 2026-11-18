@@ -221,8 +221,9 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 	enqueue := func(refs []GraphReference) error {
 		for _, ref := range refs {
 			if len(ref.ID) != sha256.Size {
-				s.diagnostics.graphReferenceRejects.Add(1)
-				return artifact.ErrCorrupt
+				err := withGraphRejectSample(rejectReason(reasonInvalidReferenceId), nil, 0)
+				s.recordGraphReject(err)
+				return err
 			}
 			prior, known := discovered[string(ref.ID)]
 			if known && (prior || !ref.NativeNode) {
@@ -279,7 +280,7 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 		}
 		children, err := ObjectReferences(ref, object)
 		if err != nil {
-			s.diagnostics.graphReferenceRejects.Add(1)
+			s.recordGraphReject(err)
 			return err
 		}
 		if err := enqueue(children); err != nil {
@@ -295,6 +296,16 @@ func (s *Service) retainGraph(ctx context.Context, identity []byte, roots []Grap
 		s.diagnostics.graphAdmissionRejects.Add(1)
 	}
 	return err
+}
+
+// recordGraphReject tallies the fixed total and, when err identifies a
+// specific rule, its reason and a bounded structural sample.
+func (s *Service) recordGraphReject(err error) {
+	s.diagnostics.graphReferenceRejects.Add(1)
+	var reject *graphRejectError
+	if errors.As(err, &reject) {
+		s.diagnostics.recordReject(reject.reason, reject.sample)
+	}
 }
 
 func (s *Service) Put(ctx context.Context, request *cas.CASPutRequest) (*cas.CASPutResponse, error) {
