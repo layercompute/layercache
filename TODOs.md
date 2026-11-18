@@ -367,6 +367,29 @@ records the proposal; implementation and actual-device savings remain open.
   [migration guide](docs/cloud-migration.md) records the reusable checks.
   This completes the bounded operator cohort, not public signup or paid plans.
 
+- [ ] **Point current install instructions at immutable beta.13.**
+  Owner: LayerCache release documentation. November 18 user outcome: install
+  beta.13 through the documented CLI and Actions examples, pinned to protected
+  main source [`1df80bdbe4a54644c53c1d527d04ca8631bff385`](https://github.com/layercompute/layercache/commit/1df80bdbe4a54644c53c1d527d04ca8631bff385),
+  while retaining historical provenance controls and evidence. The
+  [release workflow](https://github.com/layercompute/layercache/actions/runs/44407565588)
+  passed, with one native QA job passing on rerun, before immutable
+  publication; the public-build evidence gate is skipped for beta tags as
+  designed. The
+  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/44410568602)
+  targets that tag and source with native bundle SHA256
+  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`.
+  Current pins in [the install docs](scripts/README.md) and
+  [runner setup](action/setup/README.md) are updated. The
+  [installer policy test](scripts/install.test.mjs) passed with
+  `node --test scripts/install.test.mjs`. This release reports why the Xcode
+  adapter rejects native output graphs through `graphRejectReasons`,
+  structure-only `graphRejectSamples`, and `actionRejectReasons` statistics,
+  and qualifies external Swift compilation replay at the same checkout path
+  on Xcode 27. All remaining previous-release references are historical.
+  Completion target: required PR checks pass before landing. CLI
+  installation and service deployment remain separate outcomes.
+
 - [ ] **Point current install instructions at immutable beta.12.**
   Owner: LayerCache release documentation. November 18 user outcome: install
   beta.12 through the documented CLI and Actions examples, pinned to protected

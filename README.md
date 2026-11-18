@@ -40,7 +40,7 @@ and direct private endpoints; remote read-through and queued Nx publication are
 not implemented.
 It includes local persistence, project-scoped PostgreSQL/S3 cloud persistence,
 signed Public Cache reads, and a Linux KVM/QEMU Public Build worker. The latest
-CLI beta, [v0.1.0-beta.12](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.12),
+CLI beta, [v0.1.0-beta.13](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.13),
 preserves cache identities after repository transfers and supports project-bound
 HTTPS GitHub OIDC audiences. It retains complete operation timing and explicit
 cold/warm comparisons through the
@@ -66,11 +66,11 @@ Release and deployment instructions are in the [verified installer](scripts/READ
 
 To install the beta, run the verified installer from an inspected current
 checkout. The release binary is pinned to source
-`438472ddfa4ed0489244316ad6b4c96dc7f34426`:
+`1df80bdbe4a54644c53c1d527d04ca8631bff385`:
 
 ```bash
 bash scripts/install.sh --repository layercompute/layercache \
-  --version v0.1.0-beta.12 --prefix "$HOME/.local/bin"
+  --version v0.1.0-beta.13 --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
 
