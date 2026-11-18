@@ -1176,24 +1176,6 @@ records the proposal; implementation and actual-device savings remain open.
   consider a bounded Bazel pilot only if residual native action work justifies it.
 
 - [ ] **Qualify compiler-cache lifecycle with Apple-managed Xcode builds.**
-  November 18 reserve follow-up. Owner: LayerCache compiler client. User outcome:
-  permit Xcode cache writes on disks below the automatic percentage reserve by
-  accepting an explicit `--min-free-bytes` on `run` and `serve`, retaining the
-  5 GiB floor and ordinary compilation after refused writes.
-  [Source `85ecd5c`](https://github.com/layercompute/layercache/commit/85ecd5c584ac4b221b41256d2065e0e863f7ac04)
-  now passes the flag to the store and reports the startup reserve and refusal
-  count without free-space eviction. The deterministic
-  [adapter/store controls](internal/artifact/xcode_space_test.go) accept an
-  explicit 6 GiB reserve with 20 GiB free on a simulated 460 GiB filesystem,
-  while the automatic 23 GiB reserve refuses all three write RPCs. Floor,
-  startup-statistics and [CLI validation](internal/cli/xcode_test.go) also pass.
-  November 18 validation passed with `mise exec -- go build ./...`,
-  `mise exec -- go vet ./...`,
-  `mise exec -- go test ./internal/xcodecache/... ./internal/cli/... ./internal/artifact/...`
-  and a Darwin arm64 build with CGO disabled. Completion target: required PR
-  checks pass before landing. Installation and actual compiler qualification
-  remain separate.
-
   Owner: LayerCache compiler client with the application build owner. On October
   20 the user authorized standalone lifecycle, scoped authentication and joint
   Xcode Cloud acceptance after cache-enabled managed builds still missed their
