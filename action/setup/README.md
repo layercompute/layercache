@@ -11,17 +11,17 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-  - uses: layercompute/layercache/action/setup@438472ddfa4ed0489244316ad6b4c96dc7f34426
+  - uses: layercompute/layercache/action/setup@1df80bdbe4a54644c53c1d527d04ca8631bff385
     id: layercache
     with:
       repository: layercompute/layercache
-      version: v0.1.0-beta.12
+      version: v0.1.0-beta.13
       team-url: https://cache.example.com
       compatibility: linux-amd64-node24-schema1
       max-size: '5368709120'
   - run: pnpm install --frozen-lockfile
   - run: pnpm exec turbo run build
-  - uses: layercompute/layercache/action/cache@438472ddfa4ed0489244316ad6b4c96dc7f34426
+  - uses: layercompute/layercache/action/cache@1df80bdbe4a54644c53c1d527d04ca8631bff385
     with:
       endpoint: https://cache.example.com
       project: ${{ steps.layercache.outputs.project }}
@@ -30,7 +30,7 @@ steps:
       key: next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 ```
 
-The actions and binary release are pinned to the qualified beta.12 source.
+The actions and binary release are pinned to the qualified beta.13 source.
 Repository discovery preserves a project's original cache identity while its
 explicit repository binding follows a transfer. Project-bound HTTPS OIDC
 audiences work through the existing scoped exchange. The release includes
