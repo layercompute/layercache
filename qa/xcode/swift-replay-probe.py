@@ -170,6 +170,35 @@ def require_matched(label, counts_iterable):
     return total
 
 
+def replay_matches_producer(producer, consumer):
+    """A consumer task-kind entry replays the producer's compile actions only
+    when every one of the producer's misses became a consumer hit, with zero
+    consumer misses and the same number of remark-free ("unknown") blocks as
+    the producer.
+
+    Some SwiftCompile header blocks never carry a cache remark at all: Xcode
+    prints a "Compiling\\ X.swift" echo line and a separate per-target
+    driver-planning line for every build regardless of whether the action
+    replays, and neither is a cacheable compile action. They show up as
+    `unknown` in every phase, cold producer included. Comparing against the
+    producer's own counts (instead of asserting `unknown == 0`) tells those
+    structural lines apart from a real failure to classify a remark, and
+    `producer miss > 0` guards against this trivially passing when the
+    producer recorded nothing to replay.
+    """
+    return (consumer["miss"] == 0 and producer["miss"] > 0
+            and consumer["hit"] == producer["miss"] and consumer["unknown"] == producer["unknown"])
+
+
+def identity_matches_producer(producer, consumer):
+    """A consumer keyed under a different toolchain identity should miss
+    exactly the actions the producer itself needed to compile, and hit none
+    of them. `producer["miss"] > 0` (checked by the caller across every task
+    kind) keeps this from trivially passing when the producer had nothing to
+    miss in the first place."""
+    return consumer["hit"] == 0 and consumer["miss"] == producer["miss"]
+
+
 def parse_cas_paths(log):
     return [Path(value) for value in re.findall(r"-cas-path\s+(\S+)", log)]
 
@@ -414,6 +443,9 @@ class Probe:
         producer_stats = self.stop("producer", producer_adapter)
         require(producer["output"] == expected_output(LIB_VALUE, FEATURE_ONE_VALUE, FEATURE_TWO_VALUE), "producer output is wrong")
         require(producer_stats["actionWrites"] > 0 and producer_stats["casWrites"] > 0, "producer did not populate the store")
+        producer_tasks = {name: counts for name, counts in producer["diagnostics"].items() if name in ("SwiftCompile", "SwiftEmitModule")}
+        require(all(counts["miss"] > 0 for counts in producer_tasks.values()),
+                "producer did not miss on every SwiftCompile/SwiftEmitModule task kind; nothing to replay")
 
         # Preserve D for the byte comparison before any consumer can touch it.
         producer_derived_saved = self.private / "producer-derived-saved"
@@ -434,8 +466,7 @@ class Probe:
         same_path_stats = self.stop("same-path", same_path_adapter)
         require(same_path["output"] == producer["output"], "same-path consumer produced the wrong value")
         same_path_tasks = {name: counts for name, counts in same_path["diagnostics"].items() if name in ("SwiftCompile", "SwiftEmitModule")}
-        require_matched("same-path phase", same_path_tasks.values())
-        same_path_all_swift_hit = all(counts["miss"] == 0 and counts["unknown"] == 0 and counts["hit"] > 0 for counts in same_path_tasks.values())
+        same_path_all_swift_hit = all(replay_matches_producer(producer_tasks[name], same_path_tasks[name]) for name in producer_tasks)
         same_path_action_hits_cover_swift = same_path_stats["actionHits"] >= sum(counts["hit"] for counts in same_path_tasks.values())
         same_path_comparison = compare_build_outputs(producer_derived_saved, shared_derived)
         same_path_cas_evidence = cas_path_evidence(same_path["log"], derivedData=shared_derived, nativeCasPath=shared_cas)
@@ -490,10 +521,7 @@ class Probe:
         identity = self.build("identity", identity_adapter, shared_derived, shared_cas)
         identity_stats = self.stop("identity", identity_adapter)
         identity_tasks = {name: counts for name, counts in identity["diagnostics"].items() if name in ("SwiftCompile", "SwiftEmitModule")}
-        require_matched("toolchain-identity phase", identity_tasks.values())
-        identity_misses = sum(counts["miss"] for counts in identity_tasks.values())
-        require(identity_misses > 0, "toolchain-identity phase recorded matched remarks but no Swift cache misses")
-        identity_all_miss = all(counts["hit"] == 0 and counts["unknown"] == 0 for counts in identity_tasks.values())
+        identity_all_miss = all(identity_matches_producer(producer_tasks[name], identity_tasks[name]) for name in producer_tasks)
         identity_cas_evidence = cas_path_evidence(identity["log"], derivedData=shared_derived, nativeCasPath=shared_cas)
 
         write_json(self.root / "result.json", {

@@ -137,6 +137,61 @@ class RequireMatched(unittest.TestCase):
             probe.require_matched("some phase", [counts(unknown=5)])
 
 
+class ReplayMatchesProducer(unittest.TestCase):
+    """The real CI shape: SwiftCompile/SwiftEmitModule header blocks for
+    Xcode's non-compile "Compiling\\ X.swift" echo lines and per-target
+    driver-planning lines never carry a cache remark, so they land in
+    `unknown` identically on the cold producer and every later consumer. A
+    verdict that required `unknown == 0` on the consumer alone would fail
+    even on a fully replayed build; comparing against the producer's own
+    counts is what tells those structural lines apart from a real miss."""
+
+    def test_producer_and_consumer_counts_from_the_real_ci_shape_pass(self):
+        producer_compile = counts(hit=0, miss=4, unknown=6)
+        same_path_compile = counts(hit=4, miss=0, unknown=6)
+        self.assertTrue(probe.replay_matches_producer(producer_compile, same_path_compile))
+        producer_emit = counts(hit=0, miss=2, unknown=0)
+        same_path_emit = counts(hit=2, miss=0, unknown=0)
+        self.assertTrue(probe.replay_matches_producer(producer_emit, same_path_emit))
+
+    def test_fails_when_one_consumer_task_misses(self):
+        producer_compile = counts(hit=0, miss=4, unknown=6)
+        same_path_compile = counts(hit=3, miss=1, unknown=6)
+        self.assertFalse(probe.replay_matches_producer(producer_compile, same_path_compile))
+
+    def test_fails_when_consumer_hit_count_does_not_match_producer_misses(self):
+        producer = counts(hit=0, miss=4, unknown=6)
+        consumer = counts(hit=3, miss=0, unknown=6)
+        self.assertFalse(probe.replay_matches_producer(producer, consumer))
+
+    def test_fails_when_producer_recorded_no_misses(self):
+        producer = counts(hit=0, miss=0, unknown=6)
+        consumer = counts(hit=0, miss=0, unknown=6)
+        self.assertFalse(probe.replay_matches_producer(producer, consumer))
+
+    def test_fails_when_unknown_structural_count_changed(self):
+        producer = counts(hit=0, miss=4, unknown=6)
+        consumer = counts(hit=4, miss=0, unknown=5)
+        self.assertFalse(probe.replay_matches_producer(producer, consumer))
+
+
+class IdentityMatchesProducer(unittest.TestCase):
+    def test_consumer_misses_exactly_the_producer_misses_with_no_hits(self):
+        producer = counts(hit=0, miss=4, unknown=6)
+        identity = counts(hit=0, miss=4, unknown=6)
+        self.assertTrue(probe.identity_matches_producer(producer, identity))
+
+    def test_fails_when_identity_consumer_hits_anything(self):
+        producer = counts(hit=0, miss=4, unknown=6)
+        identity = counts(hit=1, miss=3, unknown=6)
+        self.assertFalse(probe.identity_matches_producer(producer, identity))
+
+    def test_fails_when_miss_count_differs_from_producer(self):
+        producer = counts(hit=0, miss=4, unknown=6)
+        identity = counts(hit=0, miss=3, unknown=6)
+        self.assertFalse(probe.identity_matches_producer(producer, identity))
+
+
 class CasPathEvidence(unittest.TestCase):
     def test_parses_every_cas_path_argument(self):
         log = "xcodebuild ... -cas-path /tmp/derived/CompilationCache.noindex/plugin -cas-path /tmp/native-cas/plugin\n"
