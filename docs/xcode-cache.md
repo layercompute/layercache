@@ -39,8 +39,17 @@ layercache xcode serve \
   --data-dir "$CACHE_STORE" --socket "$CONTROL_ROOT/cas.sock" \
   --ready-file "$CONTROL_ROOT/ready.json" \
   --project "$CACHE_PROJECT" --compatibility "$EXACT_TOOLCHAIN_PROFILE" \
-  --max-size 5368709120 --stats-file "$CONTROL_ROOT/stats.json"
+  --max-size 5368709120 --min-free-bytes 5368709120 \
+  --stats-file "$CONTROL_ROOT/stats.json"
 ```
+
+For both `run` and `serve`, the default free-space reserve is the greater of
+5 GiB and 5% of the filesystem. Set `--min-free-bytes` to a positive byte count
+for an absolute reserve with a 5 GiB floor; omitting it or setting it to `0`
+keeps the automatic reserve. Writes that would cross the reserve are refused
+without free-space eviction, and the compiler compiles normally. Statistics
+record the effective startup reserve as `minFreeBytes` and count refused CAS
+and action writes in `minFreeSpaceRefusals`, also included in `cacheErrors`.
 
 This is a foreground process. A provider hook can background it and retain its
 process handle, but must wait for successful readiness before enabling the

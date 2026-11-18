@@ -17,17 +17,19 @@ type Stats struct {
 	GraphAdmissionRejects  uint64 `json:"graphAdmissionRejects"`
 	GraphDeadlineRejects   uint64 `json:"graphDeadlineRejects"`
 
-	CASReads            uint64 `json:"casReads"`
-	CASHits             uint64 `json:"casHits"`
-	CASWrites           uint64 `json:"casWrites"`
-	ActionReads         uint64 `json:"actionReads"`
-	ActionHits          uint64 `json:"actionHits"`
-	ActionWrites        uint64 `json:"actionWrites"`
-	CacheErrors         uint64 `json:"cacheErrors"`
-	GraphChecks         uint64 `json:"graphChecks"`
-	GraphObjectsChecked uint64 `json:"graphObjectsChecked"`
-	GraphLookupNanos    uint64 `json:"graphLookupNanos"`
-	GraphLeaseMisses    uint64 `json:"graphLeaseMisses"`
+	CASReads             uint64 `json:"casReads"`
+	CASHits              uint64 `json:"casHits"`
+	CASWrites            uint64 `json:"casWrites"`
+	ActionReads          uint64 `json:"actionReads"`
+	ActionHits           uint64 `json:"actionHits"`
+	ActionWrites         uint64 `json:"actionWrites"`
+	CacheErrors          uint64 `json:"cacheErrors"`
+	MinFreeSpaceRefusals uint64 `json:"minFreeSpaceRefusals"`
+	MinFreeBytes         int64  `json:"minFreeBytes"`
+	GraphChecks          uint64 `json:"graphChecks"`
+	GraphObjectsChecked  uint64 `json:"graphObjectsChecked"`
+	GraphLookupNanos     uint64 `json:"graphLookupNanos"`
+	GraphLeaseMisses     uint64 `json:"graphLeaseMisses"`
 }
 
 type diagnosticCounters struct {
@@ -57,6 +59,7 @@ func (s *Service) Stats() Stats {
 		CASReads: s.casReads.Load(), CASHits: s.casHits.Load(), CASWrites: s.casWrites.Load(),
 		ActionReads: s.actionReads.Load(), ActionHits: s.actionHits.Load(), ActionWrites: s.actionWrites.Load(),
 		CacheErrors: s.cacheErrors.Load(), GraphChecks: s.graphChecks.Load(),
+		MinFreeSpaceRefusals: s.minFreeSpaceRefusals.Load(), MinFreeBytes: s.minFreeBytes,
 		GraphObjectsChecked: s.graphObjectsChecked.Load(), GraphLookupNanos: s.graphLookupNanos.Load(),
 		GraphLeaseMisses: s.graphLeaseMisses.Load(),
 	}

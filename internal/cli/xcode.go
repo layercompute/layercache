@@ -38,6 +38,7 @@ func runXcodeService(ctx context.Context, command string, args []string, stdout,
 	flags.StringVar(&options.Compatibility, "compatibility", "", "exact Xcode/SDK/toolchain identity")
 	flags.StringVar(&options.StatsFile, "stats-file", "", "protocol hit statistics JSON output")
 	flags.Int64Var(&options.MaxBytes, "max-size", 5<<30, "maximum artifact bytes")
+	flags.Int64Var(&options.MinFreeBytes, "min-free-bytes", 0, "minimum free filesystem bytes (0 uses automatic reserve; at least 5368709120 bytes)")
 	if command == "serve" {
 		flags.StringVar(&options.ReadyFile, "ready-file", "", "private absolute lifecycle receipt path")
 	}

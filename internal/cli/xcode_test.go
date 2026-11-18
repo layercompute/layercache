@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,11 +15,17 @@ import (
 	"github.com/layercache/layercache/internal/xcodecache"
 )
 
+// Larger than any automatic percentage of an int64 filesystem byte count.
+const xcodeCLIMinFreeBytes = int64(1 << 60)
+
 func TestXcodeCLIServeStatusAndStop(t *testing.T) {
 	root := xcodeCLITempDir(t)
 	readyFile := filepath.Join(root, "ready.json")
 	_, done := startXcodeCLIService(t, root, readyFile)
 	want := waitForXcodeCLIReady(t, readyFile, done)
+	if want.Stats.MinFreeBytes != xcodeCLIMinFreeBytes {
+		t.Fatalf("serve reserve = %d, want %d", want.Stats.MinFreeBytes, xcodeCLIMinFreeBytes)
+	}
 
 	var stdout, stderr bytes.Buffer
 	if err := Run(context.Background(), []string{"xcode", "status", "--ready-file", readyFile}, &stdout, &stderr); err != nil {
@@ -46,6 +53,7 @@ func TestXcodeCLIServeStatusAndStop(t *testing.T) {
 		t.Fatalf("stop did not acknowledge the same closed instance: %#v", got)
 	}
 	waitForXcodeCLIExit(t, done)
+	assertXcodeCLIReserveStats(t, filepath.Join(root, "stats.json"))
 	if _, err := os.Lstat(filepath.Join(root, "cache.sock")); !os.IsNotExist(err) {
 		t.Fatalf("stopped compiler socket still exists: %v", err)
 	}
@@ -94,6 +102,7 @@ func TestXcodeCLIRunPreservesChildArguments(t *testing.T) {
 	err := Run(context.Background(), []string{
 		"xcode", "run", "--data-dir", filepath.Join(root, "store"), "--socket", socket,
 		"--project", "cli-project", "--compatibility", "cli-toolchain", "--max-size", "1048576",
+		"--min-free-bytes", strconv.FormatInt(xcodeCLIMinFreeBytes, 10), "--stats-file", filepath.Join(root, "stats.json"),
 		"--", child, "a value", "--child-flag",
 	}, &stdout, &stderr)
 	if err != nil {
@@ -104,6 +113,51 @@ func TestXcodeCLIRunPreservesChildArguments(t *testing.T) {
 		"COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES\nCOMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES\n"
 	if stdout.String() != want {
 		t.Fatalf("compiler arguments changed:\ngot %q\nwant %q", stdout.String(), want)
+	}
+	assertXcodeCLIReserveStats(t, filepath.Join(root, "stats.json"))
+}
+
+func assertXcodeCLIReserveStats(t *testing.T, path string) {
+	t.Helper()
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stats xcodecache.Stats
+	if err := json.Unmarshal(encoded, &stats); err != nil {
+		t.Fatal(err)
+	}
+	if stats.MinFreeBytes != xcodeCLIMinFreeBytes || stats.MinFreeSpaceRefusals != 0 || stats.CacheErrors != 0 {
+		t.Fatalf("CLI reserve did not reach the store: %s", encoded)
+	}
+}
+
+func TestXcodeCLIRejectsInvalidMinFreeBytes(t *testing.T) {
+	for _, command := range []string{"run", "serve"} {
+		for _, value := range []string{"-1", "not-bytes", "9223372036854775808"} {
+			t.Run(command+"/"+value, func(t *testing.T) {
+				root := xcodeCLITempDir(t)
+				args := []string{"xcode", command, "--data-dir", filepath.Join(root, "store"),
+					"--socket", filepath.Join(root, "cache.sock"), "--project", "cli-project", "--compatibility", "cli-toolchain",
+					"--min-free-bytes", value}
+				if command == "serve" {
+					args = append(args, "--ready-file", filepath.Join(root, "ready.json"))
+				} else {
+					args = append(args, "--", "unused-compiler")
+				}
+				var stdout, stderr bytes.Buffer
+				err := Run(context.Background(), args, &stdout, &stderr)
+				if err == nil || !strings.Contains(err.Error(), "min-free-bytes") {
+					t.Fatalf("Run(%v) = %v, want min-free-bytes error", args, err)
+				}
+				if value == "-1" && !strings.Contains(err.Error(), "non-negative") {
+					t.Fatalf("negative reserve error = %v, want non-negative requirement", err)
+				}
+				if _, err := os.Lstat(filepath.Join(root, "store")); !os.IsNotExist(err) {
+					t.Fatalf("invalid reserve initialized a cache store: %v", err)
+				}
+			})
+		}
 	}
 }
 
@@ -172,6 +226,7 @@ func startXcodeCLIService(t *testing.T, root, readyFile string) (context.CancelF
 			"--socket", filepath.Join(root, "cache.sock"), "--ready-file", readyFile,
 			"--project", "cli-project", "--compatibility", "cli-toolchain",
 			"--stats-file", filepath.Join(root, "stats.json"), "--max-size", "1048576",
+			"--min-free-bytes", strconv.FormatInt(xcodeCLIMinFreeBytes, 10),
 		}, io.Discard, io.Discard)
 		close(done)
 	}()

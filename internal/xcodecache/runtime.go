@@ -34,6 +34,9 @@ type cacheRuntime struct {
 }
 
 func validateOptions(options Options) error {
+	if options.MinFreeBytes < 0 {
+		return errors.New("min-free-bytes must be non-negative")
+	}
 	if !filepath.IsAbs(options.Socket) || len(options.Socket) > 100 {
 		return errors.New("an absolute Unix socket path of at most 100 bytes is required")
 	}
@@ -132,7 +135,7 @@ func startRuntime(ctx context.Context, options Options, serverOptions ...grpc.Se
 			lock.Close()
 		}
 	}()
-	r.store, err = artifact.Open(ctx, options.DataDir, options.MaxBytes, 0)
+	r.store, err = artifact.Open(ctx, options.DataDir, options.MaxBytes, options.MinFreeBytes)
 	if err != nil {
 		return nil, startupFailure{err}
 	}
@@ -141,7 +144,7 @@ func startRuntime(ctx context.Context, options Options, serverOptions ...grpc.Se
 	}
 	r.service, err = New(r.store, options.Project, options.Compatibility)
 	if err != nil {
-		return nil, err
+		return nil, startupFailure{err}
 	}
 	listener, err := listenPrivate(options.Socket)
 	if err != nil {

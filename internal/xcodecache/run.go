@@ -13,7 +13,7 @@ import (
 
 type Options struct {
 	DataDir, Socket, Project, Compatibility, StatsFile, ReadyFile string
-	MaxBytes                                                      int64
+	MaxBytes, MinFreeBytes                                        int64
 }
 
 type runStats struct {
