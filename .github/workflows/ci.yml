@@ -154,16 +154,26 @@ jobs:
   dashboard:
     name: Dashboard / ${{ matrix.browser }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
+    env:
+      # The runner mounts $HOME from outside the container, owned by a
+      # different user than the one running inside it; Firefox refuses to
+      # launch under a $HOME it doesn't own.
+      HOME: /root
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 2
           persist-credentials: false
+      - name: Trust the workspace owned by the container's build user
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Classify CI changes
         id: scope
         uses: ./.github/actions/ci-scope
@@ -179,8 +189,6 @@ jobs:
       - run: npm install --global pnpm@10.34.5
         if: steps.scope.outputs.mode != 'docs'
       - run: pnpm install --frozen-lockfile
-        if: steps.scope.outputs.mode != 'docs'
-      - run: pnpm exec playwright install --with-deps "${{ matrix.browser }}"
         if: steps.scope.outputs.mode != 'docs'
       - run: pnpm typecheck && pnpm build
         if: steps.scope.outputs.mode != 'docs'
