@@ -37,6 +37,8 @@ type Service struct {
 	cas.UnimplementedCASDBServiceServer
 	kv.UnimplementedKeyValueDBServer
 	store                                                                            *artifact.Store
+	minFreeBytes                                                                     int64
+	minFreeSpaceRefusals                                                             atomic.Uint64
 	project, compatibility                                                           string
 	casReads, casHits, casWrites, actionReads, actionHits, actionWrites, cacheErrors atomic.Uint64
 	graphChecks, graphObjectsChecked, graphLookupNanos, graphLeaseMisses             atomic.Uint64
@@ -56,7 +58,11 @@ func New(store *artifact.Store, project, abi string) (*Service, error) {
 	if err := validateIdentity(project, abi); err != nil {
 		return nil, err
 	}
-	return &Service{store: store, project: project, compatibility: abi}, nil
+	_, reserve, err := store.FreeSpace()
+	if err != nil {
+		return nil, fmt.Errorf("inspect compilation-cache reserve: %w", err)
+	}
+	return &Service{store: store, project: project, compatibility: abi, minFreeBytes: reserve}, nil
 }
 
 func (s *Service) key(kind string, id []byte) artifact.Key {
@@ -67,6 +73,9 @@ func (s *Service) put(ctx context.Context, kind string, id, data []byte) error {
 	_, _, err := s.store.Put(ctx, s.key(kind, id), artifact.Metadata{}, bytes.NewReader(data))
 	if err != nil && !errors.Is(err, artifact.ErrConflict) {
 		s.cacheErrors.Add(1)
+	}
+	if errors.Is(err, artifact.ErrMinFreeSpace) {
+		s.minFreeSpaceRefusals.Add(1)
 	}
 	return err
 }
