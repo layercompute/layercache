@@ -367,6 +367,28 @@ records the proposal; implementation and actual-device savings remain open.
   [migration guide](docs/cloud-migration.md) records the reusable checks.
   This completes the bounded operator cohort, not public signup or paid plans.
 
+- [ ] **Point current install instructions at immutable beta.12.**
+  Owner: LayerCache release documentation. November 18 user outcome: install
+  beta.12 through the documented CLI and Actions examples, pinned to protected
+  main source [`438472ddfa4ed0489244316ad6b4c96dc7f34426`](https://github.com/layercompute/layercache/commit/438472ddfa4ed0489244316ad6b4c96dc7f34426),
+  while retaining historical provenance controls and evidence. The
+  [release workflow](https://github.com/layercompute/layercache/actions/runs/44322947038)
+  passed before immutable publication; the public-build evidence gate is
+  skipped for beta tags as designed. The
+  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/44326403417)
+  targets that tag and source with native bundle SHA256
+  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`.
+  Current pins in [the install docs](scripts/README.md) and
+  [runner setup](action/setup/README.md) are updated. The
+  [installer policy test](scripts/install.test.mjs) passed with
+  `node --test scripts/install.test.mjs`. This release adds an explicit
+  `--min-free-bytes` free-space reserve with a 5 GiB floor to
+  `layercache xcode run` and `xcode serve`, reported as `minFreeBytes` and
+  `minFreeSpaceRefusals` in statistics. All remaining previous-release
+  references are historical. Completion target: required PR checks pass
+  before landing. CLI installation and service deployment remain separate
+  outcomes.
+
 - [ ] **Point current install instructions at immutable beta.11.**
   Owner: LayerCache release documentation. November 17 user outcome: install
   beta.11 through the documented CLI and Actions examples, pinned to protected
