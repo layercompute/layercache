@@ -362,9 +362,21 @@ func TestTurboSyncOfflinePublicationIsQueuedAndTimeoutRemainsBounded(t *testing.
 	team.mu.Lock()
 	team.offline = false
 	team.mu.Unlock()
-	response, result = callTurboSync(t, server, cfg.LocalToken, `{"hashes":["task"],"timeoutMs":500}`)
-	if response.Code != http.StatusOK || result.Ready != 1 {
-		t.Fatalf("recovered sync = HTTP %d %+v", response.Code, result)
+	// The queued publication's retry is governed by the upload queue's own
+	// backoff, not by this call's timeout. Poll with bounded, independent
+	// sync calls instead of assuming one 500ms call outraces that backoff.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		response, result = callTurboSync(t, server, cfg.LocalToken, `{"hashes":["task"],"timeoutMs":500}`)
+		if response.Code != http.StatusOK {
+			t.Fatalf("recovered sync = HTTP %d %+v", response.Code, result)
+		}
+		if result.Ready == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recovered sync never became ready = HTTP %d %+v", response.Code, result)
+		}
 	}
 }
 
