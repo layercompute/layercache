@@ -119,24 +119,6 @@ note: some unrelated diagnostic
         self.assertEqual(by_target["SwiftReplayApp"], counts(unknown=1))
 
 
-class RequireMatched(unittest.TestCase):
-    def test_passes_and_returns_total_when_something_matched(self):
-        total = probe.require_matched("some phase", [{"hit": 1, "miss": 0}, {"hit": 0, "miss": 2}])
-        self.assertEqual(total, 3)
-
-    def test_raises_on_all_zero_counts_naming_the_phase_and_patterns(self):
-        with self.assertRaisesRegex(RuntimeError, r"some phase matched zero Swift cache remarks"):
-            probe.require_matched("some phase", [{"hit": 0, "miss": 0}])
-
-    def test_raises_on_empty_iterable(self):
-        with self.assertRaises(RuntimeError):
-            probe.require_matched("empty phase", [])
-
-    def test_unknown_only_counts_do_not_count_as_matched(self):
-        with self.assertRaises(RuntimeError):
-            probe.require_matched("some phase", [counts(unknown=5)])
-
-
 class ReplayMatchesProducer(unittest.TestCase):
     """The real CI shape: SwiftCompile/SwiftEmitModule header blocks for
     Xcode's non-compile "Compiling\\ X.swift" echo lines and per-target
@@ -173,6 +155,19 @@ class ReplayMatchesProducer(unittest.TestCase):
         producer = counts(hit=0, miss=4, unknown=6)
         consumer = counts(hit=4, miss=0, unknown=5)
         self.assertFalse(probe.replay_matches_producer(producer, consumer))
+
+    def test_applies_to_a_per_target_entry_like_swiftreplaylib_in_the_changed_source_phase(self):
+        """qualify() reuses this same function for the changed-source
+        phase's SwiftReplayLib target aggregate, which carries the same
+        remark-free structural blocks as the task-kind aggregates do."""
+        producer_lib_target = counts(hit=0, miss=3, unknown=4)
+        changed_lib_target = counts(hit=3, miss=0, unknown=4)
+        self.assertTrue(probe.replay_matches_producer(producer_lib_target, changed_lib_target))
+
+    def test_per_target_entry_fails_when_the_other_module_also_misses(self):
+        producer_lib_target = counts(hit=0, miss=3, unknown=4)
+        changed_lib_target = counts(hit=2, miss=1, unknown=4)
+        self.assertFalse(probe.replay_matches_producer(producer_lib_target, changed_lib_target))
 
 
 class IdentityMatchesProducer(unittest.TestCase):
@@ -242,44 +237,54 @@ class ChangedSourceVerdict(unittest.TestCase):
     """Exercises the same decision the probe makes in qualify(), given
     synthetic per-module/per-file counts, without needing a Mac."""
 
-    def verdict(self, by_file, by_target):
+    def verdict(self, producer_by_target, by_file, by_target):
         feature_one_misses = by_file.get("Feature1.swift", counts()).get("miss", 0)
+        producer_lib_target = producer_by_target.get("SwiftReplayLib", counts())
         lib_target = by_target.get("SwiftReplayLib", counts())
-        probe.require_matched("changed-source phase (SwiftReplayLib target)", [lib_target])
-        other_module_files_hit = lib_target["miss"] == 0 and lib_target["unknown"] == 0 and lib_target["hit"] > 0
+        other_module_files_hit = probe.replay_matches_producer(producer_lib_target, lib_target)
         return feature_one_misses > 0 and other_module_files_hit
 
     def test_qualifies_when_edited_file_misses_and_other_module_all_hits(self):
+        producer_by_target = {"SwiftReplayLib": counts(miss=1), "SwiftReplayApp": counts(miss=2)}
         by_file = {"Feature1.swift": counts(miss=1), "Feature2.swift": counts(hit=1), "main.swift": counts(miss=1)}
         by_target = {"SwiftReplayLib": counts(hit=1), "SwiftReplayApp": counts(hit=1, miss=1)}
-        self.assertTrue(self.verdict(by_file, by_target))
+        self.assertTrue(self.verdict(producer_by_target, by_file, by_target))
+
+    def test_real_ci_shape_with_structural_unknown_blocks_qualifies(self):
+        producer_by_target = {"SwiftReplayLib": counts(miss=3, unknown=4)}
+        by_file = {"Feature1.swift": counts(miss=1)}
+        by_target = {"SwiftReplayLib": counts(hit=3, unknown=4)}
+        self.assertTrue(self.verdict(producer_by_target, by_file, by_target))
 
     def test_fails_when_the_other_module_also_misses(self):
+        producer_by_target = {"SwiftReplayLib": counts(miss=1)}
         by_file = {"Feature1.swift": counts(miss=1)}
         by_target = {"SwiftReplayLib": counts(miss=1)}
-        self.assertFalse(self.verdict(by_file, by_target))
+        self.assertFalse(self.verdict(producer_by_target, by_file, by_target))
 
     def test_fails_when_the_edited_file_did_not_miss(self):
+        producer_by_target = {"SwiftReplayLib": counts(miss=1)}
         by_file = {"Feature1.swift": counts(hit=1)}
         by_target = {"SwiftReplayLib": counts(hit=1)}
-        self.assertFalse(self.verdict(by_file, by_target))
+        self.assertFalse(self.verdict(producer_by_target, by_file, by_target))
 
-    def test_fails_when_the_other_module_is_unknown_rather_than_a_clean_hit(self):
+    def test_fails_when_the_other_module_unknown_count_differs_from_producer(self):
+        producer_by_target = {"SwiftReplayLib": counts(miss=1, unknown=0)}
         by_file = {"Feature1.swift": counts(miss=1)}
         by_target = {"SwiftReplayLib": counts(hit=1, unknown=1)}
-        self.assertFalse(self.verdict(by_file, by_target))
+        self.assertFalse(self.verdict(producer_by_target, by_file, by_target))
 
-    def test_raises_rather_than_vacuously_passing_when_lib_target_unmatched(self):
+    def test_fails_rather_than_vacuously_passing_when_lib_target_unmatched_on_both_sides(self):
+        producer_by_target = {}
         by_file = {"Feature1.swift": counts(miss=1)}
         by_target = {}
-        with self.assertRaises(RuntimeError):
-            self.verdict(by_file, by_target)
+        self.assertFalse(self.verdict(producer_by_target, by_file, by_target))
 
-    def test_raises_rather_than_vacuously_passing_when_lib_target_is_all_unknown(self):
+    def test_fails_rather_than_vacuously_passing_when_lib_target_is_all_unknown(self):
+        producer_by_target = {"SwiftReplayLib": counts(unknown=3)}
         by_file = {"Feature1.swift": counts(miss=1)}
         by_target = {"SwiftReplayLib": counts(unknown=3)}
-        with self.assertRaises(RuntimeError):
-            self.verdict(by_file, by_target)
+        self.assertFalse(self.verdict(producer_by_target, by_file, by_target))
 
 
 class NativeCasDiscovery(unittest.TestCase):

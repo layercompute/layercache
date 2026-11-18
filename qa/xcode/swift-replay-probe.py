@@ -158,18 +158,6 @@ def task_diagnostics(log, task_names):
     return result, by_file, by_target
 
 
-def require_matched(label, counts_iterable):
-    """A task-kind/file/target dict with zero observed hit/miss verdicts
-    cannot support any hit/miss conclusion; `all()` over an empty or
-    all-zero iterable is vacuously true, so this must be checked before
-    trusting such a verdict. `unknown` instances don't count as matched:
-    they are task instances that ran but whose remarks matched neither
-    pattern, which is the exact vacuous-pass case this guards against."""
-    total = sum(counts["hit"] + counts["miss"] for counts in counts_iterable)
-    require(total > 0, f"{label} matched zero Swift cache remarks; tried patterns: {REMARK_PATTERNS}")
-    return total
-
-
 def replay_matches_producer(producer, consumer):
     """A consumer task-kind entry replays the producer's compile actions only
     when every one of the producer's misses became a consumer hit, with zero
@@ -481,14 +469,18 @@ class Probe:
         changed_cas_evidence = cas_path_evidence(changed["log"], derivedData=shared_derived, nativeCasPath=shared_cas)
         self.set_feature_one(FEATURE_ONE_VALUE)
         # Required: the edited file's own SwiftCompile task misses, and every
-        # task of the OTHER module (SwiftReplayLib) still hits. Single-file
-        # Swift compilation reads every other file in the SAME module as a
-        # secondary input, so Feature2.swift/main.swift (SwiftReplayApp) can
-        # legitimately also miss; that is recorded as measured, not gating.
-        feature_one_misses = changed["byFile"].get("Feature1.swift", {}).get("miss", 0)
+        # cacheable task of the OTHER module (SwiftReplayLib) still replays.
+        # Single-file Swift compilation reads every other file in the SAME
+        # module as a secondary input, so Feature2.swift/main.swift
+        # (SwiftReplayApp) can legitimately also miss; that is recorded as
+        # measured, not gating. SwiftReplayLib's target aggregate carries the
+        # same remark-free structural blocks as the task-kind aggregates do
+        # (see replay_matches_producer), so it's checked the same way: against
+        # the producer's own per-target counts, not an absolute `unknown == 0`.
+        feature_one_misses = changed["byFile"].get("Feature1.swift", dict(_EMPTY_COUNTS)).get("miss", 0)
+        producer_lib_target = producer["byTarget"].get("SwiftReplayLib", dict(_EMPTY_COUNTS))
         lib_target = changed["byTarget"].get("SwiftReplayLib", dict(_EMPTY_COUNTS))
-        require_matched("changed-source phase (SwiftReplayLib target)", [lib_target])
-        other_module_files_hit = lib_target["miss"] == 0 and lib_target["unknown"] == 0 and lib_target["hit"] > 0
+        other_module_files_hit = replay_matches_producer(producer_lib_target, lib_target)
         changed_source_qualified = feature_one_misses > 0 and other_module_files_hit
         other_edited_module_files = {name: changed["byFile"].get(name, dict(_EMPTY_COUNTS)) for name in ("Feature2.swift", "main.swift")}
 
