@@ -190,3 +190,62 @@ size and bounded fixed-contract/fatal-origin markers. The QA-only Node monitor
 does not inspect the error object or replace Node's fatal behavior. The helper
 scans at most 64 KiB of complete prefix/tail lines; raw archive logs remain in
 the private fixture directory and are excluded from uploaded evidence.
+
+## Xcode 27 Swift compilation replay gate
+
+`swift-replay-probe.py` controls a question the existing fixtures above leave
+open: whether Xcode 27 actually replays Swift compilation through the adapter,
+rather than through Apple's own local CAS, and whether a replayed build is
+identical and keyed correctly. It never claims C-family/PCH replay, which
+`standalone-snapshot-probe.py` already covers.
+
+The fixture is a small Swift-first project generated with the pinned
+`xcodeproj` gem: a `SwiftReplayApp` command-line executable with three Swift
+source files (`main.swift`, `Feature1.swift`, `Feature2.swift`), a
+`SwiftReplayLib` static library target it imports so `SwiftEmitModule` runs
+for a second module, and a `SwiftReplayControl` static library with one
+Objective-C file as a C-family control. Batch mode is disabled
+(`-disable-batch-mode`) so each Swift file gets its own `SwiftCompile` task;
+without that, a single-file edit could not be isolated to a single miss.
+`CODE_SIGNING_ALLOWED=NO` throughout.
+
+The probe runs one `layercache` binary through `xcode serve`, with the build
+settings documented in [the adapter guide](../../docs/xcode-cache.md#standalone-lifecycle-for-managed-builds),
+across five phases, each against its own copy of the producer's closed store:
+
+- **Producer**: a cold build into an empty store, stopped with a confirmed
+  `xcode stop`.
+- **Same-path consumer**: every native local CAS location the toolchain uses
+  (the configured `COMPILATION_CACHE_CAS_PATH` root, its `plugin` and
+  `builtin` subdirectories, and the DerivedData-relative
+  `CompilationCache.noindex` fallback) is discovered and deleted, and a fresh,
+  empty directory is pointed at through `COMPILATION_CACHE_CAS_PATH`. DerivedData
+  is also deleted. The rebuild at the same checkout path must then report every
+  `SwiftCompile` and `SwiftEmitModule` task as a cache hit, with the adapter's
+  own `actionHits` covering those hits (so they are attributable to the
+  adapter, not native local reuse), byte-identical executable/`.swiftmodule`/object
+  files against the producer, and the expected printed value.
+- **Changed-source consumer**: from a fresh copy of the producer's store, one
+  line in `Feature1.swift` changes so the printed value changes. That file's
+  compile must miss; `Feature2.swift` and `main.swift` must still hit; the new
+  output must be correct.
+- **Moved-path consumer**: the fixture is copied to a different absolute path
+  with fresh DerivedData and native CAS, and rebuilt from a fresh copy of the
+  producer's store. Swift hit/miss counts and the byte comparison are
+  recorded, but misses here do not fail the gate — this phase measures path
+  portability, it does not qualify it.
+- **Toolchain identity consumer**: a consumer started with a different
+  `--compatibility` value against a fresh copy of the producer's store must
+  miss every Swift task.
+
+`result.json` holds the toolchain facts, per-phase task counts/hits/misses by
+kind, the adapter counters (including `graphReferenceRejects`), the comparison
+booleans, and which native CAS locations were cleared. It contains no source
+paths outside the fixture, no digests and no host names.
+
+Run it by hand on any Mac with Xcode 27.x:
+
+```sh
+gem install --user-install xcodeproj --version 1.27.0 --no-document
+python3 qa/xcode/swift-replay-probe.py /absolute/path/to/layercache /new/evidence/directory
+```
