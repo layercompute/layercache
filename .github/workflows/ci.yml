@@ -162,6 +162,11 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
+    env:
+      # The runner mounts $HOME from outside the container, owned by a
+      # different user than the one running inside it; Firefox refuses to
+      # launch under a $HOME it doesn't own.
+      HOME: /root
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
