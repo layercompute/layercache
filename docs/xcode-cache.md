@@ -191,14 +191,21 @@ by graph or lease bounds. CAS RPC hit counts remain separate.
 
 `graphRejectReasons` breaks the `graphReferenceRejects` total down by the specific
 rule each refused node violated, such as an inline leaf count over the qualified
-limit, an unexpected or malformed protobuf field, or a child reference that is not
-a 32-byte ID. `graphRejectSamples` holds, for at most eight distinct reasons, a
-bounded structural shape of the first node rejected for that reason: its data
-length, CAS envelope reference count, whether an inline marker was present, its
-top-level protobuf field numbers with occurrence counts, and, for inline-marker
-nodes, the declared ordinal count, literal count and longest literal length.
-Neither field ever contains node bytes, literal contents, CAS IDs, digests, file
-names or paths.
+limit, a malformed or unexpectedly shaped protobuf field, or a child reference
+that is not a 32-byte ID. `graphRejectSamples` holds, for at most eight distinct
+reasons, a bounded structural shape of the first node rejected for that reason:
+its data length, CAS envelope reference count, whether an inline marker was
+present, its top-level protobuf field numbers with occurrence counts, and, for
+inline-marker nodes, the declared ordinal count, literal count and longest
+literal length. Neither field ever contains node bytes, literal contents, CAS
+IDs, digests, file names or paths.
+
+`actionRejectReasons` breaks the separate `actionReferenceRejects` total down the
+same way, naming the rule an action's own output declaration violated before any
+output graph walk began, such as an action that declares both a relay CAS ID and
+a native value, or one with no recognized outputs at all. It is kept entirely
+separate from `graphRejectReasons` and never carries samples, since the rejected
+action value's bytes are the lookup key's own entries.
 
 Build the Darwin arm64 binary on Linux with `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/layercache`. The phone-app integration pins the reviewed source commit, cross-compiles on Linux and transfers only that binary to the Mac job: [phone-app #218](https://github.com/ziahamza/phone-app/pull/218).
 

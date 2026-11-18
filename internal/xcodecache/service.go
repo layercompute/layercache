@@ -308,6 +308,17 @@ func (s *Service) recordGraphReject(err error) {
 	}
 }
 
+// recordActionReject tallies the fixed action total and, when err identifies
+// a specific rule, its reason. Action reasons are kept separate from graph
+// reasons and never carry a sample.
+func (s *Service) recordActionReject(err error) {
+	s.diagnostics.actionReferenceRejects.Add(1)
+	var reject *graphRejectError
+	if errors.As(err, &reject) {
+		s.diagnostics.recordActionReject(reject.reason)
+	}
+}
+
 func (s *Service) Put(ctx context.Context, request *cas.CASPutRequest) (*cas.CASPutResponse, error) {
 	id, err := s.storeObject(ctx, request.GetData())
 	if err != nil {
@@ -368,7 +379,7 @@ func (s *Service) GetValue(ctx context.Context, request *kv.GetValueRequest) (*k
 	}
 	refs, err := ActionReferences(value)
 	if err != nil {
-		s.diagnostics.actionReferenceRejects.Add(1)
+		s.recordActionReject(err)
 		return &kv.GetValueResponse{Outcome: kv.GetValueResponse_KEY_NOT_FOUND}, nil
 	}
 	_, native := value.Entries["value"]

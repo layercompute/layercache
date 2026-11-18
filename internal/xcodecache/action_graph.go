@@ -25,13 +25,13 @@ func ActionReferences(value *kv.Value) ([]GraphReference, error) {
 			return nil, rejectReason(reasonInvalidReferenceId)
 		}
 		if native {
-			return nil, rejectReason(reasonUnexpectedProtobufField)
+			return nil, rejectReason(reasonCasidWithNativeValue)
 		}
 		return []GraphReference{{ID: root}}, nil
 	}
 	if node, ok := value.GetEntries()["value"]; ok {
 		if len(value.Entries) != 1 {
-			return nil, rejectReason(reasonUnexpectedProtobufField)
+			return nil, rejectReason(reasonNativeValueWithOtherEntries)
 		}
 		return NativeNodeReferences(node)
 	}
@@ -45,7 +45,7 @@ func ActionReferences(value *kv.Value) ([]GraphReference, error) {
 		outputs = append(outputs, GraphReference{ID: id})
 	}
 	if len(outputs) == 0 {
-		return nil, rejectReason(reasonUnexpectedProtobufField)
+		return nil, rejectReason(reasonEmptyActionOutputs)
 	}
 	if len(outputs) > maximumGraphObjects {
 		return nil, rejectReason(reasonGraphObjectLimitExceeded)
@@ -90,8 +90,11 @@ func decodeNativeNode(data []byte) ([]GraphReference, error) {
 			if err != nil {
 				return nil, err
 			}
-			if len(remaining) != 0 || field != 1 {
-				return nil, rejectReason(reasonUnexpectedProtobufField)
+			if len(remaining) != 0 {
+				return nil, rejectReason(reasonTrailingBytes)
+			}
+			if field != 1 {
+				return nil, rejectReason(reasonUnknownFieldNumber)
 			}
 			chunks++
 		case 2:
@@ -100,13 +103,13 @@ func decodeNativeNode(data []byte) ([]GraphReference, error) {
 				return nil, err
 			}
 			if len(remaining) != 0 {
-				return nil, rejectReason(reasonUnexpectedProtobufField)
+				return nil, rejectReason(reasonTrailingBytes)
 			}
 			if field == 1 { // Inline leaf, including the empty byte string.
 				continue
 			}
 			if field != 2 {
-				return nil, rejectReason(reasonUnexpectedProtobufField)
+				return nil, rejectReason(reasonUnknownFieldNumber)
 			}
 			if len(refs) >= maximumGraphObjects {
 				return nil, rejectReason(reasonGraphObjectLimitExceeded)
@@ -117,11 +120,11 @@ func decodeNativeNode(data []byte) ([]GraphReference, error) {
 			}
 			refs = append(refs, ref)
 		default:
-			return nil, rejectReason(reasonUnexpectedProtobufField)
+			return nil, rejectReason(reasonUnknownFieldNumber)
 		}
 	}
 	if chunks == 0 {
-		return nil, rejectReason(reasonUnexpectedProtobufField)
+		return nil, rejectReason(reasonMissingRequiredField)
 	}
 	return refs, nil
 }
@@ -147,14 +150,17 @@ func validateNativeInlineLeaves(data []byte) error {
 		return err
 	}
 	if number != 1 {
-		return rejectReason(reasonUnexpectedProtobufField)
+		return rejectReason(reasonUnknownFieldNumber)
 	}
 	field, indices, remaining, err := bytesField(first)
 	if err != nil {
 		return err
 	}
-	if field != 2 || len(remaining) != 0 {
-		return rejectReason(reasonUnexpectedProtobufField)
+	if len(remaining) != 0 {
+		return rejectReason(reasonTrailingBytes)
+	}
+	if field != 2 {
+		return rejectReason(reasonUnknownFieldNumber)
 	}
 	if len(indices) == 0 {
 		return rejectReason(reasonInvalidOrdinalIndex)
@@ -190,14 +196,17 @@ func validateNativeInlineLeaves(data []byte) error {
 			return err
 		}
 		if number != 1 {
-			return rejectReason(reasonUnexpectedProtobufField)
+			return rejectReason(reasonUnknownFieldNumber)
 		}
 		field, _, remaining, err := bytesField(value)
 		if err != nil {
 			return err
 		}
-		if field != 1 || len(remaining) != 0 {
-			return rejectReason(reasonUnexpectedProtobufField)
+		if len(remaining) != 0 {
+			return rejectReason(reasonTrailingBytes)
+		}
+		if field != 1 {
+			return rejectReason(reasonUnknownFieldNumber)
 		}
 		data = rest
 	}
@@ -213,7 +222,7 @@ func bytesField(data []byte) (protowire.Number, []byte, []byte, error) {
 		return 0, nil, nil, rejectReason(reasonMalformedVarint)
 	}
 	if kind != protowire.BytesType {
-		return 0, nil, nil, rejectReason(reasonUnexpectedProtobufField)
+		return 0, nil, nil, rejectReason(reasonWrongWireType)
 	}
 	value, size := protowire.ConsumeBytes(data[consumed:])
 	if size < 0 {
@@ -231,7 +240,7 @@ func nativeExternalReference(data []byte) (GraphReference, error) {
 			return ref, rejectReason(reasonMalformedVarint)
 		}
 		if seen[number] {
-			return ref, rejectReason(reasonUnexpectedProtobufField)
+			return ref, rejectReason(reasonDuplicateField)
 		}
 		seen[number] = true
 		switch number {
@@ -252,25 +261,25 @@ func nativeExternalReference(data []byte) (GraphReference, error) {
 			data = rest
 		case 3, 4:
 			if kind != protowire.VarintType {
-				return ref, rejectReason(reasonUnexpectedProtobufField)
+				return ref, rejectReason(reasonWrongWireType)
 			}
 			flag, size := protowire.ConsumeVarint(data[consumed:])
 			if size < 0 {
 				return ref, rejectReason(reasonMalformedVarint)
 			}
 			if flag > 1 {
-				return ref, rejectReason(reasonUnexpectedProtobufField)
+				return ref, rejectReason(reasonInvalidFlagValue)
 			}
 			if number == 3 {
 				ref.NativeNode = flag == 1
 			}
 			data = data[consumed+size:]
 		default:
-			return ref, rejectReason(reasonUnexpectedProtobufField)
+			return ref, rejectReason(reasonUnknownFieldNumber)
 		}
 	}
 	if !seen[1] || !seen[2] {
-		return ref, rejectReason(reasonUnexpectedProtobufField)
+		return ref, rejectReason(reasonMissingRequiredField)
 	}
 	return ref, nil
 }

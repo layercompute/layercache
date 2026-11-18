@@ -15,7 +15,6 @@ type graphRejectReason string
 const (
 	reasonInlineLeafCountExceeded            graphRejectReason = "inlineLeafCountExceeded"
 	reasonInlineMarkerWithEnvelopeReferences graphRejectReason = "inlineMarkerWithEnvelopeReferences"
-	reasonUnexpectedProtobufField            graphRejectReason = "unexpectedProtobufField"
 	reasonMalformedVarint                    graphRejectReason = "malformedVarint"
 	reasonInvalidOrdinalIndex                graphRejectReason = "invalidOrdinalIndex"
 	reasonLiteralCountMismatch               graphRejectReason = "literalCountMismatch"
@@ -24,6 +23,18 @@ const (
 	reasonGraphObjectLimitExceeded           graphRejectReason = "graphObjectLimitExceeded"
 	reasonNativeNodeTooLarge                 graphRejectReason = "nativeNodeTooLarge"
 	reasonInvalidNativeDigestLength          graphRejectReason = "invalidNativeDigestLength"
+
+	// The following split what was once one generic "unexpected protobuf
+	// field" reason, so each enforced rule is named precisely.
+	reasonWrongWireType               graphRejectReason = "wrongWireType"               // bytesField: non-bytes tag where bytes required; nativeExternalReference: non-varint flag.
+	reasonTrailingBytes               graphRejectReason = "trailingBytes"               // decodeNativeNode/validateNativeInlineLeaves: bytes left over after a field that must be exact.
+	reasonUnknownFieldNumber          graphRejectReason = "unknownFieldNumber"          // decodeNativeNode/validateNativeInlineLeaves/nativeExternalReference: a field number outside the qualified set.
+	reasonDuplicateField              graphRejectReason = "duplicateField"              // nativeExternalReference: the same field number appears twice.
+	reasonMissingRequiredField        graphRejectReason = "missingRequiredField"        // decodeNativeNode: no literal chunk at all; nativeExternalReference: digest or remote ID absent.
+	reasonInvalidFlagValue            graphRejectReason = "invalidFlagValue"            // nativeExternalReference: a boolean flag encoded as neither 0 nor 1.
+	reasonCasidWithNativeValue        graphRejectReason = "casidWithNativeValue"        // ActionReferences: an action holds both CASID and value.
+	reasonNativeValueWithOtherEntries graphRejectReason = "nativeValueWithOtherEntries" // ActionReferences: value present together with other entries.
+	reasonEmptyActionOutputs          graphRejectReason = "emptyActionOutputs"          // ActionReferences: an action with no recognized outputs at all.
 )
 
 // graphRejectError identifies the rule a node failed. It still unwraps to

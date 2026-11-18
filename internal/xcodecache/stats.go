@@ -27,6 +27,11 @@ type Stats struct {
 	GraphRejectReasons map[string]uint64   `json:"graphRejectReasons,omitempty"`
 	GraphRejectSamples []graphRejectSample `json:"graphRejectSamples,omitempty"`
 
+	// ActionRejectReasons breaks ActionReferenceRejects down the same way, kept
+	// entirely separate from GraphRejectReasons. It never carries samples: the
+	// rejected action value's bytes are the lookup key's own kv.Value entries.
+	ActionRejectReasons map[string]uint64 `json:"actionRejectReasons,omitempty"`
+
 	CASReads             uint64 `json:"casReads"`
 	CASHits              uint64 `json:"casHits"`
 	CASWrites            uint64 `json:"casWrites"`
@@ -55,9 +60,10 @@ type diagnosticCounters struct {
 	graphAdmissionRejects  atomic.Uint64
 	graphDeadlineRejects   atomic.Uint64
 
-	rejectMu      sync.Mutex
-	rejectReasons map[graphRejectReason]uint64
-	rejectSamples []graphRejectSample
+	rejectMu            sync.Mutex
+	rejectReasons       map[graphRejectReason]uint64
+	rejectSamples       []graphRejectSample
+	actionRejectReasons map[graphRejectReason]uint64
 }
 
 // recordReject tallies one rejection by its specific reason and, for at most
@@ -77,6 +83,30 @@ func (d *diagnosticCounters) recordReject(reason graphRejectReason, sample graph
 	if len(d.rejectSamples) < maxGraphRejectSamples {
 		d.rejectSamples = append(d.rejectSamples, sample)
 	}
+}
+
+// recordActionReject tallies one action-level rejection by its specific
+// reason only. Action rejects never produce a sample.
+func (d *diagnosticCounters) recordActionReject(reason graphRejectReason) {
+	d.rejectMu.Lock()
+	defer d.rejectMu.Unlock()
+	if d.actionRejectReasons == nil {
+		d.actionRejectReasons = make(map[graphRejectReason]uint64)
+	}
+	d.actionRejectReasons[reason]++
+}
+
+func (d *diagnosticCounters) snapshotActionRejectReasons() map[string]uint64 {
+	d.rejectMu.Lock()
+	defer d.rejectMu.Unlock()
+	if len(d.actionRejectReasons) == 0 {
+		return nil
+	}
+	reasons := make(map[string]uint64, len(d.actionRejectReasons))
+	for reason, count := range d.actionRejectReasons {
+		reasons[string(reason)] = count
+	}
+	return reasons
 }
 
 func (d *diagnosticCounters) snapshotRejects() (map[string]uint64, []graphRejectSample) {
@@ -110,6 +140,7 @@ func (s *Service) Stats() Stats {
 		GraphDeadlineRejects:   s.diagnostics.graphDeadlineRejects.Load(),
 		GraphRejectReasons:     reasons,
 		GraphRejectSamples:     samples,
+		ActionRejectReasons:    s.diagnostics.snapshotActionRejectReasons(),
 
 		CASReads: s.casReads.Load(), CASHits: s.casHits.Load(), CASWrites: s.casWrites.Load(),
 		ActionReads: s.actionReads.Load(), ActionHits: s.actionHits.Load(), ActionWrites: s.actionWrites.Load(),

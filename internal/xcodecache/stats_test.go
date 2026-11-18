@@ -138,8 +138,22 @@ func TestDiagnosticStatsContainOnlyFixedNumericCounters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		t.Fatal(err)
+	}
+	// graphRejectReasons, graphRejectSamples and actionRejectReasons are
+	// structured diagnostics, documented and tested separately; every other
+	// field must still be a fixed numeric counter.
+	for _, structured := range []string{"graphRejectReasons", "graphRejectSamples", "actionRejectReasons"} {
+		delete(raw, structured)
+	}
+	remaining, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var counters map[string]uint64
-	if err := json.Unmarshal(encoded, &counters); err != nil {
+	if err := json.Unmarshal(remaining, &counters); err != nil {
 		t.Fatal("statistics contain nonnumeric context", err)
 	}
 	for _, value := range []string{root, "private-project", "private-toolchain", "private-native-key", "private-payload"} {
