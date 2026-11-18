@@ -58,6 +58,7 @@ jobs:
           python3 qa/xcode/standalone-snapshot-probe.test.py
           python3 qa/xcode/plugin-semantics.test.py
           python3 qa/xcode/archive-command-outcome.test.py
+          python3 qa/xcode/swift-replay-probe.test.py
           go test -race ./qa/xcode
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/layercache" ./cmd/layercache
       - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/xcode-pressure-proxy" ./qa/xcode/pressure-proxy
@@ -145,4 +146,36 @@ jobs:
             ${{ runner.temp }}/xcode-standalone-evidence/changed-closure.json
             ${{ runner.temp }}/xcode-standalone-evidence/writer-archive.json
             ${{ runner.temp }}/xcode-standalone-evidence/reader-archive.json
+          retention-days: 3
+  swift-replay:
+    name: Xcode 27 Swift compilation replay qualification
+    needs: build
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      # The CI toolchain may be Xcode 27.0, not the 27.2 build that first
+      # reported Swift replay; the probe reports and fails clearly either way.
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: xcode-cache-adapter
+          path: ${{ runner.temp }}/xcode-adapter
+      - run: chmod +x "$RUNNER_TEMP/xcode-adapter/layercache"
+      - name: Install the pinned project generator
+        run: gem install --user-install xcodeproj --version 1.27.0 --no-document
+      - name: Qualify same-path Swift replay; measure changed-source and moved-path consumers
+        run: python3 qa/xcode/swift-replay-probe.py "$RUNNER_TEMP/xcode-adapter/layercache" "$RUNNER_TEMP/xcode-swift-replay-evidence"
+      - name: Upload only sanitized toolchain facts and replay evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: xcode-swift-replay-evidence
+          path: |
+            ${{ runner.temp }}/xcode-swift-replay-evidence/toolchain.json
+            ${{ runner.temp }}/xcode-swift-replay-evidence/result.json
+            ${{ runner.temp }}/xcode-swift-replay-evidence/*-build.log
+            ${{ runner.temp }}/xcode-swift-replay-evidence/*-output.log
+            ${{ runner.temp }}/xcode-swift-replay-evidence/*-stats.json
           retention-days: 3

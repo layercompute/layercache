@@ -11,11 +11,20 @@ action-index protocols on a private Unix socket for one build.
 `xcodebuild`.
 The verified artifact store supplies project/toolchain namespaces and a bounded
 quota. Clang, Objective-C and PCH replay is qualified within the fixtures below.
-External Swift compilation replay remains unqualified; the mixed-language
-fixture still compiles its Swift source on the warm consumer. Persisting Swift's
-local CAS is a separate reuse path and does not prove external replay. See the
-[support audit](research/xcode26-compilation-cache-20261019.md) for the earlier
-toolchain's coverage and evidence.
+External Swift compilation replay is qualified at the same checkout path on
+Xcode 27.0 (build 27A266a), Swift 6.4, macOS 27.0.1 (build 26A434), by the
+gate in [`qa/xcode/swift-replay-probe.py`](../qa/xcode/swift-replay-probe.py):
+fresh DerivedData and native CAS, a byte-identical executable, `.swiftmodule`
+and object files against the producer, a changed-source miss isolated to the
+edited module, and a toolchain-identity miss. Other Xcode builds and
+different checkout paths are not qualified. A consumer rebuilt from a
+different absolute path missed every Swift task in that gate, so cache keys
+depend on the checkout path; that is an observed limitation, not a defect.
+The earlier mixed-language fixture below still compiles its Swift source on
+the warm consumer; persisting Swift's local CAS there is a separate reuse
+path and does not by itself prove external replay. See the
+[support audit](research/xcode26-compilation-cache-20261019.md) for that
+earlier toolchain's coverage and evidence.
 
 ```sh
 layercache xcode run \
