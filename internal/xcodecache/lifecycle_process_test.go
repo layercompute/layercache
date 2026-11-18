@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -262,7 +263,7 @@ func TestLifecycleProcessReadinessRPCStopAndRetainedStats(t *testing.T) {
 	status, err := Status(context.Background(), options.ReadyFile)
 	historical := stopped
 	historical.Historical = true
-	if err != nil || status != historical {
+	if err != nil || !reflect.DeepEqual(status, historical) {
 		t.Fatalf("persisted closure receipt changed: %+v %v", status, err)
 	}
 	encoded, err := os.ReadFile(options.StatsFile)
@@ -270,7 +271,7 @@ func TestLifecycleProcessReadinessRPCStopAndRetainedStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	var statistics runStats
-	if err := json.Unmarshal(encoded, &statistics); err != nil || statistics.Stats != stopped.Stats || statistics.UncachedFallback || statistics.UncachedRetry {
+	if err := json.Unmarshal(encoded, &statistics); err != nil || !reflect.DeepEqual(statistics.Stats, stopped.Stats) || statistics.UncachedFallback || statistics.UncachedRetry {
 		t.Fatalf("final statistics do not match completed service: %+v %v", statistics, err)
 	}
 	for _, path := range []string{ready.Socket, ready.ControlSocket} {

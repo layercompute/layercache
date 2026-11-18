@@ -3,7 +3,6 @@ package xcodecache
 import (
 	"crypto/sha256"
 
-	"github.com/layercache/layercache/internal/artifact"
 	cas "github.com/layercache/layercache/internal/xcodecache/proto/casv1"
 	kv "github.com/layercache/layercache/internal/xcodecache/proto/kvv1"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -22,14 +21,17 @@ type GraphReference struct {
 func ActionReferences(value *kv.Value) ([]GraphReference, error) {
 	if root, ok := value.GetEntries()["CASID"]; ok {
 		_, native := value.Entries["value"]
-		if len(root) != sha256.Size || native {
-			return nil, artifact.ErrCorrupt
+		if len(root) != sha256.Size {
+			return nil, rejectReason(reasonInvalidReferenceId)
+		}
+		if native {
+			return nil, rejectReason(reasonCasidWithNativeValue)
 		}
 		return []GraphReference{{ID: root}}, nil
 	}
 	if node, ok := value.GetEntries()["value"]; ok {
 		if len(value.Entries) != 1 {
-			return nil, artifact.ErrCorrupt
+			return nil, rejectReason(reasonNativeValueWithOtherEntries)
 		}
 		return NativeNodeReferences(node)
 	}
@@ -38,12 +40,15 @@ func ActionReferences(value *kv.Value) ([]GraphReference, error) {
 	var outputs []GraphReference
 	for _, id := range value.GetEntries() {
 		if len(id) != sha256.Size {
-			return nil, artifact.ErrCorrupt
+			return nil, rejectReason(reasonInvalidReferenceId)
 		}
 		outputs = append(outputs, GraphReference{ID: id})
 	}
-	if len(outputs) == 0 || len(outputs) > maximumGraphObjects {
-		return nil, artifact.ErrCorrupt
+	if len(outputs) == 0 {
+		return nil, rejectReason(reasonEmptyActionOutputs)
+	}
+	if len(outputs) > maximumGraphObjects {
+		return nil, rejectReason(reasonGraphObjectLimitExceeded)
 	}
 	return outputs, nil
 }
@@ -58,8 +63,16 @@ const maximumNativeInlineLeaves = 256
 // rejected so a new plugin layout becomes a cache miss until it is qualified.
 func NativeNodeReferences(data []byte) ([]GraphReference, error) {
 	if len(data) > MaxMessageBytes {
-		return nil, artifact.ErrCorrupt
+		return nil, withGraphRejectSample(rejectReason(reasonNativeNodeTooLarge), data, 0)
 	}
+	refs, err := decodeNativeNode(data)
+	if err != nil {
+		return nil, withGraphRejectSample(err, data, 0)
+	}
+	return refs, nil
+}
+
+func decodeNativeNode(data []byte) ([]GraphReference, error) {
 	if hasNativeInlineMarker(data) {
 		return nil, validateNativeInlineLeaves(data)
 	}
@@ -74,20 +87,32 @@ func NativeNodeReferences(data []byte) ([]GraphReference, error) {
 		switch number {
 		case 1:
 			field, _, remaining, err := bytesField(value)
-			if err != nil || len(remaining) != 0 || field != 1 {
-				return nil, artifact.ErrCorrupt
+			if err != nil {
+				return nil, err
+			}
+			if len(remaining) != 0 {
+				return nil, rejectReason(reasonTrailingBytes)
+			}
+			if field != 1 {
+				return nil, rejectReason(reasonUnknownFieldNumber)
 			}
 			chunks++
 		case 2:
 			field, reference, remaining, err := bytesField(value)
-			if err != nil || len(remaining) != 0 {
-				return nil, artifact.ErrCorrupt
+			if err != nil {
+				return nil, err
+			}
+			if len(remaining) != 0 {
+				return nil, rejectReason(reasonTrailingBytes)
 			}
 			if field == 1 { // Inline leaf, including the empty byte string.
 				continue
 			}
-			if field != 2 || len(refs) >= maximumGraphObjects {
-				return nil, artifact.ErrCorrupt
+			if field != 2 {
+				return nil, rejectReason(reasonUnknownFieldNumber)
+			}
+			if len(refs) >= maximumGraphObjects {
+				return nil, rejectReason(reasonGraphObjectLimitExceeded)
 			}
 			ref, err := nativeExternalReference(reference)
 			if err != nil {
@@ -95,11 +120,11 @@ func NativeNodeReferences(data []byte) ([]GraphReference, error) {
 			}
 			refs = append(refs, ref)
 		default:
-			return nil, artifact.ErrCorrupt
+			return nil, rejectReason(reasonUnknownFieldNumber)
 		}
 	}
 	if chunks == 0 {
-		return nil, artifact.ErrCorrupt
+		return nil, rejectReason(reasonMissingRequiredField)
 	}
 	return refs, nil
 }
@@ -121,19 +146,37 @@ func hasNativeInlineMarker(data []byte) bool {
 // to ignore arbitrary chunks or reference-bearing marker nodes.
 func validateNativeInlineLeaves(data []byte) error {
 	number, first, data, err := bytesField(data)
-	if err != nil || number != 1 {
-		return artifact.ErrCorrupt
+	if err != nil {
+		return err
+	}
+	if number != 1 {
+		return rejectReason(reasonUnknownFieldNumber)
 	}
 	field, indices, remaining, err := bytesField(first)
-	if err != nil || field != 2 || len(remaining) != 0 || len(indices) == 0 {
-		return artifact.ErrCorrupt
+	if err != nil {
+		return err
+	}
+	if len(remaining) != 0 {
+		return rejectReason(reasonTrailingBytes)
+	}
+	if field != 2 {
+		return rejectReason(reasonUnknownFieldNumber)
+	}
+	if len(indices) == 0 {
+		return rejectReason(reasonInvalidOrdinalIndex)
 	}
 	var seen [maximumNativeInlineLeaves + 1]bool
 	count := 0
 	for len(indices) > 0 {
 		value, consumed := protowire.ConsumeVarint(indices)
-		if consumed < 0 || consumed != protowire.SizeVarint(value) || value == 0 || value > maximumNativeInlineLeaves || seen[value] || count >= maximumNativeInlineLeaves {
-			return artifact.ErrCorrupt
+		if consumed < 0 {
+			return rejectReason(reasonMalformedVarint)
+		}
+		if count >= maximumNativeInlineLeaves {
+			return rejectReason(reasonInlineLeafCountExceeded)
+		}
+		if consumed != protowire.SizeVarint(value) || value == 0 || value > maximumNativeInlineLeaves || seen[value] {
+			return rejectReason(reasonInvalidOrdinalIndex)
 		}
 		seen[value] = true
 		count++
@@ -141,34 +184,49 @@ func validateNativeInlineLeaves(data []byte) error {
 	}
 	for value := 1; value <= count; value++ {
 		if !seen[value] {
-			return artifact.ErrCorrupt
+			return rejectReason(reasonInvalidOrdinalIndex)
 		}
 	}
 	for range count {
+		if len(data) == 0 {
+			return rejectReason(reasonLiteralCountMismatch)
+		}
 		number, value, rest, err := bytesField(data)
-		if err != nil || number != 1 {
-			return artifact.ErrCorrupt
+		if err != nil {
+			return err
+		}
+		if number != 1 {
+			return rejectReason(reasonUnknownFieldNumber)
 		}
 		field, _, remaining, err := bytesField(value)
-		if err != nil || field != 1 || len(remaining) != 0 {
-			return artifact.ErrCorrupt
+		if err != nil {
+			return err
+		}
+		if len(remaining) != 0 {
+			return rejectReason(reasonTrailingBytes)
+		}
+		if field != 1 {
+			return rejectReason(reasonUnknownFieldNumber)
 		}
 		data = rest
 	}
 	if len(data) != 0 {
-		return artifact.ErrCorrupt
+		return rejectReason(reasonLiteralCountMismatch)
 	}
 	return nil
 }
 
 func bytesField(data []byte) (protowire.Number, []byte, []byte, error) {
 	number, kind, consumed := protowire.ConsumeTag(data)
-	if consumed < 0 || kind != protowire.BytesType {
-		return 0, nil, nil, artifact.ErrCorrupt
+	if consumed < 0 {
+		return 0, nil, nil, rejectReason(reasonMalformedVarint)
+	}
+	if kind != protowire.BytesType {
+		return 0, nil, nil, rejectReason(reasonWrongWireType)
 	}
 	value, size := protowire.ConsumeBytes(data[consumed:])
 	if size < 0 {
-		return 0, nil, nil, artifact.ErrCorrupt
+		return 0, nil, nil, rejectReason(reasonMalformedVarint)
 	}
 	return number, value, data[consumed+size:], nil
 }
@@ -178,15 +236,24 @@ func nativeExternalReference(data []byte) (GraphReference, error) {
 	seen := map[protowire.Number]bool{}
 	for len(data) > 0 {
 		number, kind, consumed := protowire.ConsumeTag(data)
-		if consumed < 0 || seen[number] {
-			return ref, artifact.ErrCorrupt
+		if consumed < 0 {
+			return ref, rejectReason(reasonMalformedVarint)
+		}
+		if seen[number] {
+			return ref, rejectReason(reasonDuplicateField)
 		}
 		seen[number] = true
 		switch number {
 		case 1, 2:
 			field, value, rest, err := bytesField(data)
-			if err != nil || (field == 1 && len(value) != 65) || (field == 2 && len(value) != sha256.Size) {
-				return ref, artifact.ErrCorrupt
+			if err != nil {
+				return ref, err
+			}
+			if field == 1 && len(value) != 65 {
+				return ref, rejectReason(reasonInvalidNativeDigestLength)
+			}
+			if field == 2 && len(value) != sha256.Size {
+				return ref, rejectReason(reasonInvalidReferenceId)
 			}
 			if field == 2 {
 				ref.ID = value
@@ -194,22 +261,25 @@ func nativeExternalReference(data []byte) (GraphReference, error) {
 			data = rest
 		case 3, 4:
 			if kind != protowire.VarintType {
-				return ref, artifact.ErrCorrupt
+				return ref, rejectReason(reasonWrongWireType)
 			}
 			flag, size := protowire.ConsumeVarint(data[consumed:])
-			if size < 0 || flag > 1 {
-				return ref, artifact.ErrCorrupt
+			if size < 0 {
+				return ref, rejectReason(reasonMalformedVarint)
+			}
+			if flag > 1 {
+				return ref, rejectReason(reasonInvalidFlagValue)
 			}
 			if number == 3 {
 				ref.NativeNode = flag == 1
 			}
 			data = data[consumed+size:]
 		default:
-			return ref, artifact.ErrCorrupt
+			return ref, rejectReason(reasonUnknownFieldNumber)
 		}
 	}
 	if !seen[1] || !seen[2] {
-		return ref, artifact.ErrCorrupt
+		return ref, rejectReason(reasonMissingRequiredField)
 	}
 	return ref, nil
 }
@@ -220,21 +290,22 @@ func ObjectReferences(ref GraphReference, object *cas.CASObject) ([]GraphReferen
 	var refs []GraphReference
 	for _, child := range object.GetReferences() {
 		if len(child.GetId()) != sha256.Size {
-			return nil, artifact.ErrCorrupt
+			return nil, withGraphRejectSample(rejectReason(reasonInvalidReferenceId), nil, len(object.GetReferences()))
 		}
 		refs = append(refs, GraphReference{ID: child.Id})
 	}
 	if ref.NativeNode {
-		if _, inline := object.GetBlob().GetContents().(*cas.CASBytes_Data); !inline {
-			return nil, artifact.ErrCorrupt
+		blob, inline := object.GetBlob().GetContents().(*cas.CASBytes_Data)
+		if !inline {
+			return nil, withGraphRejectSample(rejectReason(reasonNativeBlobNotInline), nil, len(object.GetReferences()))
 		}
-		data := object.GetBlob().GetData()
+		data := blob.Data
 		native, err := NativeNodeReferences(data)
 		if err != nil {
-			return nil, err
+			return nil, withGraphRejectSample(err, data, len(object.GetReferences()))
 		}
 		if hasNativeInlineMarker(data) && len(object.GetReferences()) != 0 {
-			return nil, artifact.ErrCorrupt
+			return nil, withGraphRejectSample(rejectReason(reasonInlineMarkerWithEnvelopeReferences), data, len(object.GetReferences()))
 		}
 		refs = append(refs, native...)
 	}
