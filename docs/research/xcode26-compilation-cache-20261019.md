@@ -27,7 +27,7 @@ or construct separate compilation keys.
 | Apple's native local compilation cache | Xcode feature for Swift and C-family languages; project compatibility still matters. |
 | LayerCache Clang adapter | Clang, Objective-C, modules and PCH through a local socket and bounded artifact store. |
 | Swift local CAS persistence | A separate native reuse path; preserving it does not establish external Swift replay. |
-| Swift compilation replay through LayerCache | Unqualified. Actual source compilation misses remain in the mixed-language fixture. |
+| Swift compilation replay through LayerCache | Unqualified on Xcode 26.6 (actual source compilation misses remain in this mixed-language fixture, below). Now qualified at the same checkout path on Xcode 27.0/Swift 6.4/macOS 27.0.1 by the dedicated gate in [`qa/xcode/swift-replay-probe.py`](../../qa/xcode/swift-replay-probe.py); unqualified across a different checkout path. |
 | Sharing between runners | Copy the closed LayerCache store with CI snapshot transport. There is no authenticated shared native TCP endpoint. |
 
 The adapter verifies complete reachable output graphs before returning a hit,
@@ -79,3 +79,13 @@ The next Swift gate is a source-stable producer and empty consumer with
 language-specific replay evidence, changed-input misses, corruption fallback,
 bounded storage and complete-job timing. Compiler hits do not cover linking,
 packaging, signing or fresh simulator assertions.
+
+That gate now exists: [`qa/xcode/swift-replay-probe.py`](../../qa/xcode/swift-replay-probe.py)
+qualifies external Swift compilation replay at the same checkout path on
+Xcode 27.0 (build 27A266a), Swift 6.4, macOS 27.0.1 (build 26A434), with
+fresh DerivedData and native CAS, byte-identical executable/`.swiftmodule`/
+object files against the producer, a changed-source miss isolated to the
+edited module, and a toolchain-identity miss. It does not qualify a
+different checkout path; a consumer rebuilt from a different absolute path
+missed every Swift task, so cache keys depend on the checkout path. See the
+[adapter guide](../xcode-cache.md) and [that gate's README section](../../qa/xcode/README.md#xcode-27-swift-compilation-replay-gate).

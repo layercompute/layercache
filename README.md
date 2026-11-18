@@ -28,8 +28,11 @@ visibility tiers or allow private artifacts to enter Public Cache.
 This repository contains working implementations for Turborepo, GitHub Actions
 cache v1, Docker Buildx/BuildKit, Xcode 26's LLVM compilation-cache protocol, and
 [Nx's native private HTTP cache](docs/nx-cache.md). Xcode's qualified external
-replay covers Clang/C-family work; Swift source compilation replay remains
-[unqualified](docs/research/xcode26-compilation-cache-20261019.md).
+replay covers Clang/C-family work, and now Swift source compilation replay at
+the same checkout path on Xcode 27.0/Swift 6.4/macOS 27.0.1; see the
+[adapter guide](docs/xcode-cache.md) and the
+[earlier research](docs/research/xcode26-compilation-cache-20261019.md) for
+exact scope and what remains unqualified.
 The opt-in [native Bazel HTTP cache](docs/bazel-cache.md) uses an isolated
 `bazel-remote` engine, which requires its own deployment.
 The Nx adapter supports Local
@@ -51,7 +54,9 @@ and standalone Xcode cache lifecycle with scoped snapshot access. It
 retains owner-only Personal projects, native Nx Local/direct private endpoints,
 permanent-conflict pin retirement and complete Xcode graph retention under quota
 pressure. Successful local Turbo results can be confirmed for CI reuse.
-Managed Xcode Cloud acceptance and external Swift replay remain separate gates.
+Managed Xcode Cloud acceptance remains a separate, unqualified gate; external
+Swift replay is now qualified at the same checkout path by a dedicated gate
+(see the [Xcode adapter guide](docs/xcode-cache.md)).
 Nx Local-to-private forwarding remains future work.
 Public Builds are not qualified by this beta, and the hosted self-serve cloud
 requires a separate deployment. npm/CDN mirrors, Vite, Next.js, Windows,
