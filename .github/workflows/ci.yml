@@ -154,6 +154,9 @@ jobs:
   dashboard:
     name: Dashboard / ${{ matrix.browser }}
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -180,9 +183,6 @@ jobs:
         if: steps.scope.outputs.mode != 'docs'
       - run: pnpm install --frozen-lockfile
         if: steps.scope.outputs.mode != 'docs'
-      - run: pnpm exec playwright install --with-deps "${{ matrix.browser }}"
-        if: steps.scope.outputs.mode != 'docs'
-        timeout-minutes: 20
       - run: pnpm typecheck && pnpm build
         if: steps.scope.outputs.mode != 'docs'
       - name: Build dashboard candidate
