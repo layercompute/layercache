@@ -167,6 +167,8 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      - name: Trust the workspace owned by the container's build user
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Classify CI changes
         id: scope
         uses: ./.github/actions/ci-scope
