@@ -25,29 +25,146 @@ note: replayed cache hit: Feature2.swift
 CompileC /tmp/control.o /tmp/control.m normal arm64 objective-c
 remark: cache hit: control.m
 """
-        diagnostics, by_file = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
         self.assertEqual(diagnostics["SwiftEmitModule"], {"hit": 1, "miss": 0})
         self.assertEqual(diagnostics["SwiftCompile"], {"hit": 1, "miss": 1})
         self.assertEqual(diagnostics["CompileC"], {"hit": 1, "miss": 0})
         self.assertEqual(by_file["Feature1.swift"], {"hit": 0, "miss": 1})
         self.assertEqual(by_file["Feature2.swift"], {"hit": 1, "miss": 0})
+        self.assertEqual(by_target["SwiftReplayLib"], {"hit": 1, "miss": 0})
+        self.assertEqual(by_target["SwiftReplayApp"], {"hit": 1, "miss": 1})
 
     def test_unrelated_task_headers_do_not_leak_into_open_block(self):
         log = """SwiftCompile normal arm64 Compiling\\ main.swift main.swift (in target 'SwiftReplayApp' from project 'Probe')
 Ld /tmp/SwiftReplayApp normal
 note: replayed cache hit: main.swift
 """
-        diagnostics, by_file = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
         self.assertEqual(diagnostics["SwiftCompile"], {"hit": 0, "miss": 0})
         self.assertEqual(by_file, {})
+        self.assertEqual(by_target, {})
 
     def test_requires_exact_task_name_match(self):
         log = """SwiftCompileFoo normal arm64 something
 note: replayed cache hit: something
 """
-        diagnostics, by_file = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
         self.assertEqual(diagnostics["SwiftCompile"], {"hit": 0, "miss": 0})
         self.assertEqual(by_file, {})
+        self.assertEqual(by_target, {})
+
+    def test_local_cache_found_not_found_forms_count_as_hit_and_miss(self):
+        log = """SwiftEmitModule normal arm64 Emitting module for SwiftReplayLib (in target 'SwiftReplayLib' from project 'Probe')
+note: Local cache found: SwiftReplayLib
+SwiftCompile normal arm64 Compiling\\ Feature1.swift Feature1.swift (in target 'SwiftReplayApp' from project 'Probe')
+note: Local cache not found: Feature1.swift
+"""
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        self.assertEqual(diagnostics["SwiftEmitModule"], {"hit": 1, "miss": 0})
+        self.assertEqual(diagnostics["SwiftCompile"], {"hit": 0, "miss": 1})
+        self.assertEqual(by_target["SwiftReplayLib"], {"hit": 1, "miss": 0})
+        self.assertEqual(by_target["SwiftReplayApp"], {"hit": 0, "miss": 1})
+
+    def test_compilec_target_is_not_folded_into_by_target(self):
+        log = """CompileC /tmp/control.o /tmp/control.m normal arm64 objective-c (in target 'SwiftReplayControl' from project 'Probe')
+remark: cache hit: control.m
+"""
+        diagnostics, by_file, by_target = probe.task_diagnostics(log, ("SwiftCompile", "SwiftEmitModule", "CompileC"))
+        self.assertEqual(diagnostics["CompileC"], {"hit": 1, "miss": 0})
+        self.assertNotIn("SwiftReplayControl", by_target)
+
+
+class RequireMatched(unittest.TestCase):
+    def test_passes_and_returns_total_when_something_matched(self):
+        total = probe.require_matched("some phase", [{"hit": 1, "miss": 0}, {"hit": 0, "miss": 2}])
+        self.assertEqual(total, 3)
+
+    def test_raises_on_all_zero_counts_naming_the_phase_and_patterns(self):
+        with self.assertRaisesRegex(RuntimeError, r"some phase matched zero Swift cache remarks"):
+            probe.require_matched("some phase", [{"hit": 0, "miss": 0}])
+
+    def test_raises_on_empty_iterable(self):
+        with self.assertRaises(RuntimeError):
+            probe.require_matched("empty phase", [])
+
+
+class CasPathEvidence(unittest.TestCase):
+    def test_parses_every_cas_path_argument(self):
+        log = "xcodebuild ... -cas-path /tmp/derived/CompilationCache.noindex/plugin -cas-path /tmp/native-cas/plugin\n"
+        self.assertEqual(probe.parse_cas_paths(log),
+                          [Path("/tmp/derived/CompilationCache.noindex/plugin"), Path("/tmp/native-cas/plugin")])
+
+    def test_reports_relative_form_under_whichever_root_matched(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            derived, cas = root / "derived", root / "native-cas"
+            derived.mkdir()
+            cas.mkdir()
+            log = f"-cas-path {derived / 'CompilationCache.noindex' / 'plugin'}\n"
+            found = probe.cas_path_evidence(log, derivedData=derived, nativeCasPath=cas)
+            self.assertEqual(found, ["derivedData/CompilationCache.noindex/plugin"])
+
+    def test_reports_under_the_native_cas_root_too(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            derived, cas = root / "derived", root / "native-cas"
+            derived.mkdir()
+            cas.mkdir()
+            log = f"-cas-path {cas / 'plugin'}\n"
+            found = probe.cas_path_evidence(log, derivedData=derived, nativeCasPath=cas)
+            self.assertEqual(found, ["nativeCasPath/plugin"])
+
+    def test_fails_when_no_cas_path_falls_under_either_root(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            derived, cas = root / "derived", root / "native-cas"
+            derived.mkdir()
+            cas.mkdir()
+            log = "-cas-path /somewhere/else/plugin\n"
+            with self.assertRaisesRegex(RuntimeError, r"native reuse location is unproven"):
+                probe.cas_path_evidence(log, derivedData=derived, nativeCasPath=cas)
+
+    def test_fails_when_no_cas_path_argument_is_present_at_all(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            derived, cas = root / "derived", root / "native-cas"
+            derived.mkdir()
+            cas.mkdir()
+            with self.assertRaises(RuntimeError):
+                probe.cas_path_evidence("no cas path arguments here\n", derivedData=derived, nativeCasPath=cas)
+
+
+class ChangedSourceVerdict(unittest.TestCase):
+    """Exercises the same decision the probe makes in qualify(), given
+    synthetic per-module/per-file counts, without needing a Mac."""
+
+    def verdict(self, by_file, by_target):
+        feature_one_misses = by_file.get("Feature1.swift", {}).get("miss", 0)
+        lib_target = by_target.get("SwiftReplayLib", {"hit": 0, "miss": 0})
+        probe.require_matched("changed-source phase (SwiftReplayLib target)", [lib_target])
+        other_module_files_hit = lib_target["miss"] == 0 and lib_target["hit"] > 0
+        return feature_one_misses > 0 and other_module_files_hit
+
+    def test_qualifies_when_edited_file_misses_and_other_module_all_hits(self):
+        by_file = {"Feature1.swift": {"hit": 0, "miss": 1}, "Feature2.swift": {"hit": 1, "miss": 0}, "main.swift": {"hit": 0, "miss": 1}}
+        by_target = {"SwiftReplayLib": {"hit": 1, "miss": 0}, "SwiftReplayApp": {"hit": 1, "miss": 1}}
+        self.assertTrue(self.verdict(by_file, by_target))
+
+    def test_fails_when_the_other_module_also_misses(self):
+        by_file = {"Feature1.swift": {"hit": 0, "miss": 1}}
+        by_target = {"SwiftReplayLib": {"hit": 0, "miss": 1}}
+        self.assertFalse(self.verdict(by_file, by_target))
+
+    def test_fails_when_the_edited_file_did_not_miss(self):
+        by_file = {"Feature1.swift": {"hit": 1, "miss": 0}}
+        by_target = {"SwiftReplayLib": {"hit": 1, "miss": 0}}
+        self.assertFalse(self.verdict(by_file, by_target))
+
+    def test_raises_rather_than_vacuously_passing_when_lib_target_unmatched(self):
+        by_file = {"Feature1.swift": {"hit": 0, "miss": 1}}
+        by_target = {}
+        with self.assertRaises(RuntimeError):
+            self.verdict(by_file, by_target)
 
 
 class NativeCasDiscovery(unittest.TestCase):
