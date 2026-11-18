@@ -1,7 +1,7 @@
 # Install a release
 
-The latest CLI beta is [v0.1.0-beta.11](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.11),
-pinned to protected main commit `646a83db14d17ea52468e89265e36d28ee1c92f6`.
+The latest CLI beta is [v0.1.0-beta.12](https://github.com/layercompute/layercache/releases/tag/v0.1.0-beta.12),
+pinned to protected main commit `438472ddfa4ed0489244316ad6b4c96dc7f34426`.
 It preserves project identities after repository transfers and supports project-bound
 HTTPS GitHub OIDC audiences. The release source also includes the corrected
 Native action bundle.
@@ -28,7 +28,7 @@ installer from an inspected current checkout. The binary remains pinned to the
 release source above:
 
 ```sh
-bash scripts/install.sh --repository layercompute/layercache --version v0.1.0-beta.11 \
+bash scripts/install.sh --repository layercompute/layercache --version v0.1.0-beta.12 \
   --prefix "$HOME/.local/bin"
 "$HOME/.local/bin/layercache" help
 ```
@@ -60,11 +60,11 @@ An old `gh` without the required verification flags fails rather than weakening
 the policy. The Node test uses a local fake GitHub client to exercise policy
 failures and target preservation.
 
-The [beta.11 release workflow](https://github.com/layercompute/layercache/actions/runs/43978101971)
+The [beta.12 release workflow](https://github.com/layercompute/layercache/actions/runs/44322947038)
 qualified native release candidates before immutable publication. The
 [published installer workflow](../.github/workflows/beta-release-install.yml)
 retains beta.9 and its exact source as the historical PR regression fixture.
-An [explicit beta.11 dispatch](https://github.com/layercompute/layercache/actions/runs/43981108422)
+An [explicit beta.12 dispatch](https://github.com/layercompute/layercache/actions/runs/44326403417)
 qualified the new release with its exact tag, source and native-bundle digest.
 It checks the locked tag, attestations, checksum, binary source/platform
 metadata, installation into an empty prefix,

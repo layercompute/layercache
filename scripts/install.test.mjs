@@ -108,6 +108,7 @@ if (process.env.TEST_FAIL === 'true') process.exit(1);
     assert.notEqual(movedTag.status, 0);
     assert.deepEqual(movedTag.calls, []);
     for (const [repository, version] of [
+      ['layercompute/layercache', 'v0.1.0-beta.12'],
       ['layercompute/layercache', 'v0.1.0-beta.11'],
       ['layercompute/layercache', 'v0.1.0-beta.10'],
       ['another/layercache', 'v0.1.0-beta.9'],
@@ -119,7 +120,7 @@ if (process.env.TEST_FAIL === 'true') process.exit(1);
       assert.equal(current.calls[0][current.calls[0].indexOf('--repo') + 1], repository);
       assert.equal(current.calls[0].includes('--bundle'), false);
     }
-    const failed = run('layercompute/layercache', 'v0.1.0-beta.11', source, true);
+    const failed = run('layercompute/layercache', 'v0.1.0-beta.12', source, true);
     assert.notEqual(failed.status, 0);
     assert.equal(failed.calls.length, 1);
     assert.equal(failed.calls[0].includes('--bundle'), false);
