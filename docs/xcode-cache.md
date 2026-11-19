@@ -159,7 +159,7 @@ references; encoded external nodes are followed transitively. The existing
 reference grammar for nodes without a marker is unchanged. A separate marker
 form requires a leading data chunk with nested field 2 containing canonical
 varints that form a permutation of `1..N`, followed by exactly `N` literal data
-chunks with nested field 1, where `N` is 1 through 256. These literals contain
+chunks with nested field 1, where `N` is 1 through 1,024. These literals contain
 terminal native leaves. This form permits no other chunks, reference unions or
 CAS envelope references. Duplicate, zero-based, out-of-range or noncanonical
 indices, missing or extra literals, unknown fields and malformed descriptors
@@ -184,7 +184,7 @@ native object before publication or consumer startup. It requires complete
 ordinal coverage, zero root data, matching child counts and indexed content,
 and terminal children. Public reports contain only bounded structure, counts
 and comparison booleans; native digests and literal hashes stay in the private
-manifest. The semantic probe permits at most 256 targets, 256 children per
+manifest. The semantic probe permits at most 256 targets, 1,024 children per
 target, 1,024 children overall, 64 KiB per child and a shared 64 MiB root/child
 byte budget. Its manifest and report are each bounded to 128 KiB. Closed-store
 shape inspection reads at most 256 rows and 64 MiB and emits at most 256 KiB.

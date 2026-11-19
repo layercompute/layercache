@@ -54,14 +54,41 @@ func assertIndexedInlineLeafActionHit(t *testing.T, node []byte) {
 	}
 }
 
+// shuffledMarkerWithLeadingOverflow returns a permutation of 1..count whose
+// first varint is count itself (above 256 whenever count exceeds it), with
+// the rest interleaved low/high rather than left in sorted order.
+func shuffledMarkerWithLeadingOverflow(count int) []byte {
+	order := make([]int, 0, count)
+	order = append(order, count)
+	low, high := 1, count-1
+	for low <= high {
+		order = append(order, low)
+		low++
+		if low <= high {
+			order = append(order, high)
+			high--
+		}
+	}
+	var marker []byte
+	for _, value := range order {
+		marker = protowire.AppendVarint(marker, uint64(value))
+	}
+	return marker
+}
+
 func TestNativeIndexedInlineLeavesCanonicalVarintBoundaries(t *testing.T) {
-	for _, count := range []int{1, 127, 128, 256} {
-		t.Run(fmt.Sprintf("%d leaves", count), func(t *testing.T) {
+	for _, count := range []int{1, 127, 128, 256, 257, 331, 1024} {
+		t.Run(fmt.Sprintf("%d leaves descending", count), func(t *testing.T) {
 			var marker []byte
 			for index := count; index > 0; index-- {
 				marker = protowire.AppendVarint(marker, uint64(index))
 			}
 			assertIndexedInlineLeafActionHit(t, indexedInlineLeafNode(marker, make([][]byte, count)...))
+		})
+	}
+	for _, count := range []int{257, 331, 1024} {
+		t.Run(fmt.Sprintf("%d leaves shuffled with leading overflow", count), func(t *testing.T) {
+			assertIndexedInlineLeafActionHit(t, indexedInlineLeafNode(shuffledMarkerWithLeadingOverflow(count), make([][]byte, count)...))
 		})
 	}
 }
@@ -81,44 +108,60 @@ func TestNativeIndexedInlineLeavesRejectUnqualifiedShapes(t *testing.T) {
 	external := nativeBytesField(2, nativeBytesField(2, externalDescriptor))
 	inline := nativeBytesField(2, nativeBytesField(1, []byte("inline reference")))
 	var oversizedMarker []byte
-	for index := 1; index <= 257; index++ {
+	for index := 1; index <= 1025; index++ {
 		oversizedMarker = protowire.AppendVarint(oversizedMarker, uint64(index))
 	}
+	oversizedMarkerWithLeadingOverflow := protowire.AppendVarint(nil, 5000)
+	for index := 1; index <= 1024; index++ {
+		oversizedMarkerWithLeadingOverflow = protowire.AppendVarint(oversizedMarkerWithLeadingOverflow, uint64(index))
+	}
 	cases := map[string][]byte{
-		"empty marker":                   indexedInlineLeafNode(nil, nil),
-		"duplicate indices":              indexedInlineLeafNode([]byte{1, 1, 3}, nil, nil, nil),
-		"missing index":                  indexedInlineLeafNode([]byte{1, 3, 4}, nil, nil, nil),
-		"zero based indices":             indexedInlineLeafNode([]byte{0, 1, 2}, nil, nil, nil),
-		"out of range index":             indexedInlineLeafNode([]byte{1, 2, 4}, nil, nil, nil),
-		"noncanonical index":             indexedInlineLeafNode([]byte{0x82, 0x00, 3, 1}, nil, nil, nil),
-		"truncated index":                indexedInlineLeafNode([]byte{1, 2, 0x80}, nil, nil, nil),
-		"overflow index":                 indexedInlineLeafNode(bytes.Repeat([]byte{0xff}, 11), nil),
-		"missing literal":                indexedInlineLeafNode([]byte{2, 3, 1}, nil, nil),
-		"extra literal":                  indexedInlineLeafNode([]byte{2, 3, 1}, nil, nil, nil, nil),
-		"single marker without literal":  indexedInlineLeafNode([]byte{1}),
-		"single marker extra literal":    indexedInlineLeafNode([]byte{1}, nil, nil),
-		"literal before marker":          join(literal, valid),
-		"duplicate leading marker":       join(marker, valid),
-		"marker after literals":          join(valid, marker),
-		"inline reference before marker": join(inline, valid),
-		"inline reference after marker":  join(valid, inline),
-		"external before marker":         join(external, valid),
-		"external after marker":          join(valid, external),
-		"unknown top field":              join(valid, nativeBytesField(3, nil)),
-		"unknown marker field":           join(nativeBytesField(1, nativeBytesField(3, []byte{1})), literal),
-		"marker union has extra field":   join(nativeBytesField(1, join(nativeBytesField(2, []byte{1}), nativeBytesField(1, nil))), literal),
-		"literal union has extra field":  join(marker, literal, literal, nativeBytesField(1, join(nativeBytesField(1, nil), nativeBytesField(2, []byte{1})))),
-		"wrong marker wire type":         join(nativeBytesField(1, protowire.AppendVarint(protowire.AppendTag(nil, 2, protowire.VarintType), 1)), literal),
-		"unknown literal field":          join(marker, literal, literal, nativeBytesField(1, nativeBytesField(3, nil))),
-		"truncated outer field":          join(valid, []byte{0x0a, 0x02, 0x0a}),
-		"truncated nested literal":       join(marker, literal, literal, nativeBytesField(1, []byte{0x0a, 0x02, 0x00})),
-		"more than 256 leaves":           indexedInlineLeafNode(oversizedMarker, make([][]byte, 257)...),
+		"empty marker":                                      indexedInlineLeafNode(nil, nil),
+		"duplicate indices":                                 indexedInlineLeafNode([]byte{1, 1, 3}, nil, nil, nil),
+		"missing index":                                     indexedInlineLeafNode([]byte{1, 3, 4}, nil, nil, nil),
+		"zero based indices":                                indexedInlineLeafNode([]byte{0, 1, 2}, nil, nil, nil),
+		"out of range index":                                indexedInlineLeafNode([]byte{1, 2, 4}, nil, nil, nil),
+		"noncanonical index":                                indexedInlineLeafNode([]byte{0x82, 0x00, 3, 1}, nil, nil, nil),
+		"truncated index":                                   indexedInlineLeafNode([]byte{1, 2, 0x80}, nil, nil, nil),
+		"overflow index":                                    indexedInlineLeafNode(bytes.Repeat([]byte{0xff}, 11), nil),
+		"missing literal":                                   indexedInlineLeafNode([]byte{2, 3, 1}, nil, nil),
+		"extra literal":                                     indexedInlineLeafNode([]byte{2, 3, 1}, nil, nil, nil, nil),
+		"single marker without literal":                     indexedInlineLeafNode([]byte{1}),
+		"single marker extra literal":                       indexedInlineLeafNode([]byte{1}, nil, nil),
+		"literal before marker":                             join(literal, valid),
+		"duplicate leading marker":                          join(marker, valid),
+		"marker after literals":                             join(valid, marker),
+		"inline reference before marker":                    join(inline, valid),
+		"inline reference after marker":                     join(valid, inline),
+		"external before marker":                            join(external, valid),
+		"external after marker":                             join(valid, external),
+		"unknown top field":                                 join(valid, nativeBytesField(3, nil)),
+		"unknown marker field":                              join(nativeBytesField(1, nativeBytesField(3, []byte{1})), literal),
+		"marker union has extra field":                      join(nativeBytesField(1, join(nativeBytesField(2, []byte{1}), nativeBytesField(1, nil))), literal),
+		"literal union has extra field":                     join(marker, literal, literal, nativeBytesField(1, join(nativeBytesField(1, nil), nativeBytesField(2, []byte{1})))),
+		"wrong marker wire type":                            join(nativeBytesField(1, protowire.AppendVarint(protowire.AppendTag(nil, 2, protowire.VarintType), 1)), literal),
+		"unknown literal field":                             join(marker, literal, literal, nativeBytesField(1, nativeBytesField(3, nil))),
+		"truncated outer field":                             join(valid, []byte{0x0a, 0x02, 0x0a}),
+		"truncated nested literal":                          join(marker, literal, literal, nativeBytesField(1, []byte{0x0a, 0x02, 0x00})),
+		"more than 1,024 leaves":                            indexedInlineLeafNode(oversizedMarker, make([][]byte, 1025)...),
+		"more than 1,024 leaves with oversized first index": indexedInlineLeafNode(oversizedMarkerWithLeadingOverflow, make([][]byte, 1025)...),
+	}
+	leafCountExceededCases := map[string]bool{
+		"more than 1,024 leaves":                            true,
+		"more than 1,024 leaves with oversized first index": true,
 	}
 	service := openService(t, t.TempDir(), "project", "toolchain")
 	for name, node := range cases {
 		t.Run(name, func(t *testing.T) {
-			if refs, err := NativeNodeReferences(node); !errors.Is(err, artifact.ErrCorrupt) {
+			refs, err := NativeNodeReferences(node)
+			if !errors.Is(err, artifact.ErrCorrupt) {
 				t.Fatalf("unqualified indexed node parsed: %+v %v", refs, err)
+			}
+			if leafCountExceededCases[name] {
+				var reject *graphRejectError
+				if !errors.As(err, &reject) || reject.reason != reasonInlineLeafCountExceeded {
+					t.Fatalf("expected inlineLeafCountExceeded, got %v", err)
+				}
 			}
 			ctx := context.Background()
 			root, err := service.Save(ctx, &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: blob(node)}})

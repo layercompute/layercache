@@ -118,7 +118,7 @@ def semantic_mapping_qualified(shapes, semantics):
         observed.add(ordinal)
         if not all(item.get(key) is True for key in ("available", "comparisonComplete", "inlineReferenceCountMatches", "inlineReferenceMultisetMatches", "referencedObjectsAreLeaves", "indexedOneBasedReferencesMatch")):
             return False
-        if item.get("dataBytes") != 0 or type(item.get("referenceCount")) is not int or not 1 <= item["referenceCount"] <= 256 or item["referenceCount"] != declared[ordinal] or item.get("referenceObjectsChecked") != item["referenceCount"]:
+        if item.get("dataBytes") != 0 or type(item.get("referenceCount")) is not int or not 1 <= item["referenceCount"] <= 1024 or item["referenceCount"] != declared[ordinal] or item.get("referenceObjectsChecked") != item["referenceCount"]:
             return False
     return observed == set(declared)
 
