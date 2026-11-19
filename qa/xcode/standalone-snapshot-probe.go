@@ -31,7 +31,7 @@ const maxRows = 256
 const maxReadBytes = 64 << 20
 const maxReportBytes = 256 << 10
 const maxFields = 16
-const maxInspectedFields = 256
+const maxInspectedFields = 1024
 
 var hexDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 

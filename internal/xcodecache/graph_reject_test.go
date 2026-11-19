@@ -45,10 +45,10 @@ func TestGraphRejectReasonsIdentifyEachRule(t *testing.T) {
 	t.Run("inline leaf count exceeded", func(t *testing.T) {
 		service := openService(t, t.TempDir(), "project", "toolchain")
 		var marker []byte
-		for index := 1; index <= 257; index++ {
+		for index := 1; index <= 1025; index++ {
 			marker = protowire.AppendVarint(marker, uint64(index))
 		}
-		node := indexedInlineLeafNode(marker, make([][]byte, 257)...)
+		node := indexedInlineLeafNode(marker, make([][]byte, 1025)...)
 		root, err := service.Save(ctx, &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: blob(node)}})
 		if err != nil {
 			t.Fatal(err)
@@ -56,13 +56,13 @@ func TestGraphRejectReasonsIdentifyEachRule(t *testing.T) {
 		assertGraphRejectAction(t, service, "leaf count", root.GetCasId().Id, reasonInlineLeafCountExceeded)
 	})
 
-	t.Run("exactly 256 leaves still passes", func(t *testing.T) {
+	t.Run("exactly 1,024 leaves still passes", func(t *testing.T) {
 		service := openService(t, t.TempDir(), "project", "toolchain")
 		var marker []byte
-		for index := 1; index <= 256; index++ {
+		for index := 1; index <= 1024; index++ {
 			marker = protowire.AppendVarint(marker, uint64(index))
 		}
-		node := indexedInlineLeafNode(marker, make([][]byte, 256)...)
+		node := indexedInlineLeafNode(marker, make([][]byte, 1024)...)
 		root, err := service.Save(ctx, &cas.CASSaveRequest{Data: &cas.CASBlob{Blob: blob(node)}})
 		if err != nil {
 			t.Fatal(err)
@@ -74,7 +74,7 @@ func TestGraphRejectReasonsIdentifyEachRule(t *testing.T) {
 		}
 		hit, err := service.GetValue(ctx, &kv.GetValueRequest{Key: key})
 		if err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS {
-			t.Fatalf("256 leaves must still be accepted: %v %v", hit, err)
+			t.Fatalf("1,024 leaves must still be accepted: %v %v", hit, err)
 		}
 	})
 
@@ -288,7 +288,7 @@ func TestGraphRejectSamplesAreCappedAndNeverLeakLiterals(t *testing.T) {
 	secretLiteral := []byte("super-secret-literal-content-marker")
 
 	var oversizedMarker []byte
-	for index := 1; index <= 257; index++ {
+	for index := 1; index <= 1025; index++ {
 		oversizedMarker = protowire.AppendVarint(oversizedMarker, uint64(index))
 	}
 
@@ -296,7 +296,7 @@ func TestGraphRejectSamplesAreCappedAndNeverLeakLiterals(t *testing.T) {
 		name string
 		node []byte
 	}{
-		{"leaf count", indexedInlineLeafNode(oversizedMarker, make([][]byte, 257)...)},
+		{"leaf count", indexedInlineLeafNode(oversizedMarker, make([][]byte, 1025)...)},
 		{"duplicate ordinal", indexedInlineLeafNode([]byte{1, 1, 3}, secretLiteral, nil, nil)},
 		{"missing literal", indexedInlineLeafNode([]byte{2, 3, 1}, secretLiteral, nil)},
 		{"unknown top field", append(append([]byte(nil), indexedInlineLeafNode([]byte{2, 3, 1}, secretLiteral, nil, nil)...), nativeBytesField(5, []byte("new references"))...)},

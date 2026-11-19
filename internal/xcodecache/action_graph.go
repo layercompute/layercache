@@ -53,7 +53,7 @@ func ActionReferences(value *kv.Value) ([]GraphReference, error) {
 	return outputs, nil
 }
 
-const maximumNativeInlineLeaves = 256
+const maximumNativeInlineLeaves = 1024
 
 // NativeNodeReferences decodes the evidenced native node's data chunks and
 // reference union. Inline references contain their bytes in the action itself.
@@ -165,22 +165,30 @@ func validateNativeInlineLeaves(data []byte) error {
 	if len(indices) == 0 {
 		return rejectReason(reasonInvalidOrdinalIndex)
 	}
-	var seen [maximumNativeInlineLeaves + 1]bool
 	count := 0
-	for len(indices) > 0 {
-		value, consumed := protowire.ConsumeVarint(indices)
+	for rest := indices; len(rest) > 0; {
+		_, consumed := protowire.ConsumeVarint(rest)
 		if consumed < 0 {
 			return rejectReason(reasonMalformedVarint)
 		}
-		if count >= maximumNativeInlineLeaves {
-			return rejectReason(reasonInlineLeafCountExceeded)
+		count++
+		rest = rest[consumed:]
+	}
+	if count > maximumNativeInlineLeaves {
+		return rejectReason(reasonInlineLeafCountExceeded)
+	}
+
+	seen := make([]bool, count+1)
+	for rest := indices; len(rest) > 0; {
+		value, consumed := protowire.ConsumeVarint(rest)
+		if consumed < 0 {
+			return rejectReason(reasonMalformedVarint)
 		}
-		if consumed != protowire.SizeVarint(value) || value == 0 || value > maximumNativeInlineLeaves || seen[value] {
+		if consumed != protowire.SizeVarint(value) || value == 0 || value > uint64(count) || seen[value] {
 			return rejectReason(reasonInvalidOrdinalIndex)
 		}
 		seen[value] = true
-		count++
-		indices = indices[consumed:]
+		rest = rest[consumed:]
 	}
 	for value := 1; value <= count; value++ {
 		if !seen[value] {

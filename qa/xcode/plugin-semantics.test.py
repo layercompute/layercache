@@ -694,7 +694,7 @@ class PluginSemanticsTests(unittest.TestCase):
         chunk = chunks_for((b"x",))[0]
         invalid_mappings = {
             "wrong list type": {},
-            "too many chunks in one target": [chunk] * 257,
+            "too many chunks in one target": [chunk] * 1025,
             "wrong chunk type": [None],
             "missing hash": [{"dataBytes": 1}],
             "extra payload field": [dict(chunk, data="private")],
