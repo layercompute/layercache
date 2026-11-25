@@ -236,6 +236,9 @@ records the proposal; implementation and actual-device savings remain open.
   race-enabled runs and the [live check](docs/personal-storage-design.md#local-qualification)
   verified a retained Mac hit and an SSD-only new write at the configured
   quotas. Source review and CI are tracked in [PR #117](https://github.com/layercompute/layercache/pull/117).
+  The merged macOS run at `9c164fd` reported a busy image during the forced
+  unmount. The test now unmounts the APFS volume while I/O is active and ejects
+  the disposable image during cleanup after releasing the handles.
   LayerCache release installation and full RelayPhone workload acceptance
   remain open, along with
   TypeScript NativeCache unification, relocation and legacy import.

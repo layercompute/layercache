@@ -27,35 +27,47 @@ func TestSSDWritesOnlyAcrossForcedDetachAndReconnect(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = internal.Close() })
 	image, mount := filepath.Join(root, "ssd.sparseimage"), filepath.Join(root, "mount")
-	hdi := func(args ...string) {
+	diskCommand := func(tool string, args ...string) {
 		t.Helper()
 		commandCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if output, err := exec.CommandContext(commandCtx, "/usr/bin/hdiutil", args...).CombinedOutput(); err != nil {
-			t.Fatalf("hdiutil %v: %v\n%s", args, err, output)
+		if output, err := exec.CommandContext(commandCtx, tool, args...).CombinedOutput(); err != nil {
+			t.Fatalf("%s %v: %v\n%s", tool, args, err, output)
 		}
 	}
-	hdi("create", "-type", "SPARSE", "-size", "8g", "-fs", "APFS", "-volname", "LayerCache Test", image)
-	mounted := false
-	attach := func() {
+	const hdiutil = "/usr/bin/hdiutil"
+	const diskutil = "/usr/sbin/diskutil"
+	makeMountpoint := func() {
 		t.Helper()
 		if err := os.Mkdir(mount, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 			t.Fatal(err)
 		}
-		hdi("attach", "-nobrowse", "-mountpoint", mount, image)
-		mounted = true
+	}
+	diskCommand(hdiutil, "create", "-type", "SPARSE", "-size", "8g", "-fs", "APFS", "-volname", "LayerCache Test", image)
+	makeMountpoint()
+	diskCommand(hdiutil, "attach", "-nobrowse", "-mountpoint", mount, image)
+	device := mount
+	t.Cleanup(func() { diskCommand(hdiutil, "detach", "-force", device) })
+	var fs unix.Statfs_t
+	if err := unix.Statfs(mount, &fs); err != nil {
+		t.Fatal(err)
+	}
+	mountedDevice := unix.ByteSliceToString(fs.Mntfromname[:])
+	if !strings.HasPrefix(mountedDevice, "/dev/disk") || unix.ByteSliceToString(fs.Mntonname[:]) != mount {
+		t.Fatal("test image is not mounted at the fixture mountpoint")
+	}
+	device = mountedDevice
+	attach := func() {
+		t.Helper()
+		makeMountpoint()
+		diskCommand(diskutil, "mount", "nobrowse", "-mountPoint", mount, device)
 	}
 	detach := func() {
 		t.Helper()
-		hdi("detach", "-force", mount)
-		mounted = false
+		// Force-unmount the volume while I/O is active. Eject the disk image
+		// only in cleanup, after the old read and write handles are closed.
+		diskCommand(diskutil, "unmount", "force", device)
 	}
-	t.Cleanup(func() {
-		if mounted {
-			detach()
-		}
-	})
-	attach()
 	cfg := removable.Config{
 		MountPath: mount, Directory: "cache", ID: strings.Repeat("a", 32), MaxBytes: 1 << 20, WritesOnly: true,
 	}
