@@ -25,11 +25,15 @@ import (
 	"github.com/layercache/layercache/internal/project"
 	"github.com/layercache/layercache/internal/publicbuild"
 	"github.com/layercache/layercache/internal/uploadqueue"
+	"github.com/layercache/layercache/internal/xcodecache"
 )
 
 const recentDegradedWindow = 24 * time.Hour
 
 type operationalStatus struct {
+	SSD                  *artifact.PoolStatus            `json:"ssd,omitempty"`
+	Xcode                *xcodecache.Stats               `json:"xcode,omitempty"`
+	Metro                bool                            `json:"metro,omitempty"`
 	Configured           bool                            `json:"configured"`
 	RemoteOnly           bool                            `json:"remoteOnly,omitempty"`
 	StorageState         string                          `json:"storageState,omitempty"`
@@ -131,11 +135,17 @@ func inspectOperationalStatus(ctx context.Context, cfg config.Config) operationa
 			result.addDegraded("team-authentication-unavailable")
 		}
 		liveErr = errors.New("Local Cache disabled")
+	} else if cfg.SSD != nil {
+		live, liveErr = readRuntimeStatus(cfg, "/v1/status", 3*time.Second)
+		if liveErr != nil {
+			live, liveErr = probeRuntime(cfg)
+		}
 	} else {
 		live, liveErr = probeRuntime(cfg)
 	}
 	if liveErr == nil && live.Running {
 		result.Running = true
+		result.SSD, result.Xcode, result.Metro = live.SSD, live.Xcode, live.Metro
 		result.UsageBytes = live.UsageBytes
 		if live.MaxBytes > 0 {
 			result.MaxBytes = live.MaxBytes
@@ -758,6 +768,21 @@ func printOperationalStatus(output io.Writer, status operationalStatus) error {
 		formatByteCount(status.UsageBytes), formatByteCount(status.MaxBytes), status.Entries,
 		status.PendingUploads, formatByteCount(status.PendingUploadBytes)); err != nil {
 		return err
+	}
+	if status.SSD != nil {
+		state := "unavailable"
+		if status.SSD.Attached {
+			state = "attached"
+		}
+		if status.SSD.Stats != nil {
+			state += fmt.Sprintf(", %s of %s", formatByteCount(status.SSD.Stats.UsageBytes), formatByteCount(status.SSD.MaxBytes))
+		}
+		if status.SSD.Only {
+			state += " (SSD only while attached)"
+		}
+		if _, err := fmt.Fprintf(output, "Removable Cache: %s\n", state); err != nil {
+			return err
+		}
 	}
 	integrations := "none"
 	if len(status.ActiveIntegrations) > 0 {

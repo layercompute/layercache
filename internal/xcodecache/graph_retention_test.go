@@ -100,7 +100,7 @@ func TestCorruptGraphMissesAndCanBeRepairedWithoutReplacingLease(t *testing.T) {
 	if hit, err := service.GetValue(ctx, &kv.GetValueRequest{Key: key}); err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS {
 		t.Fatalf("initial hit: %v %v", hit, err)
 	}
-	entry, err := service.store.Head(ctx, service.key("cas", object.GetCasId().Id))
+	entry, err := testArtifactStore(service).Head(ctx, service.key("cas", object.GetCasId().Id))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,7 +27,7 @@ func readArtifactStats(ctx context.Context, query interface {
 	rows, err := query.QueryContext(ctx, `WITH per_blob AS (
 		SELECT a.digest, a.size AS usage_bytes, COUNT(e.digest) AS entries,
 			CASE WHEN COUNT(DISTINCT e.integration) > 1 THEN 'shared'
-				WHEN MIN(e.integration) IN ('turbo','actions','gradle','nx','retained','buildkit','bazel','xcode','expo') THEN MIN(e.integration)
+				WHEN MIN(e.integration) IN ('turbo','actions','gradle','nx','retained','buildkit','bazel','xcode','expo','metro') THEN MIN(e.integration)
 				ELSE 'other' END AS integration
 		FROM artifacts AS a LEFT JOIN cache_entries AS e ON e.digest = a.digest
 		GROUP BY a.digest, a.size

@@ -135,9 +135,18 @@ func (server *Server) queuePinnedTurboUpload(ctx context.Context, prepared prepa
 }
 
 func (server *Server) reconcileUploadPins(ctx context.Context) error {
-	jobs, err := server.uploads.Unfinished(ctx)
+	pins, err := server.turboUploadPins(ctx)
 	if err != nil {
 		return err
+	}
+	_, err = server.store.ReconcilePins(ctx, teamUploadPinNamespace, pins)
+	return err
+}
+
+func (server *Server) turboUploadPins(ctx context.Context) ([]artifact.Pin, error) {
+	jobs, err := server.uploads.Unfinished(ctx)
+	if err != nil {
+		return nil, err
 	}
 	pins := make([]artifact.Pin, 0, len(jobs))
 	for _, job := range jobs {
@@ -146,7 +155,7 @@ func (server *Server) reconcileUploadPins(ctx context.Context) error {
 		}
 		compatibilityID, nativeKey, err := decodeTurboUploadIdentity(job.Identity, server.config.CompatibilityID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pins = append(pins, artifact.Pin{
 			Owner: job.ID,
@@ -158,8 +167,7 @@ func (server *Server) reconcileUploadPins(ctx context.Context) error {
 			Size:   job.Size,
 		})
 	}
-	_, err = server.store.ReconcilePins(ctx, teamUploadPinNamespace, pins)
-	return err
+	return pins, nil
 }
 
 func encodeTurboUploadIdentity(compatibilityID, nativeKey string) string {
@@ -262,7 +270,7 @@ func (server *Server) processUpload(lease uploadqueue.Lease) {
 		Integration: "turbo", Project: server.config.ProjectID,
 		Compatibility: compatibilityID, Native: nativeKey,
 	}
-	entry, file, err := server.store.Get(server.uploadContext, key)
+	entry, file, err := server.getTurboUpload(server.uploadContext, key, lease.Job.Digest, lease.Job.Size)
 	if err != nil {
 		server.retryUpload(lease, "artifact_unavailable")
 		return
@@ -318,7 +326,7 @@ func (server *Server) reopenLocalArtifact(
 			opened = true
 			return io.NopCloser(file), nil
 		}
-		reopened, body, err := server.store.Get(ctx, key)
+		reopened, body, err := server.getTurboUpload(ctx, key, entry.Digest, entry.Size)
 		if err != nil {
 			return nil, err
 		}

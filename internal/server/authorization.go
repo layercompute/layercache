@@ -132,6 +132,8 @@ func requiredRequestCapability(request *http.Request) (access.Capability, string
 		integration = "turbo"
 	case strings.HasPrefix(path, gradleCachePrefix):
 		integration = "gradle"
+	case strings.HasPrefix(path, metroCachePrefix):
+		integration = "metro"
 	case strings.HasPrefix(path, bazelCachePrefix):
 		integration = "bazel"
 	case strings.HasPrefix(path, "/_apis/artifactcache/") || strings.HasPrefix(path, "/_layercache/compatibility/"):

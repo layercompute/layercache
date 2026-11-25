@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -65,11 +68,7 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 		return err
 	}
 	defer runtime.Close()
-	arguments := append(append([]string{}, command[1:]...),
-		"COMPILATION_CACHE_ENABLE_CACHING=YES", "COMPILATION_CACHE_ENABLE_PLUGIN=YES",
-		"COMPILATION_CACHE_REMOTE_SERVICE_PATH="+options.Socket,
-		"COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES", "COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES")
-	err = runChild(ctx, command, arguments, stdout, stderr)
+	err = runCachedChild(ctx, options.Socket, command, stdout, stderr)
 	closeErr := runtime.Close()
 	stats := runStats{Stats: runtime.service.Stats()}
 	if closeErr != nil {
@@ -80,4 +79,39 @@ func Run(ctx context.Context, options Options, command []string, stdout, stderr 
 	// result instead of rerunning a genuine compiler failure or masking it.
 	reportStats(options.StatsFile, stats, stderr)
 	return err
+}
+
+func runCachedChild(ctx context.Context, socket string, command []string, stdout, stderr io.Writer) error {
+	arguments := append(append([]string{}, command[1:]...),
+		"COMPILATION_CACHE_ENABLE_CACHING=YES", "COMPILATION_CACHE_ENABLE_PLUGIN=YES",
+		"COMPILATION_CACHE_REMOTE_SERVICE_PATH="+socket,
+		"COMPILATION_CACHE_ENABLE_DETACHED_KEY_QUERIES=YES", "COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES")
+	return runChild(ctx, command, arguments, stdout, stderr)
+}
+
+// RunShared uses the socket of an explicitly started Local Cache daemon.
+func RunShared(ctx context.Context, socket string, command []string, stdout, stderr io.Writer) error {
+	if len(command) == 0 {
+		return errors.New("xcodebuild command required")
+	}
+	directory, err := privateDirectory(filepath.Dir(socket), false)
+	if err != nil {
+		return uncached(ctx, Options{}, command, stdout, stderr, err)
+	}
+	defer directory.Close()
+	info, err := os.Lstat(socket)
+	if err != nil {
+		return uncached(ctx, Options{}, command, stdout, stderr, err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || info.Mode()&os.ModeSocket == 0 || info.Mode().Perm() != 0600 || stat.Uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("%w: shared Xcode socket is not private", errUnsafePath)
+	}
+	dialer := net.Dialer{Timeout: 500 * time.Millisecond}
+	connection, err := dialer.DialContext(ctx, "unix", socket)
+	if err != nil {
+		return uncached(ctx, Options{}, command, stdout, stderr, err)
+	}
+	connection.Close()
+	return runCachedChild(ctx, socket, command, stdout, stderr)
 }

@@ -153,7 +153,7 @@ func (server *Server) getGradle(writer http.ResponseWriter, request *http.Reques
 func (server *Server) putGradle(writer http.ResponseWriter, request *http.Request, key artifact.Key) {
 	startedAt := time.Now().UTC()
 	defer request.Body.Close()
-	maximum, err := server.cacheLimit(request.Context())
+	maximum, err := server.artifactLimit(request.Context())
 	if err != nil || maximum <= 0 || maximum == math.MaxInt64 {
 		http.Error(writer, "cache quota unavailable", http.StatusServiceUnavailable)
 		return
@@ -163,7 +163,7 @@ func (server *Server) putGradle(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	reader := &gradleUploadReader{ctx: request.Context(), body: io.LimitReader(request.Body, maximum+1), expected: request.ContentLength, maximum: maximum}
-	entry, created, err := server.store.Put(request.Context(), key, artifact.Metadata{}, reader)
+	entry, created, err := server.store.Put(artifact.WithSizeHint(request.Context(), request.ContentLength), key, artifact.Metadata{}, reader)
 	if reader.terminalErr != nil {
 		// Cloud error redaction may remove wrapping. The reader owns the
 		// canonical request failure, independently of backend error formatting.

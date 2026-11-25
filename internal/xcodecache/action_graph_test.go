@@ -69,7 +69,7 @@ func TestNativeActionGraphRetainsTransitiveOutputsAndUpgradesSharedInterpretatio
 	if err != nil || hit.GetOutcome() != kv.GetValueResponse_SUCCESS || !bytes.Equal(hit.GetValue().Entries["value"], value) {
 		t.Fatalf("native graph hit: %v %v", hit, err)
 	}
-	if err := service.store.Delete(ctx, service.key("cas", leaf.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
+	if err := testArtifactStore(service).Delete(ctx, service.key("cas", leaf.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
 		t.Fatalf("native descendant not retained: %v", err)
 	}
 	if stats := service.Stats(); stats.GraphChecks != 1 || stats.GraphObjectsChecked != 2 || stats.CASReads != 0 {
@@ -139,7 +139,7 @@ func TestClangFlatOutputMapRetainsEveryOutput(t *testing.T) {
 		t.Fatalf("flat output hit: %v %v", response, err)
 	}
 	for _, id := range values {
-		if err := service.store.Delete(ctx, service.key("cas", id)); !errors.Is(err, artifact.ErrPinned) {
+		if err := testArtifactStore(service).Delete(ctx, service.key("cas", id)); !errors.Is(err, artifact.ErrPinned) {
 			t.Fatalf("flat output not retained: %v", err)
 		}
 	}

@@ -36,7 +36,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	syncTeam := flags.Bool("sync-team", false, "confirm successful Turbo task results are available to CI in Team Cache")
 	syncTimeout := flags.Duration("sync-timeout", 30*time.Second, "Team Cache confirmation timeout, from 1ms to 60s")
 	var transientBypasses stringList
-	flags.Var(&transientBypasses, "bypass", "bypass turbo, actions, buildkit, nx, gradle, or all for this command (repeatable)")
+	flags.Var(&transientBypasses, "bypass", "bypass turbo, actions, buildkit, nx, gradle, metro, or all for this command (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -80,6 +80,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return runCommandWithScopeBypass(ctx, commandArgs, stdout, stderr)
 	}
 	var executionReport *clientExecutionObservation
+	var liveMetro bool
 	if !cfg.RemoteOnly {
 		live, probeErr := probeRuntime(cfg)
 		if probeErr != nil {
@@ -88,6 +89,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 			)
 			return runCommandWithoutCache(ctx, commandArgs, stdout, stderr)
 		}
+		liveMetro = live.Metro
 		executionReport = prepareLocalExecutionObservation(ctx, cfg, live.ExecutionObservations, discovered.Root)
 	}
 	random, err := config.NewToken()
@@ -122,7 +124,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		authority.Execution = executionReport.localContext(runID)
 	}
 	endpoint := localRuntimeURL(cfg.Listen)
-	var turboToken, actionsToken, buildkitToken, nxToken, gradleToken string
+	var turboToken, actionsToken, buildkitToken, nxToken, gradleToken, metroToken string
 	if cfg.RemoteOnly {
 		scoped := cfg
 		scoped.ActionsRepository, scoped.ActionsRef, scoped.ActionsDefaultRef = authority.Repository, authority.Ref, authority.DefaultRef
@@ -177,6 +179,14 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		if err != nil {
 			return err
 		}
+		if cfg.Metro && liveMetro && !isAdapterBypassed(cfg, "metro") {
+			metroAuthority := authority
+			metroAuthority.Integration = "metro"
+			metroToken, err = access.MintCapabilityToken(cfg.LocalToken, metroAuthority, now)
+			if err != nil {
+				return err
+			}
+		}
 		if executionReport != nil {
 			executionReport.token = turboToken
 			executionReport.report(ctx, "start")
@@ -210,6 +220,11 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		"LAYER_CACHE_GRADLE_URL":                   endpoint + "/v1/gradle-cache/",
 		"LAYER_CACHE_GRADLE_TOKEN":                 gradleToken,
 		measurementCapabilityEnvironment:           buildkitToken,
+	}
+	injected["LAYER_CACHE_METRO_URL"] = ""
+	injected["LAYER_CACHE_METRO_TOKEN"] = metroToken
+	if metroToken != "" {
+		injected["LAYER_CACHE_METRO_URL"] = endpoint + "/v1/metro-cache"
 	}
 	if summaryEnabled {
 		// This is Turborepo's documented environment equivalent of
@@ -282,6 +297,8 @@ func runCommandWithoutCache(ctx context.Context, commandArgs []string, stdout, s
 	command.Stdout = stdout
 	command.Stderr = stderr
 	command.Env = withoutGradleCacheEnvironment(withoutTurboSyncPolicy(os.Environ()))
+	command.Env = replaceEnvironment(command.Env, "LAYER_CACHE_METRO_URL", "")
+	command.Env = replaceEnvironment(command.Env, "LAYER_CACHE_METRO_TOKEN", "")
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("command failed while Layer Cache was unavailable: %w", err)
 	}
@@ -304,6 +321,7 @@ func runCommandWithScopeBypass(ctx context.Context, commandArgs []string, stdout
 		"ACTIONS_RESULTS_URL", "LOCAL_CI_ACTIONS_CACHE_URL", "LOCAL_CI_ACTIONS_RUNTIME_TOKEN",
 		"NX_SELF_HOSTED_REMOTE_CACHE_SERVER", "NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN",
 		"LAYER_CACHE_GRADLE_URL", "LAYER_CACHE_GRADLE_TOKEN", "LAYER_CACHE_GRADLE_PUSH", "LAYER_CACHE_GRADLE_LOCAL_ENABLED",
+		"LAYER_CACHE_METRO_URL", "LAYER_CACHE_METRO_TOKEN",
 	} {
 		command.Env = replaceEnvironment(command.Env, key, "")
 	}

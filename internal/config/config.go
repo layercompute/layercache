@@ -23,6 +23,7 @@ import (
 
 	"github.com/layercache/layercache/internal/compatibility"
 	"github.com/layercache/layercache/internal/publictrust"
+	"github.com/layercache/layercache/internal/removable"
 	"github.com/layercache/layercache/internal/retention"
 )
 
@@ -37,6 +38,9 @@ type Config struct {
 	InstallationID             string             `json:"installationId,omitempty"`
 	Role                       string             `json:"role"`
 	RemoteOnly                 bool               `json:"remoteOnly,omitempty"`
+	Metro                      bool               `json:"metro,omitempty"`
+	SSD                        *removable.Config  `json:"ssd,omitempty"`
+	Xcode                      *XcodeConfig       `json:"xcode,omitempty"`
 	DataDir                    string             `json:"dataDir"`
 	Listen                     string             `json:"listen"`
 	MaxBytes                   int64              `json:"maxBytes"`
@@ -108,6 +112,39 @@ type Config struct {
 	LocalToken                 string             `json:"localToken"`
 	CompatibilityID            string             `json:"compatibilityId"`
 	CreatedAt                  time.Time          `json:"createdAt"`
+}
+
+// XcodeConfig opts into the shared Local Cache through a private Unix socket.
+type XcodeConfig struct {
+	Socket        string `json:"socket"`
+	Compatibility string `json:"compatibility"`
+}
+
+func (cfg Config) ValidateLocalStorage() error {
+	if cfg.SSD != nil || cfg.Xcode != nil || cfg.Metro {
+		if cfg.Role != "local" || cfg.RemoteOnly {
+			return errors.New("ssd, metro and shared xcode storage require an on-device Local Cache")
+		}
+		if !filepath.IsAbs(cfg.DataDir) {
+			return errors.New("ssd, metro and shared xcode storage require an absolute dataDir")
+		}
+	}
+	if cfg.SSD != nil {
+		if err := cfg.SSD.Validate(); err != nil {
+			return err
+		}
+	}
+	if cfg.Xcode != nil {
+		socket := cfg.Xcode.Socket
+		if !filepath.IsAbs(socket) || filepath.Clean(socket) != socket || len(socket) > 100 ||
+			filepath.Dir(socket) == "/" || strings.ContainsRune(socket, 0) {
+			return errors.New("xcode.socket must be an absolute Unix socket path of at most 100 bytes in a private directory")
+		}
+		if err := compatibility.Validate(cfg.Xcode.Compatibility); err != nil {
+			return fmt.Errorf("xcode.compatibility: %w", err)
+		}
+	}
+	return nil
 }
 
 // DirectTransfer lets LayerCache clients of a hosted pool move object bytes
@@ -370,6 +407,9 @@ func (cfg Config) Validate() error {
 	if cfg.RemoteOnly && (cfg.Role != "local" || cfg.TeamURL == "" || cfg.BazelRemote != nil || cfg.CloudPostgresURL != "" || cfg.CloudS3Endpoint != "") {
 		return errors.New("remoteOnly requires a local client configuration with teamUrl and no storage backend")
 	}
+	if err := cfg.ValidateLocalStorage(); err != nil {
+		return err
+	}
 	if err := cfg.ValidateSnapshotCredentials(); err != nil {
 		return err
 	}
@@ -479,7 +519,7 @@ func (cfg Config) Validate() error {
 	}
 	seenAdapters := make(map[string]struct{}, len(cfg.BypassAdapters))
 	for _, adapter := range cfg.BypassAdapters {
-		if adapter != "turbo" && adapter != "actions" && adapter != "buildkit" && adapter != "nx" && adapter != "gradle" {
+		if adapter != "turbo" && adapter != "actions" && adapter != "buildkit" && adapter != "nx" && adapter != "gradle" && adapter != "metro" {
 			return fmt.Errorf("unknown bypass adapter %q", adapter)
 		}
 		if _, exists := seenAdapters[adapter]; exists {

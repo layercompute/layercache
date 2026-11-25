@@ -31,6 +31,7 @@ import (
 	"github.com/layercache/layercache/internal/retention"
 	"github.com/layercache/layercache/internal/telemetry"
 	"github.com/layercache/layercache/internal/uploadqueue"
+	"github.com/layercache/layercache/internal/xcodecache"
 )
 
 type measurementRepository interface {
@@ -57,6 +58,8 @@ type Server struct {
 	runtimeLock       *runtimeDirectoryLock
 	store             cacheStore
 	localStore        *artifact.Store
+	pools             *artifact.Pools
+	xcode             *xcodecache.Listener
 	cloudStore        *cloud.Store
 	retainedStore     retainedRepository
 	team              *remote.TurboClient
@@ -130,6 +133,9 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 	}
 	if cfg.RemoteOnly {
 		return nil, errors.New("remoteOnly is a client-only configuration")
+	}
+	if err := cfg.ValidateLocalStorage(); err != nil {
+		return nil, err
 	}
 	if err := cfg.ValidateBazelRemote(); err != nil {
 		return nil, err
@@ -324,8 +330,27 @@ func newWithProjectAuthority(ctx context.Context, cfg config.Config, authority P
 			return nil, err
 		}
 	}
+	if cfg.SSD != nil {
+		server.pools = artifact.NewPools(localStore, *cfg.SSD, server.prepareRemovableStore)
+		server.store = localPoolStore{cacheStore: server.store, pools: server.pools}
+	}
 	if cfg.Role == "local" && cfg.TeamURL != "" && cfg.TeamToken != "" {
 		if err := server.openUploadQueue(); err != nil {
+			server.Close()
+			return nil, err
+		}
+	}
+	if cfg.Xcode != nil {
+		var store xcodecache.ArtifactStore = localStore
+		if server.pools != nil {
+			store = server.pools
+		}
+		if err := localStore.ResetReadLeases(ctx, "xcode-restore"); err != nil {
+			server.Close()
+			return nil, err
+		}
+		server.xcode, err = xcodecache.ListenShared(ctx, cfg.Xcode.Socket, cfg.ProjectID, cfg.Xcode.Compatibility, store)
+		if err != nil {
 			server.Close()
 			return nil, err
 		}
@@ -351,6 +376,12 @@ func (server *Server) Close() error {
 	server.closeUploadQueue()
 	server.stopCloudMaintenance()
 	var closeErrors []error
+	if server.xcode != nil {
+		closeErrors = append(closeErrors, server.xcode.Close())
+	}
+	if server.pools != nil {
+		closeErrors = append(closeErrors, server.pools.Close())
+	}
 	if server.actionsPublic != nil {
 		closeErrors = append(closeErrors, server.actionsPublic.Close())
 	}
@@ -443,6 +474,9 @@ func (server *Server) routes() {
 	server.turboTransferRoutes()
 	server.mux.Handle("/v1/cache/{hash}", server.requireNxToken(http.HandlerFunc(server.nxArtifact)))
 	server.mux.Handle("/v1/gradle-cache/{hash}", server.requireGradleToken(http.HandlerFunc(server.gradleArtifact)))
+	if server.config.Metro {
+		server.mux.Handle(metroCachePrefix+"{key}", server.requireToken(http.HandlerFunc(server.metroArtifact)))
+	}
 	server.mux.Handle(bazelCachePrefix, server.requireBazelToken(http.HandlerFunc(server.bazelArtifact)))
 	server.publicRoutes()
 	server.publicBuildRoutes()
@@ -489,6 +523,15 @@ func (server *Server) status(writer http.ResponseWriter, request *http.Request) 
 		result["operationReports"] = feature
 	}
 	result["metadataBytes"] = stats.MetadataBytes
+	if server.pools != nil && request.URL.Query().Get("runtime-only") != "1" {
+		result["ssd"] = server.pools.Status(request.Context())
+	}
+	if server.config.Metro {
+		result["metro"] = true
+	}
+	if server.xcode != nil {
+		result["xcode"] = server.xcode.Stats()
+	}
 	claims, authenticated := access.ClaimsFromContext(request.Context())
 	result["canPrune"] = server.config.Role != "public" && authenticated && claims.Allows(access.CapabilityAdmin) && server.currentMembershipAllows(request.Context(), claims, access.CapabilityAdmin)
 	if server.storagePool.Path != "" {
@@ -682,12 +725,13 @@ func (server *Server) putTurbo(writer http.ResponseWriter, request *http.Request
 	defer request.Body.Close()
 	server.observeTurboUpload(key, startedAt)
 	metadata := turboRequestMetadata(request)
-	maximum, err := server.cacheLimit(request.Context())
+	maximum, err := server.artifactLimit(request.Context())
 	if err != nil {
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "cache quota unavailable"})
 		return
 	}
-	entry, _, err := server.store.Put(request.Context(), key, metadata, io.LimitReader(request.Body, maximum+1))
+	ctx := artifact.WithSizeHint(request.Context(), request.ContentLength)
+	entry, _, err := server.store.Put(ctx, key, metadata, io.LimitReader(request.Body, maximum+1))
 	if errors.Is(err, artifact.ErrConflict) {
 		writeJSON(writer, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -707,7 +751,7 @@ func (server *Server) putTurbo(writer http.ResponseWriter, request *http.Request
 			degraded = true
 			writer.Header().Set("x-layercache-degraded", "team-publication-failed")
 			writer.Header().Set("x-layercache-upload-queue", "full-or-unavailable")
-		} else if _, file, openErr := server.store.Get(request.Context(), key); openErr == nil {
+		} else if _, file, openErr := server.getTurboUpload(request.Context(), key, entry.Digest, entry.Size); openErr == nil {
 			publishErr := server.team.PutFrom(request.Context(), key.Native, entry, server.reopenLocalArtifact(request.Context(), key, entry, file))
 			file.Close()
 			if publishErr != nil {
@@ -988,6 +1032,7 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 	if server.team != nil {
 		// Fetch verifies a direct transfer and repeats a failed one once through
 		// the proxied read, so install sees the final attempt's download.
+		var installed artifact.Entry
 		storeErr, hasMetadata := error(nil), false
 		teamErr := server.team.Fetch(ctx, key.Native, func(download remote.TurboDownload) error {
 			hasMetadata = download.ExpectedDigest != ""
@@ -1000,7 +1045,7 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 			if download.Size >= 0 {
 				body = exactSizeReader(body, download.Size)
 			}
-			_, _, storeErr = server.store.PutVerified(ctx, key, download.Metadata, body, download.ExpectedDigest)
+			installed, _, storeErr = server.store.PutVerified(artifact.WithSizeHint(ctx, download.Size), key, download.Metadata, body, download.ExpectedDigest)
 			if storeErr != nil {
 				return &turboInstallError{err: storeErr}
 			}
@@ -1011,10 +1056,13 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 			if hasMetadata {
 				if storeErr == nil {
 					entry, file, err = server.store.Get(ctx, key)
-					if err == nil {
+					if err == nil && entry.Digest == installed.Digest && entry.Size == installed.Size {
 						return turboResolution{
 							Entry: entry, Body: file, Source: "team", Degraded: degraded,
 						}, nil
+					}
+					if err == nil {
+						file.Close()
 					}
 					if ctx.Err() != nil {
 						return turboResolution{Degraded: degraded}, ctx.Err()
@@ -1059,7 +1107,7 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 					"leaseExpires":   download.Publication.ExpiresAt.Format(time.RFC3339Nano),
 				},
 			}
-			stored, _, err := server.store.PutVerified(ctx, key, metadata, download.Body, download.Publication.Digest)
+			stored, _, err := server.store.PutVerified(artifact.WithSizeHint(ctx, download.Publication.Size), key, metadata, download.Body, download.Publication.Digest)
 			if err != nil {
 				if errors.Is(err, artifact.ErrConflict) {
 					entry, file, localErr := server.store.Get(ctx, key)
@@ -1081,6 +1129,10 @@ func (server *Server) resolveTurbo(ctx context.Context, key artifact.Key) (turbo
 			entry, file, err = server.store.Get(ctx, key)
 			if err != nil {
 				return turboResolution{Degraded: degraded}, err
+			}
+			if entry.Digest != stored.Digest || entry.Size != stored.Size {
+				file.Close()
+				return turboResolution{Degraded: true}, artifact.ErrNotFound
 			}
 			return turboResolution{
 				Entry: entry, Body: file, Source: "public", Degraded: degraded,

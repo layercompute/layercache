@@ -210,19 +210,27 @@ records the proposal; implementation and actual-device savings remain open.
   acceptance targets; it does not certify review or runtime qualification.
   November 17 user outcome: refresh the design against main
   [`f7a0674`](https://github.com/layercompute/layercache/commit/f7a067447cae955c0a0ff1e0d3aacb945a83b190)
-  and define the [first Go/Turbo slice](docs/personal-storage-design.md#first-slice).
-  The design refresh in [PR #99](https://github.com/layercompute/layercache/pull/99)
-  now records the baseline's verified-install seam and failure behavior.
-  Completion target: a source-aligned Go/Turbo first slice, explicit install
-  and no-redirect contracts, origin isolation and signature-preserving migration.
-  Runtime implementation and hardware qualification remain open.
-  Workload-specific estimates and actual-device measurements remain open;
-  establish incremental benefit after existing native sharing before offload.
-  First runtime target: one optional SSD pool beside `DataDir` for the Go
-  daemon's Turbo traffic, with new writes only and clean hits/misses with the
-  SSD present, unplugged between runs and unplugged mid-run. Omitting
-  `storagePools` preserves today's single-store behavior. No relocation,
-  legacy import or TypeScript NativeCache integration belongs to this slice.
+  and define the [Go/Turbo design](https://github.com/layercompute/layercache/pull/99)
+  around the existing verified-install seam and failure behavior. Explicit
+  legacy migration with origin isolation and signature preservation remains open.
+  November 25 RelayPhone outcome: opt into one internal artifact budget of
+  5 GB and one removable SSD budget of up to 100 GB, with live fallback on
+  removal and an option to bypass internal artifact storage while attached.
+  LayerCache storage/native clients own the source and qualification.
+  Against baseline [`94888b3`](https://github.com/layercompute/layercache/commit/94888b32ebcdfe27c45f07eef9159060c9ea8c74),
+  the [SSD pool](internal/artifact/pools_unix.go) routes Turbo, Gradle, Metro
+  and the shared Xcode compiler store. RelayPhone has explicit, local opt-ins
+  in its Metro config and Xcode wrapper. [Setup and limits](docs/personal-storage-design.md#local-setup)
+  document the configured caps and covered artifacts. [Local qualification](docs/personal-storage-design.md#local-qualification)
+  records mounted APFS, native client and restart evidence. The Mac's running
+  Local Cache and installed XCR worker are enabled. Force-unmounting the real
+  USB SSD's APFS volume during a restore caused the cache stream to fail. XCR
+  recovered a verified 32 MiB ZIP from production R2 in one GET and served the
+  next restore from the internal cache.
+  LayerCache release installation and full RelayPhone workload acceptance
+  remain open, along with
+  TypeScript NativeCache unification, relocation and legacy import.
+  Establish incremental workload benefit after existing native sharing before offload.
   M1-M5 runtime acceptance stays open. M1's new work brings TypeScript
   NativeCache under the same owner and budget; the Go daemon already shares
   artifacts across worktrees of one project. M2-M5 are direction, not gates;
@@ -235,8 +243,8 @@ records the proposal; implementation and actual-device savings remain open.
   single-fetch behavior, corruption/quota/restart/active-reader controls and
   sustained measured internal allocation reduction on a representative workload.
   Record full command time, temporary peaks and offline tradeoffs. Source gates,
-  installed binaries and actual SSD/SSH/VM adoption are separate receipts; none
-  of M1-M3 is completed by this design-only change. Reuse local hot bytes
+  installed binaries and actual SSD/SSH/VM adoption are separate receipts.
+  Reuse local hot bytes
   alongside hosted R2 storage: fetch a compatible immutable artifact once,
   reuse it across workspaces, and avoid multiplying independent disk budgets.
   Reuse the existing content-addressed store, verified read-through, LRU and
