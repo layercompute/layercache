@@ -561,7 +561,14 @@ records the proposal; implementation and actual-device savings remain open.
   passed at `c37956681296bb6ac26c558107fd71a4d8cb2e7b`, and a GitHub-authenticated
   read of an existing Turbo entry matched the stored size and SHA-256.
   The operator runbook now includes both startup guards in the pool-resize
-  checks. Automatic ingress recovery after a host reboot remains open.
+  checks. LayerCache cloud/operators added an enabled systemd startup unit
+  for the shared ingress after Docker skipped the Caddy container at boot.
+  The unit recovered a stopped Caddy fixture and passed its production HTTPS
+  check while the running container kept its start time. The
+  [external health check](https://github.com/layercompute/layercache/actions/runs/45588208216)
+  passed at `a9ab7f3215f8b9fdb314771b212d41abf053a42a`. Confirm that the startup
+  unit succeeds and the LayerCache endpoint stays healthy at the next host
+  reboot.
 
 - [x] **Release the merged CLI capabilities as beta.7.**
   Owner: LayerCache release. The immutable beta.5 binary predates native Bazel,
