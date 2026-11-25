@@ -202,12 +202,13 @@ func TestDashboardServeOwnsBackendAndPreservesSourceAndExistingRuntime(t *testin
 }
 
 func TestDashboardServeRollsBackOnlyNewlyStartedBackends(t *testing.T) {
-	cfg, _ := dashboardFixtureConfig(t)
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer busy.Close()
+	// Hold the conflicting listener before the fixture picks its own port.
+	cfg, _ := dashboardFixtureConfig(t)
 	second := cfg
 	second.Listen = busy.Addr().String()
 	second.DataDir = filepath.Join(t.TempDir(), "second")
@@ -216,7 +217,7 @@ func TestDashboardServeRollsBackOnlyNewlyStartedBackends(t *testing.T) {
 	}
 	listener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
-		t.Fatal("partial startup retained first listener")
+		t.Fatalf("partial startup retained first listener: %v", err)
 	}
 	listener.Close()
 	connection, err := net.DialTimeout("tcp", busy.Addr().String(), time.Second)
