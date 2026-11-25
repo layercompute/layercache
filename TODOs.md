@@ -367,71 +367,6 @@ records the proposal; implementation and actual-device savings remain open.
   [migration guide](docs/cloud-migration.md) records the reusable checks.
   This completes the bounded operator cohort, not public signup or paid plans.
 
-- [ ] **Point current install instructions at immutable beta.13.**
-  Owner: LayerCache release documentation. November 18 user outcome: install
-  beta.13 through the documented CLI and Actions examples, pinned to protected
-  main source [`1df80bdbe4a54644c53c1d527d04ca8631bff385`](https://github.com/layercompute/layercache/commit/1df80bdbe4a54644c53c1d527d04ca8631bff385),
-  while retaining historical provenance controls and evidence. The
-  [release workflow](https://github.com/layercompute/layercache/actions/runs/44407565588)
-  passed, with one native QA job passing on rerun, before immutable
-  publication; the public-build evidence gate is skipped for beta tags as
-  designed. The
-  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/44410568602)
-  targets that tag and source with native bundle SHA256
-  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`.
-  Current pins in [the install docs](scripts/README.md) and
-  [runner setup](action/setup/README.md) are updated. The
-  [installer policy test](scripts/install.test.mjs) passed with
-  `node --test scripts/install.test.mjs`. This release reports why the Xcode
-  adapter rejects native output graphs through `graphRejectReasons`,
-  structure-only `graphRejectSamples`, and `actionRejectReasons` statistics,
-  and qualifies external Swift compilation replay at the same checkout path
-  on Xcode 27. All remaining previous-release references are historical.
-  Completion target: required PR checks pass before landing. CLI
-  installation and service deployment remain separate outcomes.
-
-- [ ] **Point current install instructions at immutable beta.12.**
-  Owner: LayerCache release documentation. November 18 user outcome: install
-  beta.12 through the documented CLI and Actions examples, pinned to protected
-  main source [`438472ddfa4ed0489244316ad6b4c96dc7f34426`](https://github.com/layercompute/layercache/commit/438472ddfa4ed0489244316ad6b4c96dc7f34426),
-  while retaining historical provenance controls and evidence. The
-  [release workflow](https://github.com/layercompute/layercache/actions/runs/44322947038)
-  passed before immutable publication; the public-build evidence gate is
-  skipped for beta tags as designed. The
-  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/44326403417)
-  targets that tag and source with native bundle SHA256
-  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`.
-  Current pins in [the install docs](scripts/README.md) and
-  [runner setup](action/setup/README.md) are updated. The
-  [installer policy test](scripts/install.test.mjs) passed with
-  `node --test scripts/install.test.mjs`. This release adds an explicit
-  `--min-free-bytes` free-space reserve with a 5 GiB floor to
-  `layercache xcode run` and `xcode serve`, reported as `minFreeBytes` and
-  `minFreeSpaceRefusals` in statistics. All remaining previous-release
-  references are historical. Completion target: required PR checks pass
-  before landing. CLI installation and service deployment remain separate
-  outcomes.
-
-- [ ] **Point current install instructions at immutable beta.11.**
-  Owner: LayerCache release documentation. November 17 user outcome: install
-  beta.11 through the documented CLI and Actions examples, pinned to protected
-  main source [`646a83db14d17ea52468e89265e36d28ee1c92f6`](https://github.com/layercompute/layercache/commit/646a83db14d17ea52468e89265e36d28ee1c92f6), while retaining
-  historical provenance controls and evidence. The
-  [release workflow](https://github.com/layercompute/layercache/actions/runs/43978101971)
-  passed before immutable publication. The
-  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/43981108422)
-  targets that tag and source with native bundle SHA256
-  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`;
-  all three supported platforms passed. Current pins in
-  [the install docs](scripts/README.md) and [runner setup](action/setup/README.md)
-  are updated. Both [installer policy tests](scripts/install.test.mjs) passed
-  with `node --test scripts/install.test.mjs`; `bash qa/lint.sh` passed. The
-  setup and CI controls passed serially with 37 passes and one installed-binary
-  skip after an intermittent worker-exit assertion in the first parallel run.
-  All remaining previous-release references are historical. Completion target:
-  required PR checks pass before landing. CLI installation and service deployment
-  remain separate outcomes.
-
 - [ ] **Finish the LayerCache move to `layercompute/layercache`.**
   Owner: LayerCache source, release and cloud/operator, coordinated with the
   application CI owners. October 29 user outcome: make the transferred repository
@@ -572,7 +507,9 @@ records the proposal; implementation and actual-device savings remain open.
   [HTTP/logging controls](internal/server/turbo_verification_test.go) and
   [filesystem diagnostics](internal/artifact/store_space_test.go) pass with
   Go 1.26.11, alongside `go build ./...`, `go vet ./...`, portal/server/artifact
-  tests and focused race tests. Required PR checks remain the landing gate.
+  tests and focused race tests. [PR #103](https://github.com/layercompute/layercache/pull/103)
+  passed all seventeen checks and merged as
+  `a16bcb34b6942570763d50d1b107f863c7aff524`.
   An old persisted fingerprint is normalized on the first upgraded restart
   with the reserve unchanged; changing it during that first upgrade is
   unsupported. Later restarts allow reserve changes. HTTP status, degraded
@@ -610,6 +547,14 @@ records the proposal; implementation and actual-device savings remain open.
   nearby read-through only through existing integrity and authority contracts.
   Unknown publication must reconcile without duplicate work. GitHub artifacts
   remain required until application retained-handoff acceptance passes.
+  November 25 availability follow-up, owned by LayerCache cloud/operators:
+  the public HTTPS probe recorded nineteen consecutive failures after the
+  [last successful check](https://github.com/layercompute/layercache/actions/runs/44457057006).
+  The [latest run](https://github.com/layercompute/layercache/actions/runs/45541791995)
+  on `0d4b928031610a7b39f553625b24a74a3df07174` and a direct HTTPS request both
+  received a connection refusal. Confirm the intended gateway endpoint.
+  Acceptance requires a passing public probe at that endpoint and an
+  authenticated cache read for the existing cohort. Root cause remains open.
 
 - [x] **Release the merged CLI capabilities as beta.7.**
   Owner: LayerCache release. The immutable beta.5 binary predates native Bazel,
@@ -698,6 +643,17 @@ records the proposal; implementation and actual-device savings remain open.
   why native clone support is optional and rootless overlays remain a separate
   experiment. Do not rewrite active worktrees, hardlink mutable outputs, or
   create a generic filesystem layer for this milestone.
+  November 25 Xcode worktree follow-up, owned by LayerCache native integrations:
+  [the pinned macOS fixture](docs/evidence/xcslot-layercache-20261125.md)
+  logged zero Swift or C compile entries in the second worktree with an intact
+  slot. With fresh DerivedData, compiler replay produced a byte-identical
+  executable.
+  Edited source changed the output and two terminal commands both ran fresh.
+  Before adopting one slot for a representative project, measure complete
+  command time, peak allocated disk, edit correctness and concurrent waits.
+  Benchmark snapshot setup and transfer through the existing CI worker before
+  changing its DerivedData policy. Keep required test artifacts retained and
+  execute current runtime assertions against them.
 
 - [x] **Qualify the first hosted native Gradle producer and full reader.**
   Owner: Phone CI, with LayerCache protocol/client support. [Phone #317](https://github.com/ziahamza/phone-app/pull/317)
@@ -1381,6 +1337,74 @@ records the proposal; implementation and actual-device savings remain open.
   Public population stays confined to LayerCache-controlled builds.
 
 ## Delivered baseline
+
+- [x] **Point install instructions at immutable beta.13.**
+  Owner: LayerCache release documentation. November 18 user outcome: install
+  beta.13 through the documented CLI and Actions examples, pinned to protected
+  main source [`1df80bdbe4a54644c53c1d527d04ca8631bff385`](https://github.com/layercompute/layercache/commit/1df80bdbe4a54644c53c1d527d04ca8631bff385),
+  while retaining historical provenance controls and evidence. The
+  [release workflow](https://github.com/layercompute/layercache/actions/runs/44407565588)
+  passed, with one native QA job passing on rerun, before immutable
+  publication; the public-build evidence gate is skipped for beta tags as
+  designed. The
+  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/44410568602)
+  targets that tag and source with native bundle SHA256
+  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`.
+  Pins in [the install docs](scripts/README.md) and
+  [runner setup](action/setup/README.md) were updated. The
+  [installer policy test](scripts/install.test.mjs) passed with
+  `node --test scripts/install.test.mjs`. This release reports why the Xcode
+  adapter rejects native output graphs through `graphRejectReasons`,
+  structure-only `graphRejectSamples`, and `actionRejectReasons` statistics,
+  and qualifies external Swift compilation replay at the same checkout path
+  on Xcode 27. All remaining previous-release references are historical.
+  [PR #111](https://github.com/layercompute/layercache/pull/111) passed all
+  seventeen checks and merged as `5cbfa39ef6af6dc9a89a7ef1de16e5b84542676e`.
+  Published installer checks passed on macOS arm64, Linux x64 and Linux arm64.
+
+- [x] **Point install instructions at immutable beta.12.**
+  Owner: LayerCache release documentation. November 18 user outcome: install
+  beta.12 through the documented CLI and Actions examples, pinned to protected
+  main source [`438472ddfa4ed0489244316ad6b4c96dc7f34426`](https://github.com/layercompute/layercache/commit/438472ddfa4ed0489244316ad6b4c96dc7f34426),
+  while retaining historical provenance controls and evidence. The
+  [release workflow](https://github.com/layercompute/layercache/actions/runs/44322947038)
+  passed before immutable publication; the public-build evidence gate is
+  skipped for beta tags as designed. The
+  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/44326403417)
+  targets that tag and source with native bundle SHA256
+  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`.
+  Pins in [the install docs](scripts/README.md) and
+  [runner setup](action/setup/README.md) were updated. The
+  [installer policy test](scripts/install.test.mjs) passed with
+  `node --test scripts/install.test.mjs`. This release adds an explicit
+  `--min-free-bytes` free-space reserve with a 5 GiB floor to
+  `layercache xcode run` and `xcode serve`, reported as `minFreeBytes` and
+  `minFreeSpaceRefusals` in statistics. All remaining previous-release
+  references in that change were historical.
+  [PR #105](https://github.com/layercompute/layercache/pull/105) passed all
+  seventeen checks and merged as `ef66cd90db5a85538f5d34af8070559bf7f92d85`.
+  Published installer checks passed on macOS arm64, Linux x64 and Linux arm64.
+  Beta.13 superseded these pins.
+
+- [x] **Point install instructions at immutable beta.11.**
+  Owner: LayerCache release documentation. November 17 user outcome: install
+  beta.11 through the documented CLI and Actions examples, pinned to protected
+  main source [`646a83db14d17ea52468e89265e36d28ee1c92f6`](https://github.com/layercompute/layercache/commit/646a83db14d17ea52468e89265e36d28ee1c92f6), while retaining
+  historical provenance controls and evidence. The
+  [release workflow](https://github.com/layercompute/layercache/actions/runs/43978101971)
+  passed before immutable publication. The
+  [published installer dispatch](https://github.com/layercompute/layercache/actions/runs/43981108422)
+  targets that tag and source with native bundle SHA256
+  `e11d291ecabde8dcc2412cb41ec19e007dea86d490591edee381c2347cda1ca8`;
+  all three supported platforms passed. Pins in
+  [the install docs](scripts/README.md) and [runner setup](action/setup/README.md)
+  were updated. Both [installer policy tests](scripts/install.test.mjs) passed
+  with `node --test scripts/install.test.mjs`; `bash qa/lint.sh` passed. The
+  setup and CI controls passed serially with 37 passes and one installed-binary
+  skip after an intermittent worker-exit assertion in the first parallel run.
+  [PR #102](https://github.com/layercompute/layercache/pull/102) passed all
+  seventeen checks and merged as `f7a067447cae955c0a0ff1e0d3aacb945a83b190`.
+  Later releases superseded these pins.
 
 - [x] Source-qualified rejection of failed streams at the shared S3 boundary,
   source `3d5e2df`. Real SDK and PostgreSQL controls cover multipart cleanup and
