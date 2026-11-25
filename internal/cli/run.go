@@ -42,8 +42,10 @@ Usage:
   layercache gc [options]
   layercache cache quota|pins|pin|unpin [options]
   layercache storage inspect --path ABSOLUTE_PATH [--path ABSOLUTE_PATH ...] [--json]
-  layercache disable [--adapter turbo|actions|buildkit|nx|gradle|all] [options]
-  layercache bypass --adapter turbo|actions|buildkit|nx|gradle|all [options]
+  layercache storage enroll-ssd --config PATH --mount VOLUME [--directory NAME] [--max-size BYTES] [--ssd-only | --ssd-writes-only]
+  layercache xcode run --config PATH -- xcodebuild ...
+  layercache disable [--adapter turbo|actions|buildkit|nx|gradle|metro|all] [options]
+  layercache bypass --adapter turbo|actions|buildkit|nx|gradle|metro|all [options]
   layercache uninstall --preserve-cache|--delete-cache [options]
   layercache report --run RUN_ID [options]
   layercache report --from RFC3339 --to RFC3339 [options]
@@ -338,6 +340,15 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 	listen := flags.String("listen", base.Listen, "loopback HTTP address")
 	maxSize := flags.String("max-size", strconv.FormatInt(base.MaxBytes, 10), "Local Cache byte limit")
 	evictionPolicy := flags.String("eviction-policy", string(base.EvictionPolicy), "cache eviction policy: lru or impact")
+	metroCache := flags.Bool("metro-cache", base.Metro, "serve the local Metro transform cache")
+	var configuredXcode config.XcodeConfig
+	if base.Xcode != nil {
+		configuredXcode = *base.Xcode
+	}
+	xcodeSocket := flags.String("xcode-socket", configuredXcode.Socket, "shared Xcode cache Unix socket (empty disables it)")
+	xcodeCompatibility := flags.String("xcode-compatibility", configuredXcode.Compatibility, "exact compiler and SDK identity for the shared Xcode cache")
+	ssdOnly := flags.Bool("ssd-only", base.SSD != nil && base.SSD.Only, "skip internal artifact storage while the enrolled SSD is available")
+	ssdWritesOnly := flags.Bool("ssd-writes-only", base.SSD != nil && base.SSD.WritesOnly, "keep internal hits readable and require SSD writes while attached")
 	minFreeBytesFlag := flags.String("min-free-bytes", strconv.FormatInt(base.MinFreeBytes, 10), "upward Local Cache free-space reserve override in bytes")
 	remoteOnly := flags.Bool("remote-only", base.RemoteOnly, "use configured hosted storage directly without creating a Local artifact store")
 	role := flags.String("role", base.Role, "runtime role: local, team, or public")
@@ -486,6 +497,30 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 	}
 	base.Listen = *listen
 	base.MaxBytes = maxBytes
+	base.Metro = *metroCache
+	base.Xcode = nil
+	if *xcodeSocket != "" {
+		base.Xcode = &config.XcodeConfig{Socket: *xcodeSocket, Compatibility: *xcodeCompatibility}
+	} else if flagWasSet(flags, "xcode-compatibility") {
+		return errors.New("--xcode-compatibility requires --xcode-socket")
+	}
+	if base.SSD != nil {
+		if original.DataDir != base.DataDir {
+			return errors.New("an enrolled SSD belongs to its configured internal data directory")
+		}
+		ssd := *base.SSD
+		ssd.Only = *ssdOnly
+		ssd.WritesOnly = *ssdWritesOnly
+		if *ssdWritesOnly && flagWasSet(flags, "ssd-writes-only") && !flagWasSet(flags, "ssd-only") {
+			ssd.Only = false
+		}
+		if *ssdOnly && flagWasSet(flags, "ssd-only") && !flagWasSet(flags, "ssd-writes-only") {
+			ssd.WritesOnly = false
+		}
+		base.SSD = &ssd
+	} else if flagWasSet(flags, "ssd-only") || flagWasSet(flags, "ssd-writes-only") {
+		return errors.New("SSD policy requires an enrolled SSD")
+	}
 	base.EvictionPolicy, err = retention.Normalize(retention.Policy(*evictionPolicy))
 	if err != nil {
 		return err

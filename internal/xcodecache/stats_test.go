@@ -123,7 +123,7 @@ func TestGraphBudgetDeadlineAndAdmissionHaveDistinctCounters(t *testing.T) {
 		if !errors.Is(err, artifact.ErrConflict) || rejectionCounts(s.Stats()) != [9]uint64{0, 0, 0, 0, 0, 0, 0, 1, 0} {
 			t.Fatal("graph admission rejection was not isolated", s.Stats(), err)
 		}
-		if err := s.store.Delete(ctx, s.key("cas", first.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
+		if err := testArtifactStore(s).Delete(ctx, s.key("cas", first.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
 			t.Fatal("admission diagnostic weakened the accepted lease", err)
 		}
 	})

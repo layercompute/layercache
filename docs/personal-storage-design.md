@@ -1,13 +1,14 @@
 # Personal storage, shared artifacts and safe worktree materialization
 
-Status: proposed design; no implementation or device configuration in this change.
-Reviewed: 2026-11-17. Owners: LayerCache storage/native clients, CLI and product.
-Repository baseline: `f7a067447cae955c0a0ff1e0d3aacb945a83b190`.
+Local SSD routing is implemented in source. Wider materialization and peer
+storage remain design work. Owners are LayerCache storage, native clients and
+CLI. The historical baseline for the original design is
+`f7a067447cae955c0a0ff1e0d3aacb945a83b190`.
 
 [TODOs](../TODOs.md) owns priority, milestone state and outstanding work.
 [Source research](research/personal-storage-oss-20261023.md) records upstream
 revisions, licenses and evidence. This document defines the proposed behavior
-and completion criteria; it does not establish installed or deployed support.
+and completion criteria, alongside source qualification for local SSD routing.
 
 ## Outcome and product decision
 
@@ -18,10 +19,10 @@ materializing the same immutable data for every worktree.
 Internal storage, removable SSDs and explicitly configured self-hosted SSH cache
 hosts remain free, account-free OSS. No LayerCache login, subscription or online
 entitlement is required to operate those locations. Future manually configured
-remote routing remains OSS too. Dedicated SSD routing and the SSH peer workflow
-are proposed, not qualified. Hosted capacity, managed team administration and
-automatic host enrollment/coordination are optional cloud services. Self-hosted
-collaboration is not prohibited by the cloud-service policy.
+remote routing remains OSS too. The Local Cache supports optional SSD
+routing. The SSH peer workflow remains proposed. Hosted capacity, managed team
+administration and automatic host enrollment and coordination are optional
+cloud services.
 
 The first target topology is one local owner with internal and optional SSD
 pools, plus one explicitly configured private remote. This does not require a
@@ -41,7 +42,7 @@ An attached SSD expands the warm set and can avoid network fetches or rebuilding
 It need not beat an already-hot internal read. Storage sharing does not schedule
 remote execution, launch simulators, or establish cross-platform compatibility.
 
-## Current implementation and gaps
+## Historical baseline and gaps
 
 The following observations refer to the repository baseline above, which includes
 separately gated [direct object transfer](direct-object-transfer.md) for hosted
@@ -506,36 +507,142 @@ compatibility, maintenance and security before adoption. GPL/LGPL/native system
 tools can be research or external-client references without being a permissive
 vendored library. This design adds no dependency, copied engine code or daemon.
 
-## First slice
+## Local setup
 
-Scope is the Go daemon only, Turbo traffic only. Add one optional config list,
-`storagePools`, with at most one extra pool, such as a removable SSD, beside the
-existing `DataDir`. With no `storagePools`, behavior is exactly today's single
-`DataDir`; that is the kill switch.
+Set the main quota and enroll a fresh directory on a mounted volume. This
+example uses decimal GB and assumes a dedicated RelayPhone config and an unused
+local port. Run setup from the repository. Supply the exact Xcode, SDK,
+architecture and build-settings compatibility identity you normally use for
+compiler caching.
 
-New verified installs and uploads go to the SSD pool while it is mounted and
-has room. Existing entries are never moved. There is no relocation journal,
-legacy import or TypeScript NativeCache merge in this slice.
+```bash
+layercache setup --config "$HOME/.config/layercache/relayphone.json" \
+  --project github.com/ziahamza/phone-app --actions-repository relayphone/relay \
+  --listen 127.0.0.1:7447 --data-dir "$HOME/.cache/layercache/relayphone" \
+  --max-size 5000000000 --min-free-bytes 5368709120 --metro-cache \
+  --xcode-socket "$HOME/.cache/layercache/relayphone/xcode/cache.sock" \
+  --xcode-compatibility "$RELAYPHONE_XCODE_COMPATIBILITY" --non-interactive
 
-Reads check the internal store, then the SSD pool if present, then the remote.
-A missing or unmounted SSD is skipped and logged once, and is never an error to
-the build. Use the existing internal admission policy when the SSD is absent or
-full. An install interrupted by removal follows the install-error contract
-above and becomes a clean cache miss rather than a partial hit.
+layercache storage enroll-ssd --config "$HOME/.config/layercache/relayphone.json" \
+  --mount /Volumes/WorkSSD --directory RelayPhoneCache --max-size 100000000000 \
+  --ssd-writes-only
 
-The exit test is one real Turbo workload run three ways: SSD present, SSD
-unplugged between runs, and SSD unplugged mid-run. Pass when every run either
-hits or misses cleanly and verifies every byte, with no stale staging left on
-the internal store. Reopening a removed pool cleans its interrupted staging.
+layercache serve --config "$HOME/.config/layercache/relayphone.json"
+```
 
-M2-M5 are direction, not gates for this slice. Design each one when the slice
-before it has shipped and been used.
+`--ssd-writes-only` keeps internal cache hits readable and sends new artifact
+writes to the SSD while it is attached. A full, read-only, or busy enrolled SSD
+declines new writes. When the SSD is absent, new writes use the internal quota.
+The internal disk still holds cache metadata, including normal read accounting.
+`--ssd-only` also bypasses internal artifact lookups while the SSD is available.
+With both flags off, the SSD is preferred for new writes and the internal pool
+can take writes under SSD pressure. For an existing enrollment, stop the daemon
+and run `layercache setup --config … --ssd-writes-only --non-interactive` to
+select SSD writes only. Set `--ssd-writes-only=false` to return to the default
+policy. Stop a foreground daemon with Ctrl+C. Removing the `ssd` config object
+disables routing and leaves both stores on disk.
+
+The daemon verifies the mount boundary, the enrolled directory and the private
+marker. On macOS it also verifies the filesystem UUID. Use the same mount path
+when reconnecting. A replacement volume requires enrollment. The daemon releases
+the SSD handles after an idle interval so the OS can eject the volume. Between
+requests, an unavailable SSD falls back to the internal cache. An upload that
+loses the SSD after consuming a streamed body can decline caching. A later request
+can use the internal cache normally. An in-progress restore can lose its
+connection if the SSD disappears after the response starts.
+
+The two quotas cap committed artifact bytes. Local SQLite metadata, transient
+staging and client-owned build outputs use additional space. Each pool applies
+the free-space reserve to its own filesystem. LayerCache keeps the SSD's index
+on the internal disk. Existing cache entries remain where they were created.
+Space pressure evicts eligible cold artifacts. Team Turbo publication can
+complete an existing queued upload after its artifact's volume returns.
+
+| RelayPhone cache | Entry point |
+| --- | --- |
+| Turbo task outputs and Expo archives served through Turbo | `layercache run --config … -- turbo run … --cache=remote:rw` uses the daemon without a separate Turbo workspace cache. |
+| Gradle task outputs | The native Gradle HTTP endpoint uses the same pool with the existing Gradle init script and scoped credentials from `layercache run`. With that init script, set `LAYER_CACHE_GRADLE_PUSH=1` to populate the pool and `LAYER_CACHE_GRADLE_LOCAL_ENABLED=0` to omit Gradle's separate filesystem task cache. |
+| Xcode compiler actions and CAS objects | `layercache xcode run --config … -- xcodebuild …` uses the configured private socket of the running daemon. The daemon checks and retains complete action graphs. |
+| Metro transforms | `layercache run --config … -- <Metro or Expo command>` supplies `LAYER_CACHE_METRO_URL` and a scoped `LAYER_CACHE_METRO_TOKEN`. An opted-in Metro config passes them to Metro's native `HttpStore` with a bearer header and treats failed reads as cache misses. |
+
+RelayPhone's `apps/mobile/metro.config.js` selects the shared Metro store when
+both credentials are present. An explicit `layercache run --config …` supplies
+them for that invocation. For RelayPhone's existing Xcode wrapper, set
+`APPLE_XCODE_LAYER_CACHE_CONFIG` to the same config for the invocation.
+`APPLE_XCODE_CACHE_CLIENT` can select a source-built binary. Running without
+these opt-ins uses the project's regular build entry points.
+
+DerivedData, Metro's default file store, Expo's unpacked app outputs and
+TypeScript NativeCache, as well as package installs, CocoaPods, and Gradle's
+own dependency and filesystem caches, have independent lifecycles and budgets.
+The shared Xcode daemon covers one configured compiler profile and reports
+cumulative RPC statistics via `layercache status --json`. Standalone
+`xcode run --data-dir …` continues to have its own lifecycle and per-run receipt.
+
+## Local qualification
+
+The strict write policy passed repeated race-enabled APFS tests using the
+same pool across attach, forced detach and reconnect. The test holds an SSD
+read and a streaming upload open at forced detach. It verifies that the
+interrupted upload leaves no visible entry, that a detached write reaches
+the internal pool, and that the old SSD entry and a complete upload retry
+work after reconnect. It also verifies that a busy or over-quota SSD causes
+write refusal while a previously cached Mac entry remains readable.
+
+The live RelayPhone daemon was switched to this mode with its 5 GB internal
+and 100 GB SSD quotas. An existing XCR input from the internal cache matched
+its stored digest while the physical SSD was attached. A new probe increased
+SSD usage by exactly the probe size and left internal artifact usage unchanged.
+
+With SSD-only mode enabled on the RelayPhone Mac, a foreground run of the
+source build verified that two XCR test-input fixtures landed on its physical
+APFS USB drive and were reused across separate upstream object keys. Internal
+artifact usage stayed at zero during the check.
+
+The installed Mac XCR worker was then enabled against the running Local Cache.
+During a warm XCR input restore, the actual USB SSD's APFS volume was
+force-unmounted after 32 KiB reached the output file. The real cache connection
+terminated before the complete artifact arrived. XCR recovered a 32 MiB ZIP in
+one production R2 GET and verified its SHA-256. With the volume still unavailable,
+the next restore hit the internal cache. LayerCache detected the original
+volume again after remount. The USB cable stayed connected throughout the test.
+
+On November 25, 2026, a source build from the workspace based on
+`94888b32ebcdfe27c45f07eef9159060c9ea8c74` ran on macOS 27.2 and disposable APFS
+disk images. The primary fixture used 5,000,000,000 internal bytes and
+100,000,000,000 SSD bytes. These were configuration limits, with fixture
+artifacts small enough to run on the test images.
+
+- Turborepo 2.10.12 restored the same output on the original volume, restored
+  independently from the internal cache while detached, and found the original
+  volume's entry again after reconnect. SSD-only mode hid an internal artifact
+  while attached. A forced detach during an upload returned HTTP 507. The key
+  missed on both stores and reconnect cleared the interrupted staging.
+- Tiny 64-byte and 128-byte quotas exercised independent eviction. The default
+  policy kept reading a warm internal hit after attachment. A second APFS
+  volume at the same mount path was refused despite a copied enrollment marker.
+- Gradle 9.4.1 restored a cacheable task through native HTTP on both volumes,
+  with its own filesystem build cache disabled. A queued Turbo upload reached
+  an embedded Team endpoint after daemon restart and SSD reconnect.
+- Xcode 27.2, build 27B52, compiled and ran a Swift and Objective-C fixture.
+  The warm shared-cache run reported 69 action hits and 119 CAS object hits.
+  A detached cold build wrote compiler artifacts to the internal pool. The
+  opt-in RelayPhone wrapper restored compiler results through its shared socket.
+- The project's Metro configuration resolved the installed Metro 0.87.1
+  HttpStore through Expo SDK 58 and restored a transform through LayerCache.
+  A RelayPhone web export published 3,248 transform entries (10,262,862
+  committed bytes). Its outputs matched a cache-bypassed export after
+  normalizing CSS-module property order and the corresponding bundle filename.
+
+The Go suite passed with test stores on a dedicated APFS image. The repository
+lint and RelayPhone's existing Xcode-wrapper test passed. A full RelayPhone iOS
+build and an installed LayerCache release remain separate checks.
 
 ## Milestones and acceptance
 
-All runtime milestones remain open in [TODOs](../TODOs.md). M0 records design
-research only. Deliver the first slice above next; the broader milestones below
-describe later work and its proposed evidence. M2-M5 are designed in turn after
+[TODOs](../TODOs.md) tracks qualification and remaining runtime work. M0 records
+design research. The broader milestones below describe later work and its
+proposed evidence. M2–M5 are designed in turn after
 the preceding slice has shipped and been used. Each runtime milestone needs
 source qualification, a verified installed release and actual workload
 acceptance separately; hosted rollout adds another receipt where relevant.

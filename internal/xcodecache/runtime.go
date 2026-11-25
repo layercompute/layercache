@@ -23,12 +23,10 @@ func (e startupFailure) Error() string { return e.cause.Error() }
 func (e startupFailure) Unwrap() error { return e.cause }
 
 type cacheRuntime struct {
-	lock      *os.File
-	store     *artifact.Store
-	service   *Service
-	server    *grpc.Server
-	done      chan struct{}
-	serveErr  error
+	lock    *os.File
+	store   *artifact.Store
+	service *Service
+	*Listener
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -126,7 +124,7 @@ func startRuntime(ctx context.Context, options Options, serverOptions ...grpc.Se
 		}
 		return nil, startupFailure{err}
 	}
-	r := &cacheRuntime{lock: lock, done: make(chan struct{})}
+	r := &cacheRuntime{lock: lock}
 	defer func() {
 		if result != nil {
 			if r.store != nil {
@@ -146,34 +144,69 @@ func startRuntime(ctx context.Context, options Options, serverOptions ...grpc.Se
 	if err != nil {
 		return nil, startupFailure{err}
 	}
-	listener, err := listenPrivate(options.Socket)
+	r.Listener, err = listenService(ctx, options.Socket, r.service, serverOptions...)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// Listener serves native compiler RPCs for an externally owned store.
+type Listener struct {
+	server  *grpc.Server
+	done    chan struct{}
+	service *Service
+	err     error
+}
+
+func ListenShared(ctx context.Context, socket, project, abi string, store ArtifactStore) (*Listener, error) {
+	service, err := New(store, project, abi)
+	if err != nil {
+		return nil, err
+	}
+	return listenService(ctx, socket, service)
+}
+
+func listenService(ctx context.Context, socket string, service *Service, options ...grpc.ServerOption) (*Listener, error) {
+	listener, err := listenPrivate(socket)
 	if err != nil {
 		return nil, fmt.Errorf("listen for Xcode cache: %w", err)
 	}
-	serverOptions = append([]grpc.ServerOption{grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.MaxConcurrentStreams(16), grpc.WaitForHandlers(true)}, serverOptions...)
-	r.server = grpc.NewServer(serverOptions...)
-	cas.RegisterCASDBServiceServer(r.server, r.service)
-	kv.RegisterKeyValueDBServer(r.server, r.service)
+	options = append([]grpc.ServerOption{grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.MaxConcurrentStreams(16), grpc.WaitForHandlers(true)}, options...)
+	r := &Listener{server: grpc.NewServer(options...), done: make(chan struct{}), service: service}
+	cas.RegisterCASDBServiceServer(r.server, service)
+	kv.RegisterKeyValueDBServer(r.server, service)
 	ready := make(chan struct{})
-	go func() { r.serveErr = r.server.Serve(&readyListener{Listener: listener, ready: ready}); close(r.done) }()
+	go func() {
+		r.err = r.server.Serve(&readyListener{Listener: listener, ready: ready})
+		close(r.done)
+	}()
 	select {
 	case <-ready:
 		return r, nil
 	case <-r.done:
 		r.server.Stop()
-		return nil, fmt.Errorf("Xcode cache RPC listener failed: %w", r.serveErr)
+		return nil, fmt.Errorf("Xcode cache RPC listener failed: %w", r.err)
 	case <-ctx.Done():
-		r.server.Stop()
-		<-r.done
+		r.Close()
 		return nil, ctx.Err()
 	}
 }
 
+func (l *Listener) Stats() Stats { return l.service.Stats() }
+
+func (l *Listener) Close() error {
+	l.server.Stop()
+	<-l.done
+	if errors.Is(l.err, grpc.ErrServerStopped) {
+		return nil
+	}
+	return l.err
+}
+
 func (r *cacheRuntime) Close() error {
 	r.closeOnce.Do(func() {
-		r.server.Stop()
-		<-r.done
-		r.closeErr = r.store.Close()
+		r.closeErr = errors.Join(r.Listener.Close(), r.store.Close())
 		if err := r.lock.Close(); r.closeErr == nil {
 			r.closeErr = err
 		}

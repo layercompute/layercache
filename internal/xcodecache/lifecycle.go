@@ -411,7 +411,7 @@ func serve(ctx context.Context, options Options, serverOptions ...grpc.ServerOpt
 	case <-ctx.Done():
 	case <-control.stop:
 	case <-runtime.done:
-		result = runtime.serveErr
+		result = runtime.Listener.err
 	}
 	control.mu.Lock()
 	control.state.Phase = "stopping"

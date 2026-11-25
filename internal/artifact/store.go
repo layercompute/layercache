@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -57,6 +59,7 @@ type Entry struct {
 	Size      int64
 	Metadata  Metadata
 	CreatedAt time.Time
+	poolStore *Store
 }
 
 type Stats struct {
@@ -70,6 +73,7 @@ type Stats struct {
 type Store struct {
 	db               *sql.DB
 	root             string
+	files            *os.Root
 	maxBytes         int64
 	maxMetadataBytes int64
 	minFreeBytes     int64
@@ -86,21 +90,48 @@ type Store struct {
 	readLeaseNow     func() time.Time
 }
 
+func validateLimits(maxBytes, minFreeBytes int64) error {
+	if maxBytes <= 0 {
+		return errors.New("Local Cache maxBytes must be positive")
+	}
+	if minFreeBytes < 0 {
+		return errors.New("Local Cache minFreeBytes cannot be negative")
+	}
+	return nil
+}
+
 // Open initializes a Local Cache. minFreeBytes may raise, but never lower,
 // the built-in reserve of 5 GiB or five percent of the filesystem volume.
 func Open(ctx context.Context, root string, maxBytes, minFreeBytes int64) (*Store, error) {
-	if maxBytes <= 0 {
-		return nil, errors.New("Local Cache maxBytes must be positive")
+	if err := validateLimits(maxBytes, minFreeBytes); err != nil {
+		return nil, err
 	}
-	if minFreeBytes < 0 {
-		return nil, errors.New("Local Cache minFreeBytes cannot be negative")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, fmt.Errorf("create artifact directory: %w", err)
 	}
-	for _, dir := range []string{root, filepath.Join(root, "blobs", "sha256"), filepath.Join(root, "staging")} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+	files, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	store, err := openStore(ctx, files, root, maxBytes, minFreeBytes, defaultProbeSpace)
+	if err != nil {
+		files.Close()
+	}
+	return store, err
+}
+
+// The removable store keeps its database on stable storage. All artifact I/O
+// is relative to the opened volume, even if the mount path is replaced.
+func openStore(ctx context.Context, files *os.Root, metadataDir string, maxBytes, minFreeBytes int64, probe func(string) (filesystemSpace, error)) (*Store, error) {
+	if err := validateLimits(maxBytes, minFreeBytes); err != nil {
+		return nil, err
+	}
+	for _, dir := range []string{"blobs/sha256", "staging"} {
+		if err := files.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create artifact directory %s: %w", dir, err)
 		}
 	}
-	metadataURL := &url.URL{Scheme: "file", Path: filepath.Join(root, "metadata.db")}
+	metadataURL := &url.URL{Scheme: "file", Path: filepath.Join(metadataDir, "metadata.db")}
 	query := metadataURL.Query()
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "foreign_keys(1)")
@@ -183,8 +214,8 @@ func Open(ctx context.Context, root string, maxBytes, minFreeBytes int64) (*Stor
 		}
 	}
 	store := &Store{
-		db: db, root: root, maxBytes: maxBytes, maxMetadataBytes: metadataBudget(maxBytes), minFreeBytes: minFreeBytes,
-		probeSpace:      defaultProbeSpace,
+		db: db, root: files.Name(), files: files, maxBytes: maxBytes, maxMetadataBytes: metadataBudget(maxBytes), minFreeBytes: minFreeBytes,
+		probeSpace:      probe,
 		commitTx:        func(tx *sql.Tx) error { return tx.Commit() },
 		readLeaseOwners: maximumReadLeaseOwners, readLeaseEntries: maximumReadLeaseEntries,
 		readLeaseNow: time.Now,
@@ -201,7 +232,11 @@ func Open(ctx context.Context, root string, maxBytes, minFreeBytes int64) (*Stor
 }
 
 func (store *Store) Close() error {
-	return store.db.Close()
+	err := store.db.Close()
+	if store.files != nil {
+		err = errors.Join(err, store.files.Close())
+	}
+	return err
 }
 
 func (store *Store) Put(ctx context.Context, key Key, metadata Metadata, body io.Reader) (Entry, bool, error) {
@@ -231,12 +266,12 @@ func (store *Store) put(ctx context.Context, key Key, metadata Metadata, body io
 	}
 	lease := store.beginArtifactStaging()
 	defer lease.Release()
-	tmp, err := os.CreateTemp(filepath.Join(store.root, "staging"), "artifact-*")
+	tmpPath := filepath.Join("staging", "artifact-"+rand.Text())
+	tmp, err := store.files.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return Entry{}, false, fmt.Errorf("stage artifact: %w", err)
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer store.files.Remove(tmpPath)
 	hash := sha256.New()
 	size, err := io.Copy(io.MultiWriter(store.spaceCheckedWriter(ctx, tmp, lease), hash), body)
 	if err != nil {
@@ -385,7 +420,7 @@ func (store *Store) Get(ctx context.Context, key Key) (Entry, io.ReadCloser, err
 	if err != nil {
 		return Entry{}, nil, err
 	}
-	file, err := os.Open(store.blobPath(entry.Digest))
+	file, err := store.files.Open(blobName(entry.Digest))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Entry{}, nil, ErrCorrupt
@@ -550,7 +585,7 @@ func (store *Store) Delete(ctx context.Context, key Key) error {
 		return fmt.Errorf("commit cache entry deletion: %w", err)
 	}
 	if removedArtifact == 1 {
-		if err := os.Remove(store.blobPath(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := store.files.Remove(blobName(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("delete unreferenced artifact bytes: %w", err)
 		}
 	}
@@ -644,7 +679,7 @@ func (store *Store) evictOldest(ctx context.Context, protected *Key) (bool, erro
 		return false, err
 	}
 	if removedArtifact == 1 {
-		if err := os.Remove(store.blobPath(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := store.files.Remove(blobName(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, fmt.Errorf("delete evicted Local Cache bytes: %w", err)
 		}
 	}
@@ -683,13 +718,13 @@ func (store *Store) entry(ctx context.Context, key Key, touch bool) (Entry, erro
 }
 
 func (store *Store) ensureCanonicalBlob(stagedPath, digest string, size int64) (bool, error) {
-	target := store.blobPath(digest)
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+	target := blobName(digest)
+	if err := store.files.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return false, fmt.Errorf("create blob directory: %w", err)
 	}
-	info, err := os.Lstat(target)
+	info, err := store.files.Lstat(target)
 	if err == nil && info.Mode().IsRegular() {
-		file, openErr := os.Open(target)
+		file, openErr := store.files.Open(target)
 		if openErr != nil {
 			return false, fmt.Errorf("open canonical artifact for verification: %w", openErr)
 		}
@@ -709,17 +744,18 @@ func (store *Store) ensureCanonicalBlob(stagedPath, digest string, size int64) (
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("inspect canonical artifact: %w", err)
 	}
-	if err := os.Chmod(stagedPath, 0o600); err != nil {
-		return false, fmt.Errorf("protect staged artifact bytes: %w", err)
-	}
-	if err := os.Rename(stagedPath, target); err != nil {
+	if err := store.files.Rename(stagedPath, target); err != nil {
 		return false, fmt.Errorf("commit artifact bytes: %w", err)
 	}
 	return true, nil
 }
 
 func (store *Store) blobPath(digest string) string {
-	return filepath.Join(store.root, "blobs", "sha256", digest[:2], digest[2:])
+	return filepath.Join(store.root, blobName(digest))
+}
+
+func blobName(digest string) string {
+	return filepath.Join("blobs", "sha256", digest[:2], digest[2:])
 }
 
 func (store *Store) removeBlobIfUnreferenced(digest string) error {
@@ -732,14 +768,14 @@ func (store *Store) removeBlobIfUnreferenced(digest string) error {
 	if referenced != 0 {
 		return nil
 	}
-	if err := os.Remove(store.blobPath(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := store.files.Remove(blobName(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove blob after failed metadata commit: %w", err)
 	}
 	return nil
 }
 
 func (store *Store) cleanStaging() error {
-	entries, err := os.ReadDir(filepath.Join(store.root, "staging"))
+	entries, err := fs.ReadDir(store.files.FS(), "staging")
 	if err != nil {
 		return fmt.Errorf("read staging directory: %w", err)
 	}
@@ -747,7 +783,7 @@ func (store *Store) cleanStaging() error {
 		if entry.IsDir() {
 			continue
 		}
-		if err := os.Remove(filepath.Join(store.root, "staging", entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := store.files.Remove(filepath.Join("staging", entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove abandoned staged artifact: %w", err)
 		}
 	}
@@ -780,8 +816,8 @@ func (store *Store) reconcileBlobs(ctx context.Context) error {
 		return fmt.Errorf("iterate referenced artifact digests: %w", err)
 	}
 
-	root := filepath.Join(store.root, "blobs", "sha256")
-	shards, err := os.ReadDir(root)
+	root := filepath.Join("blobs", "sha256")
+	shards, err := fs.ReadDir(store.files.FS(), root)
 	if err != nil {
 		return fmt.Errorf("read blob directory: %w", err)
 	}
@@ -790,7 +826,7 @@ func (store *Store) reconcileBlobs(ctx context.Context) error {
 			continue
 		}
 		shardPath := filepath.Join(root, shard.Name())
-		blobs, err := os.ReadDir(shardPath)
+		blobs, err := fs.ReadDir(store.files.FS(), shardPath)
 		if err != nil {
 			return fmt.Errorf("read blob shard %s: %w", shard.Name(), err)
 		}
@@ -812,7 +848,7 @@ func (store *Store) reconcileBlobs(ctx context.Context) error {
 			if _, ok := referenced[digest]; ok {
 				continue
 			}
-			if err := os.Remove(filepath.Join(shardPath, blob.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err := store.files.Remove(filepath.Join(shardPath, blob.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("remove orphan blob %s: %w", digest, err)
 			}
 		}

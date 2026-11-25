@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,12 +15,17 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/removable"
 	"github.com/layercache/layercache/internal/storageinspect"
 )
 
 // Storage inspection deliberately bypasses configuration, credentials and store
 // initialization. Opening a managed cache can reconcile or evict its contents.
 func runStorage(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "enroll-ssd" {
+		return runEnrollSSD(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "inspect" {
 		return errors.New("storage requires inspect --path ABSOLUTE_PATH [--path ABSOLUTE_PATH ...] [--json]")
 	}
@@ -58,6 +65,59 @@ func runStorage(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return errors.New("storage inspection incomplete; inspect issues and limitations in the report")
 	}
 	return nil
+}
+
+func runEnrollSSD(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	defaultPath, err := config.DefaultPath()
+	if err != nil {
+		return err
+	}
+	flags := flag.NewFlagSet("storage enroll-ssd", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	configPath := flags.String("config", defaultPath, "configuration file for an existing Local Cache")
+	mount := flags.String("mount", "", "mounted volume path")
+	directory := flags.String("directory", "LayerCache", "new cache directory name on the mounted volume")
+	maxBytes := flags.Int64("max-size", 100_000_000_000, "SSD artifact quota in bytes")
+	only := flags.Bool("ssd-only", false, "skip the internal artifact store while the SSD is available")
+	writesOnly := flags.Bool("ssd-writes-only", false, "keep internal hits readable and require SSD writes while attached")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *mount == "" || flags.NArg() != 0 {
+		return errors.New("storage enroll-ssd requires --mount and no positional arguments")
+	}
+	unlock, err := lockConfiguration(ctx, *configPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	if cfg.SSD != nil {
+		return errors.New("this configuration already has an enrolled SSD")
+	}
+	if _, err := probeRuntime(cfg); err == nil {
+		return errors.New("stop the Local Cache before enrolling an SSD in its configuration")
+	}
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return err
+	}
+	ssd := removable.Config{MountPath: *mount, Directory: *directory, ID: hex.EncodeToString(id[:]), MaxBytes: *maxBytes, Only: *only, WritesOnly: *writesOnly}
+	cfg.SSD = &ssd
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if err := removable.Enroll(ctx, cfg.SSD, cfg.DataDir); err != nil {
+		return fmt.Errorf("enroll removable cache: %w", err)
+	}
+	if err := config.Save(*configPath, cfg); err != nil {
+		return fmt.Errorf("save removable cache enrollment: %w", err)
+	}
+	_, err = fmt.Fprintln(stdout, "Enrolled removable cache storage")
+	return err
 }
 
 func printStorageReport(output io.Writer, report storageinspect.Report) error {

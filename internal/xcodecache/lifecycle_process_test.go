@@ -76,7 +76,7 @@ func lifecycleProcessFixture(t *testing.T) Options {
 		}
 	})
 	return Options{
-		DataDir: filepath.Join(root, "store"), Socket: filepath.Join(root, "cache.sock"),
+		DataDir: filepath.Join(t.TempDir(), "store"), Socket: filepath.Join(root, "cache.sock"),
 		ReadyFile: filepath.Join(root, "state", "ready.json"), StatsFile: filepath.Join(root, "stats.json"),
 		Project: "lifecycle-process-test", Compatibility: "test-toolchain", MaxBytes: 32 << 20,
 	}

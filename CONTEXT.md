@@ -11,9 +11,9 @@ under complete input identities, while current runtime checks remain distinct.
 An open-source cache operated without a Layer Cache account, using the user's
 own storage and explicitly configured user-managed remote cache hosts. Internal
 storage, removable SSDs and manual self-hosted SSH cache access remain free OSS.
-The current CLI supports one private remote per configuration; optional SSD
-routing, an SSH peer workflow and broader manual placement are [planned](docs/personal-storage-design.md),
-not delivered capabilities. That implementation limit is not a paid entitlement.
+A Local Cache supports one enrolled removable volume beside its internal
+filesystem and one private remote per configuration. An SSH peer workflow and
+broader placement are [planned](docs/personal-storage-design.md).
 _Avoid_: Free Team Cache, account-required Local Cache
 
 **Cloud account**:
@@ -42,8 +42,7 @@ _Avoid_: Current usage, reclaimed storage
 
 **Local Cache**:
 A bounded cache coordinated on one machine that stores reusable artifacts from
-authorized visibility tiers. Its proposed storage locations can span internal
-and removable filesystems without changing artifact authority.
+authorized visibility tiers. Its storage locations can span internal and enrolled removable filesystems without changing artifact authority.
 _Avoid_: Local Store, local tier
 
 **Storage location**:

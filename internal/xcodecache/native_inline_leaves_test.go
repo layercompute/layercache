@@ -45,7 +45,7 @@ func assertIndexedInlineLeafActionHit(t *testing.T, node []byte) {
 	if !bytes.Equal(hit.GetValue().Entries["value"], value) {
 		t.Fatal("action bytes changed during indexed-leaf graph validation")
 	}
-	if err := service.store.Delete(ctx, service.key("cas", root.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
+	if err := testArtifactStore(service).Delete(ctx, service.key("cas", root.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
 		t.Fatalf("indexed inline-leaf root was not retained: %v", err)
 	}
 	loaded, err := service.Load(ctx, &cas.CASLoadRequest{CasId: root.GetCasId()})

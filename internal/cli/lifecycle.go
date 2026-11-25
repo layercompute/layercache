@@ -16,12 +16,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/layercache/layercache/internal/artifact"
 	"github.com/layercache/layercache/internal/config"
 	"github.com/layercache/layercache/internal/execution"
 	"github.com/layercache/layercache/internal/publicbuild"
+	"github.com/layercache/layercache/internal/xcodecache"
 )
 
 type runtimeStatus struct {
+	SSD                   *artifact.PoolStatus       `json:"ssd,omitempty"`
+	Xcode                 *xcodecache.Stats          `json:"xcode,omitempty"`
+	Metro                 bool                       `json:"metro,omitempty"`
 	Running               bool                       `json:"running"`
 	Role                  string                     `json:"role"`
 	ProjectID             string                     `json:"projectId"`
@@ -237,12 +242,16 @@ func verifyRuntimeOwnership(ownership runtimeOwnership, live runtimeStatus) erro
 }
 
 func probeRuntime(cfg config.Config) (runtimeStatus, error) {
-	request, err := http.NewRequest(http.MethodGet, localRuntimeURL(cfg.Listen)+"/v1/status", nil)
+	return readRuntimeStatus(cfg, "/v1/status?runtime-only=1", 300*time.Millisecond)
+}
+
+func readRuntimeStatus(cfg config.Config, path string, timeout time.Duration) (runtimeStatus, error) {
+	request, err := http.NewRequest(http.MethodGet, localRuntimeURL(cfg.Listen)+path, nil)
 	if err != nil {
 		return runtimeStatus{}, err
 	}
 	request.Header.Set("Authorization", "Bearer "+cfg.LocalToken)
-	client := newLocalCLIHTTPClient(300 * time.Millisecond)
+	client := newLocalCLIHTTPClient(timeout)
 	response, err := client.Do(request)
 	if err != nil {
 		return runtimeStatus{}, err

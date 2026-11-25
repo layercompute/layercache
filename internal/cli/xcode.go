@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/layercache/layercache/internal/config"
 	"github.com/layercache/layercache/internal/xcodecache"
 )
 
@@ -32,6 +33,10 @@ func runXcodeService(ctx context.Context, command string, args []string, stdout,
 	flags := flag.NewFlagSet("xcode "+command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var options xcodecache.Options
+	var sharedConfig *string
+	if command == "run" {
+		sharedConfig = flags.String("config", "", "use the private Xcode socket of an already running Local Cache")
+	}
 	flags.StringVar(&options.DataDir, "data-dir", "", "persistent compilation-cache directory")
 	flags.StringVar(&options.Socket, "socket", "", "private absolute Unix socket path")
 	flags.StringVar(&options.Project, "project", "", "project identity")
@@ -44,6 +49,23 @@ func runXcodeService(ctx context.Context, command string, args []string, stdout,
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if sharedConfig != nil && *sharedConfig != "" {
+		var incompatible bool
+		flags.Visit(func(flag *flag.Flag) { incompatible = incompatible || flag.Name != "config" })
+		if incompatible || flags.NArg() == 0 {
+			return errors.New("xcode run --config selects the shared store and requires a child command")
+		}
+		cfg, err := config.Load(*sharedConfig)
+		if err != nil {
+			return err
+		}
+		if cfg.Xcode == nil {
+			return errors.New("shared Xcode caching is disabled in this configuration")
+		}
+		serveCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return xcodecache.RunShared(serveCtx, cfg.Xcode.Socket, flags.Args(), stdout, stderr)
 	}
 	if options.DataDir == "" {
 		return errors.New("data-dir is required")

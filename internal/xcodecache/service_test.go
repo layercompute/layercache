@@ -20,6 +20,10 @@ import (
 )
 
 func blob(data []byte) *cas.CASBytes { return &cas.CASBytes{Contents: &cas.CASBytes_Data{Data: data}} }
+func testArtifactStore(service *Service) *artifact.Store {
+	return service.store.(*artifact.Store)
+}
+
 func openService(t *testing.T, root, project, abi string) *Service {
 	t.Helper()
 	store, err := artifact.Open(context.Background(), root, 32<<20, 0)
@@ -70,7 +74,7 @@ func TestProtocolSurvivesClosedProducerAndFreshConsumer(t *testing.T) {
 	if _, err = k.PutValue(ctx, &kv.PutValueRequest{Key: []byte("compile action"), Value: value}); err != nil {
 		t.Fatal(err)
 	}
-	if err = producer.store.Close(); err != nil {
+	if err = testArtifactStore(producer).Close(); err != nil {
 		t.Fatal(err)
 	}
 	consumer := openService(t, root, "github.com/test/app", "xcode-test-1")
@@ -163,15 +167,15 @@ func TestActionMissesWhenAnIndirectCASOutputIsEvicted(t *testing.T) {
 	if err != nil || warm.GetOutcome() != kv.GetValueResponse_SUCCESS {
 		t.Fatalf("complete graph: %v %v", warm, err)
 	}
-	if err = s.store.Delete(ctx, s.key("cas", leaf.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
+	if err = testArtifactStore(s).Delete(ctx, s.key("cas", leaf.GetCasId().Id)); !errors.Is(err, artifact.ErrPinned) {
 		t.Fatalf("successful action did not protect its descendant: %v", err)
 	}
 	// Simulate a consumer which has stopped. A fresh action lookup must miss
 	// once an unprotected descendant is collected.
-	if err = s.store.ResetReadLeases(ctx, readLeaseNamespace); err != nil {
+	if err = testArtifactStore(s).ResetReadLeases(ctx, readLeaseNamespace); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.store.Delete(ctx, s.key("cas", leaf.GetCasId().Id)); err != nil {
+	if err = testArtifactStore(s).Delete(ctx, s.key("cas", leaf.GetCasId().Id)); err != nil {
 		t.Fatal(err)
 	}
 	miss, err := k.GetValue(ctx, &kv.GetValueRequest{Key: key})

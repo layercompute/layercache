@@ -97,7 +97,7 @@ func (store *Store) evictImpact(ctx context.Context) (bool, error) {
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	if err := os.Remove(store.blobPath(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := store.files.Remove(blobName(digest)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("delete Local Cache digest group bytes: %w", err)
 	}
 	return true, nil

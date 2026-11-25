@@ -22,7 +22,7 @@ import (
 
 const ownershipMarkerName = ".layercache-owned.json"
 
-var supportedAdapters = []string{"turbo", "actions", "buildkit", "nx", "gradle"}
+var supportedAdapters = []string{"turbo", "actions", "buildkit", "nx", "gradle", "metro"}
 
 type diagnosticCheck struct {
 	OK     bool   `json:"ok"`

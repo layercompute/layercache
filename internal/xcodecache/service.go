@@ -36,7 +36,7 @@ type Service struct {
 	diagnostics diagnosticCounters
 	cas.UnimplementedCASDBServiceServer
 	kv.UnimplementedKeyValueDBServer
-	store                                                                            *artifact.Store
+	store                                                                            ArtifactStore
 	minFreeBytes                                                                     int64
 	minFreeSpaceRefusals                                                             atomic.Uint64
 	project, compatibility                                                           string
@@ -51,7 +51,15 @@ func validateIdentity(project, abi string) error {
 	return compatibility.Validate(abi)
 }
 
-func New(store *artifact.Store, project, abi string) (*Service, error) {
+type ArtifactStore interface {
+	Get(context.Context, artifact.Key) (artifact.Entry, io.ReadCloser, error)
+	Put(context.Context, artifact.Key, artifact.Metadata, io.Reader) (artifact.Entry, bool, error)
+	RetainForRead(context.Context, string, string, []artifact.Entry, time.Duration) error
+	MaxBytes() int64
+	FreeSpace() (int64, int64, error)
+}
+
+func New(store ArtifactStore, project, abi string) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("an artifact store is required")
 	}
@@ -70,7 +78,7 @@ func (s *Service) key(kind string, id []byte) artifact.Key {
 }
 
 func (s *Service) put(ctx context.Context, kind string, id, data []byte) error {
-	_, _, err := s.store.Put(ctx, s.key(kind, id), artifact.Metadata{}, bytes.NewReader(data))
+	_, _, err := s.store.Put(artifact.WithSizeHint(ctx, int64(len(data))), s.key(kind, id), artifact.Metadata{}, bytes.NewReader(data))
 	if err != nil && !errors.Is(err, artifact.ErrConflict) {
 		s.cacheErrors.Add(1)
 	}
@@ -98,7 +106,10 @@ func (s *Service) getEntry(ctx context.Context, kind string, id []byte) (artifac
 		return artifact.Entry{}, nil, artifact.ErrCorrupt
 	}
 	data, err := io.ReadAll(io.LimitReader(reader, MaxMessageBytes+1))
-	return entry, data, err
+	if err != nil || int64(len(data)) != entry.Size {
+		return artifact.Entry{}, nil, artifact.ErrCorrupt
+	}
+	return entry, data, nil
 }
 
 func inline(blob *cas.CASBytes) ([]byte, error) {
