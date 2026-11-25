@@ -547,14 +547,21 @@ records the proposal; implementation and actual-device savings remain open.
   nearby read-through only through existing integrity and authority contracts.
   Unknown publication must reconcile without duplicate work. GitHub artifacts
   remain required until application retained-handoff acceptance passes.
-  November 25 availability follow-up, owned by LayerCache cloud/operators:
-  the public HTTPS probe recorded nineteen consecutive failures after the
-  [last successful check](https://github.com/layercompute/layercache/actions/runs/44457057006).
-  The [latest run](https://github.com/layercompute/layercache/actions/runs/45541791995)
-  on `0d4b928031610a7b39f553625b24a74a3df07174` and a direct HTTPS request both
-  received a connection refusal. Confirm the intended gateway endpoint.
-  Acceptance requires a passing public probe at that endpoint and an
-  authenticated cache read for the existing cohort. Root cause remains open.
+  November 25 gateway recovery, owned by LayerCache cloud/operators: the
+  [failed HTTPS probe](https://github.com/layercompute/layercache/actions/runs/45541791995)
+  confirmed that the public listener was down. The host reboot left ingress
+  and the hosted stack stopped. Two startup guards still enforced the previous
+  filesystem ceiling after the pool and gateway settings were enlarged.
+  Operators restored ingress, aligned both guards with the deployed ceiling,
+  and started the existing hosted stack. Both guards accepted the configured
+  limit and rejected an oversized filesystem or an incorrect pool marker.
+  Health checks returned HTTP 200 on the canonical, compatibility and
+  qualification endpoints. The
+  [external recovery check](https://github.com/layercompute/layercache/actions/runs/45586375979)
+  passed at `c37956681296bb6ac26c558107fd71a4d8cb2e7b`, and a GitHub-authenticated
+  read of an existing Turbo entry matched the stored size and SHA-256.
+  The operator runbook now includes both startup guards in the pool-resize
+  checks. Automatic ingress recovery after a host reboot remains open.
 
 - [x] **Release the merged CLI capabilities as beta.7.**
   Owner: LayerCache release. The immutable beta.5 binary predates native Bazel,
