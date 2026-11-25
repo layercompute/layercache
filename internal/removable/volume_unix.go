@@ -140,7 +140,7 @@ func readMarker(root *os.Root, id string) bool {
 	return err == nil && string(data) == id
 }
 
-func Open(ctx context.Context, cfg Config, internalDir string) (*Volume, error) {
+func openEnrolled(ctx context.Context, cfg Config, internalDir string) (*Volume, error) {
 	mounted, err := mount(cfg, internalDir)
 	if err != nil {
 		return nil, err
@@ -175,6 +175,32 @@ func Open(ctx context.Context, cfg Config, internalDir string) (*Volume, error) 
 	if err != nil || uuid != cfg.VolumeUUID || !volume.Attached(cfg) {
 		return fail(errMountUnavailable)
 	}
+	return volume, nil
+}
+
+// Present checks the enrolled identity without taking the writer lock.
+func Present(ctx context.Context, cfg Config, internalDir string) bool {
+	volume, err := openEnrolled(ctx, cfg, internalDir)
+	if err != nil {
+		return false
+	}
+	_ = volume.Root.Close()
+	return true
+}
+
+// Open distinguishes an unavailable volume from a verified volume that
+// cannot be opened for writes, such as a read-only mount or a competing owner.
+func Open(ctx context.Context, cfg Config, internalDir string) (*Volume, bool, error) {
+	volume, err := openEnrolled(ctx, cfg, internalDir)
+	if err != nil {
+		return nil, false, err
+	}
+	root := volume.Root
+	fail := func(err error) (*Volume, bool, error) {
+		present := volume.Attached(cfg)
+		root.Close()
+		return nil, present, err
+	}
 	dir, err := root.Open(".")
 	if err != nil {
 		return fail(err)
@@ -199,7 +225,7 @@ func Open(ctx context.Context, cfg Config, internalDir string) (*Volume, error) 
 		return fail(err)
 	}
 	volume.lock = lock
-	return volume, nil
+	return volume, true, nil
 }
 
 // Attached validates the named mount and cache directory against their open
@@ -210,7 +236,11 @@ func (v *Volume) Attached(cfg Config) bool {
 		return false
 	}
 	current, err := os.Lstat(filepath.Join(cfg.MountPath, cfg.Directory))
-	return err == nil && current.IsDir() && private(current, 0700) && os.SameFile(current, v.cacheInfo)
+	if err != nil || !current.IsDir() || !private(current, 0700) || !os.SameFile(current, v.cacheInfo) {
+		return false
+	}
+	opened, err := v.Root.Stat(".")
+	return err == nil && os.SameFile(current, opened)
 }
 
 func (v *Volume) SameMount(other *Volume) bool {

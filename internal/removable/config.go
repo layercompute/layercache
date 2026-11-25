@@ -16,9 +16,13 @@ type Config struct {
 	ID         string `json:"id"`
 	MaxBytes   int64  `json:"maxBytes"`
 	Only       bool   `json:"onlyWhileAttached,omitempty"`
+	WritesOnly bool   `json:"writesOnlyWhileAttached,omitempty"`
 }
 
 func (cfg Config) Validate() error {
+	if cfg.Only && cfg.WritesOnly {
+		return errors.New("ssd-only and ssd-writes-only are mutually exclusive")
+	}
 	if !filepath.IsAbs(cfg.MountPath) || filepath.Clean(cfg.MountPath) != cfg.MountPath ||
 		cfg.MountPath == filepath.Dir(cfg.MountPath) || strings.ContainsRune(cfg.MountPath, 0) {
 		return errors.New("ssd.mountPath must name an absolute, clean filesystem mount point")

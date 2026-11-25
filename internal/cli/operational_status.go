@@ -779,6 +779,8 @@ func printOperationalStatus(output io.Writer, status operationalStatus) error {
 		}
 		if status.SSD.Only {
 			state += " (SSD only while attached)"
+		} else if status.SSD.WritesOnly {
+			state += " (SSD writes only while attached)"
 		}
 		if _, err := fmt.Fprintf(output, "Removable Cache: %s\n", state); err != nil {
 			return err

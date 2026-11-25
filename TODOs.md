@@ -227,6 +227,15 @@ records the proposal; implementation and actual-device savings remain open.
   USB SSD's APFS volume during a restore caused the cache stream to fail. XCR
   recovered a verified 32 MiB ZIP from production R2 in one GET and served the
   next restore from the internal cache.
+  November 25 follow-up: keep existing Mac cache hits readable and require
+  new artifact writes to use the enrolled SSD while attached. Restore the 5 GB
+  internal write budget when the SSD is absent. Acceptance: hot attach, quota
+  refusal without internal spill, interruption and reconnect on the same
+  daemon, and enable the policy on the RelayPhone Mac. The
+  [APFS regression](internal/artifact/pools_darwin_test.go) passed repeated
+  race-enabled runs and the [live check](docs/personal-storage-design.md#local-qualification)
+  verified a retained Mac hit and an SSD-only new write at the configured
+  quotas. Source review and CI are tracked in [PR #117](https://github.com/layercompute/layercache/pull/117).
   LayerCache release installation and full RelayPhone workload acceptance
   remain open, along with
   TypeScript NativeCache unification, relocation and legacy import.

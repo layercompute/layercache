@@ -20,6 +20,7 @@ import (
 
 	"github.com/layercache/layercache/internal/access"
 	"github.com/layercache/layercache/internal/config"
+	"github.com/layercache/layercache/internal/removable"
 )
 
 func TestSetupIsIdempotentAndPreservesGeneratedCredentials(t *testing.T) {
@@ -144,6 +145,39 @@ func TestSetupAcceptsMinFreeBytesUpwardOverride(t *testing.T) {
 	}
 	if cfg.MinFreeBytes != 8*1024*1024*1024 {
 		t.Fatalf("minFreeBytes = %d, want 8 GiB", cfg.MinFreeBytes)
+	}
+}
+
+func TestSetupSwitchesSSDWritePolicyWithoutChangingEnrollment(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.json")
+	runCLI(t, "setup", "--config", path, "--data-dir", filepath.Join(root, "cache"), "--non-interactive")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SSD = &removable.Config{MountPath: filepath.Join(root, "mount"), Directory: "cache", ID: strings.Repeat("a", 32), MaxBytes: 100_000_000_000, Only: true}
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	setup := []string{"setup", "--config", path, "--non-interactive"}
+	runCLI(t, append(setup, "--ssd-writes-only")...)
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SSD.Only = false
+	cfg.SSD.WritesOnly = true
+	if !reflect.DeepEqual(cfg, updated) {
+		t.Fatal("switching the write policy changed other settings or the enrollment")
+	}
+	if _, _, err := callCLI(append(setup, "--ssd-only", "--ssd-writes-only")...); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("conflicting modes: %v", err)
+	}
+	runCLI(t, append(setup, "--ssd-writes-only=false")...)
+	updated, err = config.Load(path)
+	if err != nil || updated.SSD == nil || updated.SSD.Only || updated.SSD.WritesOnly {
+		t.Fatalf("could not return to the default SSD policy: %v", err)
 	}
 }
 

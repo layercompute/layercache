@@ -79,6 +79,7 @@ func runEnrollSSD(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	directory := flags.String("directory", "LayerCache", "new cache directory name on the mounted volume")
 	maxBytes := flags.Int64("max-size", 100_000_000_000, "SSD artifact quota in bytes")
 	only := flags.Bool("ssd-only", false, "skip the internal artifact store while the SSD is available")
+	writesOnly := flags.Bool("ssd-writes-only", false, "keep internal hits readable and require SSD writes while attached")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -104,7 +105,7 @@ func runEnrollSSD(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if _, err := rand.Read(id[:]); err != nil {
 		return err
 	}
-	ssd := removable.Config{MountPath: *mount, Directory: *directory, ID: hex.EncodeToString(id[:]), MaxBytes: *maxBytes, Only: *only}
+	ssd := removable.Config{MountPath: *mount, Directory: *directory, ID: hex.EncodeToString(id[:]), MaxBytes: *maxBytes, Only: *only, WritesOnly: *writesOnly}
 	cfg.SSD = &ssd
 	if err := cfg.Validate(); err != nil {
 		return err

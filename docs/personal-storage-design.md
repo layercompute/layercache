@@ -525,18 +525,22 @@ layercache setup --config "$HOME/.config/layercache/relayphone.json" \
 
 layercache storage enroll-ssd --config "$HOME/.config/layercache/relayphone.json" \
   --mount /Volumes/WorkSSD --directory RelayPhoneCache --max-size 100000000000 \
-  --ssd-only
+  --ssd-writes-only
 
 layercache serve --config "$HOME/.config/layercache/relayphone.json"
 ```
 
-`--ssd-only` skips internal artifact lookups and new writes for participating
-clients while the enrolled pool is available. Omit the flag at enrollment to
-check the internal store first for reads and prefer the SSD for new writes. Use
-`setup --config … --ssd-only=false --non-interactive` while the daemon is stopped
-to switch an enrolled configuration back to that policy. Stop the foreground
-daemon with Ctrl+C. Removing the `ssd` config object disables routing and leaves
-both stores on disk.
+`--ssd-writes-only` keeps internal cache hits readable and sends new artifact
+writes to the SSD while it is attached. A full, read-only, or busy enrolled SSD
+declines new writes. When the SSD is absent, new writes use the internal quota.
+The internal disk still holds cache metadata, including normal read accounting.
+`--ssd-only` also bypasses internal artifact lookups while the SSD is available.
+With both flags off, the SSD is preferred for new writes and the internal pool
+can take writes under SSD pressure. For an existing enrollment, stop the daemon
+and run `layercache setup --config … --ssd-writes-only --non-interactive` to
+select SSD writes only. Set `--ssd-writes-only=false` to return to the default
+policy. Stop a foreground daemon with Ctrl+C. Removing the `ssd` config object
+disables routing and leaves both stores on disk.
 
 The daemon verifies the mount boundary, the enrolled directory and the private
 marker. On macOS it also verifies the filesystem UUID. Use the same mount path
@@ -576,6 +580,19 @@ cumulative RPC statistics via `layercache status --json`. Standalone
 `xcode run --data-dir …` continues to have its own lifecycle and per-run receipt.
 
 ## Local qualification
+
+The strict write policy passed repeated race-enabled APFS tests using the
+same pool across attach, forced detach and reconnect. The test holds an SSD
+read and a streaming upload open at forced detach. It verifies that the
+interrupted upload leaves no visible entry, that a detached write reaches
+the internal pool, and that the old SSD entry and a complete upload retry
+work after reconnect. It also verifies that a busy or over-quota SSD causes
+write refusal while a previously cached Mac entry remains readable.
+
+The live RelayPhone daemon was switched to this mode with its 5 GB internal
+and 100 GB SSD quotas. An existing XCR input from the internal cache matched
+its stored digest while the physical SSD was attached. A new probe increased
+SSD usage by exactly the probe size and left internal artifact usage unchanged.
 
 With SSD-only mode enabled on the RelayPhone Mac, a foreground run of the
 source build verified that two XCR test-input fixtures landed on its physical

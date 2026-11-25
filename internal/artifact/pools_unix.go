@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,12 +36,12 @@ func NewPools(internal *Store, cfg removable.Config, prepare func(context.Contex
 	return &Pools{Internal: internal, config: cfg, prepare: prepare}
 }
 
-func (p *Pools) acquire(ctx context.Context) (*Store, func()) {
+func (p *Pools) acquire(ctx context.Context) (*Store, bool, func()) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	nothing := func() {}
 	if p.closed || ctx.Err() != nil {
-		return nil, nothing
+		return nil, false, nothing
 	}
 	m := p.active
 	if m != nil && m.store.files != nil && !m.volume.Attached(p.config) {
@@ -48,18 +49,18 @@ func (p *Pools) acquire(ctx context.Context) (*Store, func()) {
 	}
 	if m != nil && m.invalid {
 		if m.users != 0 {
-			return nil, nothing
+			return nil, p.config.WritesOnly && removable.Present(ctx, p.config, p.Internal.root), nothing
 		}
 		_ = p.closeMount()
 		m = nil
 	}
 	if m == nil || m.store.files == nil {
-		volume, err := removable.Open(ctx, p.config, p.Internal.root)
+		volume, present, err := removable.Open(ctx, p.config, p.Internal.root)
 		if err != nil {
-			if m != nil && !m.volume.Attached(p.config) {
+			if m != nil {
 				_ = p.closeMount()
 			}
-			return nil, nothing
+			return nil, present, nothing
 		}
 		if m != nil && m.volume.SameMount(volume) {
 			m.volume = volume
@@ -70,7 +71,7 @@ func (p *Pools) acquire(ctx context.Context) (*Store, func()) {
 			}
 			m, err = p.openMount(ctx, volume)
 			if err != nil {
-				return nil, nothing
+				return nil, true, nothing
 			}
 			p.active = m
 		}
@@ -81,7 +82,7 @@ func (p *Pools) acquire(ctx context.Context) (*Store, func()) {
 	}
 	m.generation++
 	m.users++
-	return m.store, func() { p.release(m) }
+	return m.store, true, func() { p.release(m) }
 }
 
 func (p *Pools) openMount(ctx context.Context, volume *removable.Volume) (*poolMount, error) {
@@ -176,16 +177,17 @@ func (p *Pools) FreeSpace() (int64, int64, error) {
 }
 
 type PoolStatus struct {
-	Attached bool   `json:"attached"`
-	Only     bool   `json:"onlyWhileAttached"`
-	MaxBytes int64  `json:"maxBytes"`
-	Stats    *Stats `json:"stats,omitempty"`
+	Attached   bool   `json:"attached"`
+	Only       bool   `json:"onlyWhileAttached"`
+	WritesOnly bool   `json:"writesOnlyWhileAttached,omitempty"`
+	MaxBytes   int64  `json:"maxBytes"`
+	Stats      *Stats `json:"stats,omitempty"`
 }
 
 func (p *Pools) Status(ctx context.Context) PoolStatus {
-	ssd, release := p.acquire(ctx)
+	ssd, present, release := p.acquire(ctx)
 	defer release()
-	result := PoolStatus{Attached: ssd != nil, Only: p.config.Only, MaxBytes: p.config.MaxBytes}
+	result := PoolStatus{Attached: ssd != nil || p.config.WritesOnly && present, Only: p.config.Only, WritesOnly: p.config.WritesOnly, MaxBytes: p.config.MaxBytes}
 	if ssd != nil {
 		if stats, err := ssd.Stats(ctx); err == nil {
 			result.Stats = &stats
@@ -229,7 +231,7 @@ func (p *Pools) GetExact(ctx context.Context, key Key, digest string, size int64
 }
 
 func (p *Pools) get(ctx context.Context, key Key, digest string, size int64) (Entry, io.ReadCloser, error) {
-	ssd, release := p.acquire(ctx)
+	ssd, _, release := p.acquire(ctx)
 	defer func() { release() }()
 	stores := p.candidates(ssd)
 	if digest != "" && ssd != nil {
@@ -237,8 +239,10 @@ func (p *Pools) get(ctx context.Context, key Key, digest string, size int64) (En
 	}
 	for _, store := range stores {
 		entry, body, err := store.Get(ctx, key)
-		if err == nil && store == ssd && !p.isAttached() {
-			body.Close()
+		if store == ssd && !p.isAttached() {
+			if body != nil {
+				body.Close()
+			}
 			err = ErrNotFound
 		}
 		if err == nil {
@@ -271,10 +275,13 @@ func (p *Pools) get(ctx context.Context, key Key, digest string, size int64) (En
 }
 
 func (p *Pools) Head(ctx context.Context, key Key) (Entry, error) {
-	ssd, release := p.acquire(ctx)
+	ssd, _, release := p.acquire(ctx)
 	defer release()
 	for _, store := range p.candidates(ssd) {
 		entry, err := store.Head(ctx, key)
+		if store == ssd && !p.isAttached() {
+			return Entry{}, ErrNotFound
+		}
 		if err == nil || ctx.Err() != nil || store != ssd && !errors.Is(err, ErrNotFound) {
 			return entry, err
 		}
@@ -303,20 +310,35 @@ func (p *Pools) Put(ctx context.Context, key Key, metadata Metadata, body io.Rea
 }
 
 func (p *Pools) PutVerified(ctx context.Context, key Key, metadata Metadata, body io.Reader, digest string) (Entry, bool, error) {
-	ssd, release := p.acquire(ctx)
+	ssd, present, release := p.acquire(ctx)
 	defer release()
 	if ssd == nil {
+		if p.config.WritesOnly && present {
+			return Entry{}, false, ErrQuota
+		}
 		return p.Internal.PutVerified(ctx, key, metadata, body, digest)
 	}
 	// Preserve the readable first writer when both stores are in use.
+	ssdDigest := digest
 	size, _ := ctx.Value(sizeHintKey{}).(int64)
-	if !p.config.Only {
+	if p.config.WritesOnly {
+		entry, err := p.Internal.entry(ctx, key, false)
+		if err == nil {
+			if digest != "" && strings.TrimPrefix(digest, "sha256:") != entry.Digest {
+				return Entry{}, false, ErrConflict
+			}
+			ssdDigest = entry.Digest
+		} else if !errors.Is(err, ErrNotFound) {
+			return Entry{}, false, err
+		}
+	} else if !p.config.Only {
 		if _, err := p.Internal.Head(ctx, key); err == nil {
 			return p.Internal.PutVerified(ctx, key, metadata, body, digest)
 		}
 	}
+	requireSSD := p.config.Only || p.config.WritesOnly
 	if available, reserve, err := ssd.FreeSpace(); err != nil || size > ssd.MaxBytes() || wouldViolateReserve(available, reserve, max(0, size)) {
-		if p.config.Only {
+		if p.config.Only || p.config.WritesOnly && (p.isAttached() || removable.Present(ctx, p.config, p.Internal.root)) {
 			return Entry{}, false, ErrQuota
 		}
 		return p.Internal.PutVerified(ctx, key, metadata, body, digest)
@@ -331,12 +353,16 @@ func (p *Pools) PutVerified(ctx context.Context, key Key, metadata Metadata, bod
 		}
 	}
 	reader := &observedReader{Reader: body}
-	entry, created, err := ssd.PutVerified(ctx, key, metadata, reader, digest)
+	entry, created, err := ssd.PutVerified(ctx, key, metadata, reader, ssdDigest)
+	if digest == "" && ssdDigest != "" && errors.Is(err, ErrCorrupt) {
+		return Entry{}, false, ErrConflict
+	}
 	detached := !p.isAttached()
 	if (!detached && err == nil) || ctx.Err() != nil || errors.Is(err, ErrConflict) || errors.Is(err, ErrCorrupt) {
 		return entry, created, err
 	}
-	if (detached || !p.config.Only && errors.Is(err, ErrQuota)) && (!reader.started || rewind != nil && rewind()) {
+	if (detached || !requireSSD && errors.Is(err, ErrQuota)) && (!reader.started || rewind != nil && rewind()) &&
+		(!p.config.WritesOnly || !removable.Present(ctx, p.config, p.Internal.root)) {
 		return p.Internal.PutVerified(ctx, key, metadata, body, digest)
 	}
 	if detached {
@@ -348,7 +374,7 @@ func (p *Pools) PutVerified(ctx context.Context, key Key, metadata Metadata, bod
 }
 
 func (p *Pools) Delete(ctx context.Context, key Key) error {
-	ssd, release := p.acquire(ctx)
+	ssd, _, release := p.acquire(ctx)
 	defer release()
 	for _, store := range p.candidates(ssd) {
 		if _, err := store.Head(ctx, key); errors.Is(err, ErrNotFound) {
@@ -360,7 +386,7 @@ func (p *Pools) Delete(ctx context.Context, key Key) error {
 }
 
 func (p *Pools) Pin(ctx context.Context, namespace string, pin Pin) error {
-	ssd, release := p.acquire(ctx)
+	ssd, _, release := p.acquire(ctx)
 	defer release()
 	for _, store := range []*Store{ssd, p.Internal} {
 		if store == nil {
@@ -375,7 +401,7 @@ func (p *Pools) Pin(ctx context.Context, namespace string, pin Pin) error {
 }
 
 func (p *Pools) Unpin(ctx context.Context, namespace, owner string) error {
-	ssd, release := p.acquire(ctx)
+	ssd, _, release := p.acquire(ctx)
 	defer release()
 	err := p.Internal.Unpin(ctx, namespace, owner)
 	if ssd != nil {
@@ -385,7 +411,7 @@ func (p *Pools) Unpin(ctx context.Context, namespace, owner string) error {
 }
 
 func (p *Pools) RetainForRead(ctx context.Context, namespace, owner string, entries []Entry, duration time.Duration) error {
-	ssd, release := p.acquire(ctx)
+	ssd, _, release := p.acquire(ctx)
 	defer release()
 	var internalEntries, ssdEntries []Entry
 	for _, entry := range entries {

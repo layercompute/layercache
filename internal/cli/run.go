@@ -42,7 +42,7 @@ Usage:
   layercache gc [options]
   layercache cache quota|pins|pin|unpin [options]
   layercache storage inspect --path ABSOLUTE_PATH [--path ABSOLUTE_PATH ...] [--json]
-  layercache storage enroll-ssd --config PATH --mount VOLUME [--directory NAME] [--max-size BYTES] [--ssd-only]
+  layercache storage enroll-ssd --config PATH --mount VOLUME [--directory NAME] [--max-size BYTES] [--ssd-only | --ssd-writes-only]
   layercache xcode run --config PATH -- xcodebuild ...
   layercache disable [--adapter turbo|actions|buildkit|nx|gradle|metro|all] [options]
   layercache bypass --adapter turbo|actions|buildkit|nx|gradle|metro|all [options]
@@ -348,6 +348,7 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 	xcodeSocket := flags.String("xcode-socket", configuredXcode.Socket, "shared Xcode cache Unix socket (empty disables it)")
 	xcodeCompatibility := flags.String("xcode-compatibility", configuredXcode.Compatibility, "exact compiler and SDK identity for the shared Xcode cache")
 	ssdOnly := flags.Bool("ssd-only", base.SSD != nil && base.SSD.Only, "skip internal artifact storage while the enrolled SSD is available")
+	ssdWritesOnly := flags.Bool("ssd-writes-only", base.SSD != nil && base.SSD.WritesOnly, "keep internal hits readable and require SSD writes while attached")
 	minFreeBytesFlag := flags.String("min-free-bytes", strconv.FormatInt(base.MinFreeBytes, 10), "upward Local Cache free-space reserve override in bytes")
 	remoteOnly := flags.Bool("remote-only", base.RemoteOnly, "use configured hosted storage directly without creating a Local artifact store")
 	role := flags.String("role", base.Role, "runtime role: local, team, or public")
@@ -509,9 +510,16 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) (ret
 		}
 		ssd := *base.SSD
 		ssd.Only = *ssdOnly
+		ssd.WritesOnly = *ssdWritesOnly
+		if *ssdWritesOnly && flagWasSet(flags, "ssd-writes-only") && !flagWasSet(flags, "ssd-only") {
+			ssd.Only = false
+		}
+		if *ssdOnly && flagWasSet(flags, "ssd-only") && !flagWasSet(flags, "ssd-writes-only") {
+			ssd.WritesOnly = false
+		}
 		base.SSD = &ssd
-	} else if flagWasSet(flags, "ssd-only") {
-		return errors.New("--ssd-only requires an enrolled SSD")
+	} else if flagWasSet(flags, "ssd-only") || flagWasSet(flags, "ssd-writes-only") {
+		return errors.New("SSD policy requires an enrolled SSD")
 	}
 	base.EvictionPolicy, err = retention.Normalize(retention.Policy(*evictionPolicy))
 	if err != nil {
