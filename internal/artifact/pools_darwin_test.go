@@ -186,13 +186,14 @@ func TestSSDWritesOnlyAcrossForcedDetachAndReconnect(t *testing.T) {
 	if !strings.HasPrefix("D hit", string(remaining)) || (restoreErr == nil && string(remaining) != "D hit") {
 		t.Fatalf("disconnect returned invalid restore bytes %q: %v", remaining, restoreErr)
 	}
-	_ = restore.Close()
 	read("internal", "Mac hit", true)
 	write("detached", "Mac fallback", nil)
 	attach()
-	// The old upload still owns a handle. A reattached SSD in this state
-	// must not cause a new write to spill into the internal cache.
+	// macOS can fail the old upload while flushing its partially consumed
+	// body. Keep the reader lease open to guarantee an old handle is still
+	// draining. Writes must be refused without spilling into the Mac cache.
 	write("while-draining", "retry later", ErrQuota)
+	_ = restore.Close()
 	_ = writer.Close()
 	select {
 	case err := <-result:
