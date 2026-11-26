@@ -296,10 +296,14 @@ records the proposal; implementation and actual-device savings remain open.
   the DerivedData compatibility decision and the order of build and test steps.
   [Standalone proof](docs/personal-storage-design.md#standalone-xcode-archive-qualification)
   verifies compiler replay and an opaque archive round trip on main source
-  `8c2610750a7b730a23644d83fd530190aca5f6dc`. Complete the hosted handoff with
-  scoped publication and fresh read-only restoration, then qualify the complete
-  build time, transferred bytes and peak allocated space before XCR adopts the
-  shared path. Keep compiler-store snapshots distinct from DerivedData archives.
+  `8c2610750a7b730a23644d83fd530190aca5f6dc`.
+  [Hosted qualification](docs/personal-storage-design.md#hosted-xcode-archive-qualification)
+  verified a scoped R2 writer on main source `1b1fe33fb3def7820456d73dddb63c20a707379b`
+  and a fresh read-only runner with the exact same DerivedData archive. The
+  fixture retained output identity, skipped compilation and recompiled after an
+  edit. XCR adoption and representative application measurements of complete
+  time and peak allocated bytes remain open. Keep compiler-store snapshots
+  distinct from DerivedData archives.
 
 - [ ] **Explain conflicting immutable Turbo publications before claiming full adoption.**
   Owner: LayerCache native integrations with the producing application's owner.
