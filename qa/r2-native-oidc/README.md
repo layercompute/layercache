@@ -86,7 +86,7 @@ continue using GitHub artifacts; there is no application or cost-saving claim.
 Credential-free controls run locally and before any hosted authentication:
 
 ```sh
-node --test qa/r2-native-oidc/run.test.mjs
+node --test qa/r2-native-oidc/*.test.mjs
 actionlint .github/workflows/r2-native-oidc.yml
 ```
 
@@ -97,3 +97,22 @@ locked fixture client is installed, they also run real Turbo producer/reader
 and failure controls against a local in-memory protocol model with synthetic
 credentials. They do not qualify live OIDC, R2 persistence or native hosted
 cache reuse.
+
+## Xcode DerivedData case
+
+Select `fixture=xcode` on the same manual workflow. Dispatch `mode=producer`
+on main and `mode=reader` on a reviewed non-default branch with the same
+sample and unchanged Xcode fixture. Each runs on a fresh arm64 macOS worker.
+The signed project and ref requirements are the same as for Turbo. The
+compatibility key also binds the actual Xcode, Swift, SDK build, fixture inputs,
+and absolute checkout path. Different paths or toolchains fail to restore.
+
+The producer runs an ordinary Release `xcodebuild` with compilation caching
+disabled and publishes one prepacked PAX DerivedData archive to the scoped R2
+QA project. The independent reader verifies the hosted digest, executable
+digest and nanosecond mtime. It requires a build with zero Swift compile entries,
+compilation and a changed executable output after a source edit, and a denied
+read-only PUT. The sanitized result records pack, transfer, extraction, and
+build timings. It excludes credentials, URLs, paths, raw logs, and the archive
+itself. This fixture measures the hosted restore mechanism for one small project.
+Roll back the case by reverting its workflow input and fixture changes.

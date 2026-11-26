@@ -3,6 +3,11 @@ name: Hosted native Turbo acceptance
 on:
   workflow_dispatch:
     inputs:
+      fixture:
+        description: Native cache fixture to qualify.
+        type: choice
+        options: [turbo, xcode]
+        default: turbo
       mode:
         description: Publish on the default branch, then restore on a non-default branch.
         type: choice
@@ -27,13 +32,14 @@ jobs:
       vars.LAYERCACHE_R2_QA_ORIGIN != '' &&
       ((inputs.mode == 'producer' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
        (inputs.mode == 'reader' && startsWith(github.ref, 'refs/heads/') && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)))
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.fixture == 'xcode' && 'macos-26' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
     env:
       R2_QA_MODE: ${{ inputs.mode }}
+      R2_QA_FIXTURE: ${{ inputs.fixture }}
       R2_QA_SAMPLE: ${{ inputs.sample }}
       R2_QA_ENABLED: ${{ vars.LAYERCACHE_R2_QA_ENABLED }}
       R2_QA_ORIGIN: ${{ vars.LAYERCACHE_R2_QA_ORIGIN }}
@@ -48,14 +54,20 @@ jobs:
         with:
           node-version: '24.13.0'
       - name: Install the locked native client
+        if: inputs.fixture != 'xcode'
         run: |
           npm install --global --ignore-scripts pnpm@10.34.5
           pnpm --dir qa/fixtures/local-ci-reuse install --frozen-lockfile
       - name: Check credential-free failure and redaction controls
-        run: node --test qa/r2-native-oidc/run.test.mjs
+        run: node --test qa/r2-native-oidc/*.test.mjs
       - name: Require explicit operator opt-in and the correct signed source ref
         id: prepare
-        run: node qa/r2-native-oidc/run.mjs prepare
+        run: |
+          if [ "$R2_QA_FIXTURE" = xcode ]; then
+            node qa/r2-native-oidc/xcode.mjs prepare
+          else
+            node qa/r2-native-oidc/run.mjs prepare
+          fi
       - name: Exchange real GitHub OIDC through the pinned native action
         uses: layercompute/layercache/action/turbo@7b5861df3db72882b4122dd66af5e87bb37a625e
         with:
@@ -66,7 +78,12 @@ jobs:
           cache-mode: ${{ inputs.mode == 'producer' && 'read-write' || 'read-only' }}
           working-directory: .layercache-r2-qa
       - name: Qualify real native tasks and server-enforced authority
-        run: node qa/r2-native-oidc/run.mjs run
+        run: |
+          if [ "$R2_QA_FIXTURE" = xcode ]; then
+            node qa/r2-native-oidc/xcode.mjs run
+          else
+            node qa/r2-native-oidc/run.mjs run
+          fi
       - name: Preserve only the sanitized public summary
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
