@@ -672,6 +672,28 @@ Fresh-host R2 timing, peak allocated disk and a representative application
 comparison remain open. The archive experiment used the existing opaque byte
 interface. The live, writable DerivedData directory remained caller-owned.
 
+### Hosted Xcode archive qualification
+
+The [manual Xcode case](https://github.com/layercompute/layercache/pull/120)
+ran through hosted R2 from main source
+[`1b1fe33`](https://github.com/layercompute/layercache/commit/1b1fe33fb3def7820456d73dddb63c20a707379b)
+and an independent read-only runner at
+[`42d6cd4`](https://github.com/layercompute/layercache/commit/42d6cd4dc5cb3d30e721ca81dfb9eb6361862da7).
+Both used Xcode 26.6 (17F113), macOS SDK 25F70, arm64 and an identical checkout
+layout. The archive was 4,238,317 bytes. Its SHA-256, executable SHA-256 and
+executable nanosecond mtime matched across jobs. The restored build skipped Swift
+compilation, a source edit recompiled and changed the executable's output, and
+the reader's PUT was denied with HTTP 401.
+[Producer receipt](https://github.com/layercompute/layercache/actions/runs/45729968636) · [Reader receipt](https://github.com/layercompute/layercache/actions/runs/45730115185)
+
+The producer recorded 23.751 s cold build, 0.482 s packing and 4.175 s
+publication. The reader recorded 2.063 s download, 0.139 s extraction and
+18.126 s restored build. These are individual observations on two fresh
+GitHub-hosted Macs. They establish hosted archive restore for this profile.
+XCR adoption, cross-provider performance and representative peak space remain
+open. LayerCache owns opaque artifact storage. XCR chooses the compatible
+generation and materializes it into its writable build directory.
+
 ## Milestones and acceptance
 
 [TODOs](../TODOs.md) tracks qualification and remaining runtime work. M0 records

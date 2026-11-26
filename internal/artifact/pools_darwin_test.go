@@ -21,7 +21,7 @@ func TestSSDWritesOnlyAcrossForcedDetachAndReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := t.Context()
-	internal, err := Open(ctx, filepath.Join(root, "internal"), 5_000_000_000, 0)
+	internal, err := Open(ctx, filepath.Join(root, "internal"), 5_000_000_000, 5<<30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,36 @@ func TestSSDWritesOnlyAcrossForcedDetachAndReconnect(t *testing.T) {
 	makeMountpoint()
 	diskCommand(hdiutil, "attach", "-nobrowse", "-mountpoint", mount, image)
 	device := mount
-	t.Cleanup(func() { diskCommand(hdiutil, "detach", "-force", device) })
+	t.Cleanup(func() {
+		var mounted unix.Statfs_t
+		if device != mount && unix.Statfs(mount, &mounted) == nil &&
+			unix.ByteSliceToString(mounted.Mntonname[:]) == mount && unix.ByteSliceToString(mounted.Mntfromname[:]) == device {
+			unmountCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			output, err := exec.CommandContext(unmountCtx, diskutil, "unmount", "force", device).CombinedOutput()
+			cancel()
+			if err != nil {
+				t.Logf("fixture unmount before eject: %v\n%s", err, output)
+			}
+		}
+		// Disk Arbitration can still be finishing the unmount after diskutil
+		// returns. Retry only the transient busy error on the fixture device.
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+		defer cancel()
+		for {
+			output, err := exec.CommandContext(cleanupCtx, hdiutil, "detach", "-force", device).CombinedOutput()
+			if err == nil {
+				return
+			}
+			if cleanupCtx.Err() != nil || !strings.Contains(string(output), "Resource busy") {
+				t.Fatalf("failed to eject fixture image: %v\n%s", err, output)
+			}
+			select {
+			case <-cleanupCtx.Done():
+				t.Fatalf("fixture image remained busy: %v\n%s", err, output)
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
+	})
 	var fs unix.Statfs_t
 	if err := unix.Statfs(mount, &fs); err != nil {
 		t.Fatal(err)
@@ -76,7 +105,11 @@ func TestSSDWritesOnlyAcrossForcedDetachAndReconnect(t *testing.T) {
 	}
 	detach()
 	pools := NewPools(internal, cfg, nil)
-	t.Cleanup(func() { _ = pools.Close() })
+	t.Cleanup(func() {
+		if err := pools.Close(); err != nil {
+			t.Errorf("close fixture pools: %v", err)
+		}
+	})
 
 	key := func(name string) Key {
 		return Key{Integration: "turbo", Project: "test", Compatibility: "default", Native: name}
