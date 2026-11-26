@@ -690,8 +690,9 @@ The producer recorded 23.751 s cold build, 0.482 s packing and 4.175 s
 publication. The reader recorded 2.063 s download, 0.139 s extraction and
 18.126 s restored build. These are individual observations on two fresh
 GitHub-hosted Macs. They establish hosted archive restore for this profile.
-XCR adoption, cross-provider performance and representative peak space remain
-open. LayerCache owns opaque artifact storage. XCR chooses the compatible
+LayerFleet (formerly XCR) uses LayerCache for opt-in DerivedData storage.
+Cross-provider performance and representative peak space remain open. LayerCache
+owns opaque artifact storage. LayerFleet chooses the compatible
 generation and materializes it into its writable build directory.
 
 ## Milestones and acceptance

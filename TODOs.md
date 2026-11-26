@@ -308,7 +308,7 @@ records the proposal; implementation and actual-device savings remain open.
   verified a scoped R2 writer on main source `1b1fe33fb3def7820456d73dddb63c20a707379b`
   and a fresh read-only runner with the exact same DerivedData archive. The
   fixture retained output identity, skipped compilation and recompiled after an
-  edit. XCR adoption and representative application measurements of complete
+  edit. LayerFleet adoption and representative application measurements of complete
   time and peak allocated bytes remain open. Keep compiler-store snapshots
   distinct from DerivedData archives.
 
