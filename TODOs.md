@@ -239,6 +239,13 @@ records the proposal; implementation and actual-device savings remain open.
   The merged macOS run at `9c164fd` reported a busy image during the forced
   unmount. The test now unmounts the APFS volume while I/O is active and ejects
   the disposable image during cleanup after releasing the handles.
+  November 26 RelayPhone sizing: keep the 5 GB internal and 100 GB SSD caps
+  for current workloads. The live status measured about 1% and 2% occupancy,
+  respectively, while XCR logged crossings of its internal free-space floor.
+  Compare representative attached and detached build times if either cap
+  starts causing repeat restores or rebuilds. Increase the internal budget only
+  with sustained headroom above the worker floor through peak build and restore
+  usage. See [storage measurement guidance](docs/ci-optimization/cache-storage.md).
   LayerCache release installation and full RelayPhone workload acceptance
   remain open, along with
   TypeScript NativeCache unification, relocation and legacy import.
