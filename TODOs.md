@@ -290,6 +290,16 @@ records the proposal; implementation and actual-device savings remain open.
   different authorized references with identical payloads should share one blob
   within the supported storage scope. Record project isolation and current
   cross-project deduplication limits rather than claiming a global blob pool.
+  November 26 user outcome: reuse Xcode build data for ordinary projects on the
+  internal Mac drive, optional removable SSD, and R2-backed Team Cache. LayerCache
+  native integrations own storage and standalone use. XCR owns worker placement,
+  the DerivedData compatibility decision and the order of build and test steps.
+  [Standalone proof](docs/personal-storage-design.md#standalone-xcode-archive-qualification)
+  verifies compiler replay and an opaque archive round trip on main source
+  `8c2610750a7b730a23644d83fd530190aca5f6dc`. Complete the hosted handoff with
+  scoped publication and fresh read-only restoration, then qualify the complete
+  build time, transferred bytes and peak allocated space before XCR adopts the
+  shared path. Keep compiler-store snapshots distinct from DerivedData archives.
 
 - [ ] **Explain conflicting immutable Turbo publications before claiming full adoption.**
   Owner: LayerCache native integrations with the producing application's owner.

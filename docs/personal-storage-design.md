@@ -638,6 +638,40 @@ The Go suite passed with test stores on a dedicated APFS image. The repository
 lint and RelayPhone's existing Xcode-wrapper test passed. A full RelayPhone iOS
 build and an installed LayerCache release remain separate checks.
 
+### Standalone Xcode archive qualification
+
+On November 26, a disposable build of LayerCache main
+[`8c26107`](https://github.com/layercompute/layercache/commit/8c2610750a7b730a23644d83fd530190aca5f6dc)
+ran `layercache xcode run --config … -- xcodebuild …` for a standalone Swift CLI
+project, Release arm64 on Xcode 27.2 (27B52), macOS SDK 26B118. Deleting the
+entire DerivedData directory, including Xcode's native CAS, still yielded three
+of three compiler hits and a byte-identical executable. Main CI for this source
+also passed the force-unmount fixture. [Main CI](https://github.com/layercompute/layercache/actions/runs/45712413743)
+
+The same disposable daemon accepted an already-packed 11,631,321-byte archive
+through its authenticated loopback `/v8/artifacts` endpoint. With the enrolled
+APFS image detached, a PUT and GET verified exact bytes from internal storage.
+With the image attached under the 5 GB internal and 100 GB SSD strict write
+policy, a second key stored its blob on the SSD. Removing the image caused that
+key to miss while the internal copy still hit. Reattaching the enrolled image
+restored the exact SSD bytes.
+
+A second archive created with macOS `tar --format pax` preserved the built
+executable's SHA-256 and nanosecond mtime across an authenticated Local Cache
+round trip. After extraction, Xcode produced zero `SwiftCompile` entries. The
+earlier archive created with Python `tarfile` also arrived byte-for-byte and
+preserved the explicit timestamp marker. That restored build ran one Swift
+task, which hit the compiler cache. Retain the producer's qualified archive
+format and verify actual Xcode build behavior as well as the transfer digest.
+
+The PAX sample was 9,871,639 bytes. Single elapsed observations were 6.240 s to
+pack, 0.100 s for the loopback PUT and GET, and 0.505 s to extract. The intact
+warm build took 6.195 s and the restored warm build took 3.599 s. The Mac shared
+resources with other work. These observations establish local functionality.
+Fresh-host R2 timing, peak allocated disk and a representative application
+comparison remain open. The archive experiment used the existing opaque byte
+interface. The live, writable DerivedData directory remained caller-owned.
+
 ## Milestones and acceptance
 
 [TODOs](../TODOs.md) tracks qualification and remaining runtime work. M0 records
