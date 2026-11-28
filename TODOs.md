@@ -718,6 +718,27 @@ records the proposal; implementation and actual-device savings remain open.
   changing its DerivedData policy. Keep required test artifacts retained and
   execute current runtime assertions against them.
 
+- [ ] **Restore and publish Relay DerivedData incrementally.**
+  Owner: LayerFleet build orchestration and LayerCache storage. November 28
+  user outcome: shorten the minutes spent restoring and packing a 6.26 GB
+  archive on rented Macs, including after an interrupted connection. The
+  [current LayerFleet reader](https://github.com/layercompute/layerfleet/pull/71)
+  resumes verified byte ranges within one complete archive. Prototype a
+  same-source plan and metadata seed with native compiler CAS replay on fresh
+  workers first. Measure which output groups Xcode needs before considering
+  any lazy filesystem view. For the remaining data, test versioned manifests
+  referencing immutable, independently compressed chunks with small files
+  grouped into shards. Reuse the hosted transfer and scoped project grants.
+  On edits, pack and upload missing chunks only. Stage bounded reads and
+  publish a generation atomically once all referenced chunks verify. Qualify
+  quota cleanup with shared references, interrupted upload and restore,
+  incomplete or evicted generations, and the existing whole-archive fallback.
+  Compare unchanged and one-edit Relay builds with identical toolchain and
+  paths, exact timestamps and product checks, and track end-to-end compute,
+  pack/materialization time, bytes transferred, and peak disk allocation.
+  Keep writable paths native and qualify mmap, SQLite and rename behavior
+  before proposing lazy mounting on a rented Mac.
+
 - [x] **Qualify the first hosted native Gradle producer and full reader.**
   Owner: Phone CI, with LayerCache protocol/client support. [Phone #317](https://github.com/ziahamza/phone-app/pull/317)
   merged as `0fd189000d1166a91ca39a2a94f3de6e1e2c8cc9`; main Check is green.
