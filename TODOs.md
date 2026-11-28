@@ -588,6 +588,10 @@ records the proposal; implementation and actual-device savings remain open.
   nearby read-through only through existing integrity and authority contracts.
   Unknown publication must reconcile without duplicate work. GitHub artifacts
   remain required until application retained-handoff acceptance passes.
+  November 28, LayerCache cloud storage owns multipart publication for Relay's
+  6,261,055,330-byte DerivedData archive. Acceptance is one verified immutable
+  R2 object, automatic cleanup within the project's hosted target, and a fresh
+  Xcode Cloud restore observed in LayerFleet's production PostHog project.
   November 25 gateway recovery, owned by LayerCache cloud/operators: the
   [failed HTTPS probe](https://github.com/layercompute/layercache/actions/runs/45541791995)
   confirmed that the public listener was down. The host reboot left ingress

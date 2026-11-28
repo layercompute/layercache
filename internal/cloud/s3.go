@@ -17,12 +17,19 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
 // One budget across all projects in the process. Oversized S3 parts take the
 // entire budget, so they run alone rather than making large caches unsupported.
 const stagingBufferBudget = int64(256 << 20)
+
+// R2 reserves 5 MiB below the S3 single-request ceiling. Multipart copy
+// uses equally sized ranges except the final part and stays below 10,000 parts.
+const singleObjectRequestLimit = 5<<30 - 5<<20
+const copyPartBytes = 128 << 20
+const maxCopyParts = 10_000
 
 var stagingBuffers = semaphore.NewWeighted(stagingBufferBudget)
 
@@ -90,7 +97,7 @@ func (storage *s3BlobStore) PresignPut(
 	size int64,
 	expires time.Duration,
 ) (*url.URL, http.Header, error) {
-	if !storage.presign {
+	if !storage.presign || size > singleObjectRequestLimit {
 		return nil, nil, ErrDirectTransferUnavailable
 	}
 	// Both headers are signed: storage rejects any other body or length.
@@ -176,16 +183,79 @@ func (input *stagingInput) Read(buffer []byte) (int, error) {
 }
 
 func (storage *s3BlobStore) Commit(ctx context.Context, staged stagedBlob, destination string) error {
+	metadata := map[string]string{
+		"layercache-namespace": storage.namespace,
+		"layercache-state":     "committed",
+		"sha256":               staged.Digest,
+		"size":                 strconv.FormatInt(staged.Size, 10),
+	}
+	if staged.Size > singleObjectRequestLimit {
+		return storage.commitMultipart(ctx, staged, destination, metadata)
+	}
 	_, err := storage.client.CopyObject(ctx, minio.CopyDestOptions{
 		Bucket: storage.bucket, Object: destination, ReplaceMetadata: true,
-		UserMetadata: map[string]string{
-			"layercache-namespace": storage.namespace,
-			"layercache-state":     "committed",
-			"sha256":               staged.Digest,
-			"size":                 strconv.FormatInt(staged.Size, 10),
-		},
-		ContentType: staged.MediaType,
+		UserMetadata: metadata, ContentType: staged.MediaType,
 	}, minio.CopySrcOptions{Bucket: storage.bucket, Object: staged.Key})
+	return err
+}
+
+func (storage *s3BlobStore) commitMultipart(ctx context.Context, staged stagedBlob, destination string, metadata map[string]string) error {
+	source, err := storage.client.StatObject(ctx, storage.bucket, staged.Key, minio.StatObjectOptions{})
+	if err != nil {
+		return err
+	}
+	if source.Size != staged.Size || source.ETag == "" {
+		return ErrCorrupt
+	}
+	core := minio.Core{Client: storage.client}
+	options := minio.PutObjectOptions{UserMetadata: metadata, ContentType: staged.MediaType}
+	upload, err := core.NewMultipartUpload(ctx, storage.bucket, destination, options)
+	if err != nil {
+		return err
+	}
+	finished := false
+	defer func() {
+		if !finished {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			_ = core.AbortMultipartUpload(cleanup, storage.bucket, destination, upload)
+		}
+	}()
+	partBytes := max(int64(copyPartBytes), (staged.Size+maxCopyParts-1)/maxCopyParts)
+	parts := make([]minio.CompletePart, (staged.Size+partBytes-1)/partBytes)
+	group, copies := errgroup.WithContext(ctx)
+	group.SetLimit(4)
+	for index := range parts {
+		if copies.Err() != nil {
+			break
+		}
+		group.Go(func() error {
+			start := int64(index) * partBytes
+			length := min(partBytes, staged.Size-start)
+			part, err := core.CopyObjectPart(copies, storage.bucket, staged.Key, storage.bucket, destination, upload, index+1, start, length, nil)
+			if err == nil {
+				parts[index] = part
+			}
+			return err
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// R2 has no UploadPartCopy source precondition. The staging key is owned by
+	// this upload, and we check its version again before making the copy visible.
+	current, err := storage.client.StatObject(ctx, storage.bucket, staged.Key, minio.StatObjectOptions{})
+	if err != nil {
+		return err
+	}
+	if current.Size != source.Size || current.ETag != source.ETag {
+		return ErrCorrupt
+	}
+	_, err = core.CompleteMultipartUpload(ctx, storage.bucket, destination, upload, parts, minio.PutObjectOptions{})
+	finished = err == nil
 	return err
 }
 
