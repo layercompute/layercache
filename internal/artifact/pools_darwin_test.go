@@ -153,6 +153,12 @@ func TestSSDWritesOnlyAcrossForcedDetachAndReconnect(t *testing.T) {
 	write("internal", "different", ErrConflict)
 	write("ssd", "SSD hit", nil)
 	read("ssd", "SSD hit", false)
+	if _, _, err := pools.Get(ctx, key("absent")); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown artifact was not a miss: %v", err)
+	}
+	if got := pools.Status(ctx).Lookups; got != (PoolLookupStats{InternalHits: 2, AttachedHits: 1, Misses: 1}) {
+		t.Fatalf("lookups attributed to the wrong storage location: %+v", got)
+	}
 	write("oversized", strings.Repeat("x", int(cfg.MaxBytes)+1), ErrQuota)
 	for _, name := range []string{"ssd", "oversized", "locked"} {
 		if _, err := internal.Head(ctx, key(name)); !errors.Is(err, ErrNotFound) {
