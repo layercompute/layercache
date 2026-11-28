@@ -8,15 +8,17 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
 func TestCommitLargeS3ObjectCopiesRangesAndAbortsOnFailure(t *testing.T) {
 	const size = 6_261_055_330
+	const totalParts = (size + copyPartBytes - 1) / copyPartBytes
 	const digest = "dcd3dd41d6d431675ca13a3bec85b49a101d2bfff929c86b5a6ddee9e479d3b07"
 	for _, fail := range []bool{false, true} {
 		t.Run(fmt.Sprintf("fail=%t", fail), func(t *testing.T) {
-			var copied, aborted, completed int
+			var copied, aborted, completed atomic.Int32
 			endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				query := r.URL.Query()
 				switch {
@@ -31,27 +33,33 @@ func TestCommitLargeS3ObjectCopiesRangesAndAbortsOnFailure(t *testing.T) {
 					}
 					_, _ = io.WriteString(w, `<InitiateMultipartUploadResult><Bucket>cache</Bucket><Key>object</Key><UploadId>upload</UploadId></InitiateMultipartUploadResult>`)
 				case r.Method == http.MethodPut && query.Get("uploadId") == "upload":
-					start := int64(copied) * copyPartBytes
-					want := fmt.Sprintf("bytes=%d-%d", start, min(start+copyPartBytes, size)-1)
-					if r.Header.Get("X-Amz-Copy-Source") != "cache/staging" || r.Header.Get("X-Amz-Copy-Source-Range") != want || query.Get("partNumber") != strconv.Itoa(copied+1) {
-						t.Errorf("part %d did not use the expected object and range %s", copied+1, want)
+					part, err := strconv.Atoi(query.Get("partNumber"))
+					if err != nil || part < 1 || part > totalParts {
+						t.Error("invalid part number")
+						w.WriteHeader(http.StatusBadRequest)
+						return
 					}
-					copied++
-					if fail && copied == 2 {
+					start := int64(part-1) * copyPartBytes
+					want := fmt.Sprintf("bytes=%d-%d", start, min(start+copyPartBytes, size)-1)
+					if r.Header.Get("X-Amz-Copy-Source") != "cache/staging" || r.Header.Get("X-Amz-Copy-Source-Range") != want {
+						t.Errorf("part %d did not use the expected object and range %s", part, want)
+					}
+					copied.Add(1)
+					if fail && part == 2 {
 						w.WriteHeader(http.StatusBadRequest)
 						_, _ = io.WriteString(w, `<Error><Code>InvalidRequest</Code></Error>`)
 						return
 					}
 					_, _ = io.WriteString(w, `<CopyPartResult><ETag>"part"</ETag></CopyPartResult>`)
 				case r.Method == http.MethodPost && query.Get("uploadId") == "upload":
-					completed++
+					completed.Add(1)
 					body, _ := io.ReadAll(r.Body)
-					if strings.Count(string(body), "<PartNumber>") != 6 {
+					if strings.Count(string(body), "<PartNumber>") != totalParts {
 						t.Error("multipart completion omitted parts")
 					}
 					_, _ = io.WriteString(w, `<CompleteMultipartUploadResult><Bucket>cache</Bucket><Key>object</Key><ETag>"complete"</ETag></CompleteMultipartUploadResult>`)
 				case r.Method == http.MethodDelete && query.Get("uploadId") == "upload":
-					aborted++
+					aborted.Add(1)
 					w.WriteHeader(http.StatusNoContent)
 				default:
 					t.Errorf("unexpected S3 request %s %s", r.Method, r.URL.Path)
@@ -69,11 +77,11 @@ func TestCommitLargeS3ObjectCopiesRangesAndAbortsOnFailure(t *testing.T) {
 			}
 			err = storage.Commit(ctx, stagedBlob{Key: "staging", Digest: digest, MediaType: "application/gzip", Size: size}, "object")
 			if fail {
-				if err == nil || copied != 2 || aborted != 1 || completed != 0 {
-					t.Fatalf("failed publication did not abort: copied=%d, aborted=%d, completed=%d, error=%v", copied, aborted, completed, err)
+				if err == nil || aborted.Load() != 1 || completed.Load() != 0 {
+					t.Fatalf("failed publication did not abort: copied=%d, aborted=%d, completed=%d, error=%v", copied.Load(), aborted.Load(), completed.Load(), err)
 				}
-			} else if err != nil || copied != 6 || aborted != 0 || completed != 1 {
-				t.Fatalf("large object did not publish: copied=%d, aborted=%d, completed=%d, error=%v", copied, aborted, completed, err)
+			} else if err != nil || copied.Load() != totalParts || aborted.Load() != 0 || completed.Load() != 1 {
+				t.Fatalf("large object did not publish: copied=%d, aborted=%d, completed=%d, error=%v", copied.Load(), aborted.Load(), completed.Load(), err)
 			}
 		})
 	}

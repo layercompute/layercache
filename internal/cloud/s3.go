@@ -17,6 +17,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -27,7 +28,8 @@ const stagingBufferBudget = int64(256 << 20)
 // R2 reserves 5 MiB below the S3 single-request ceiling. Multipart copy
 // uses equally sized ranges except the final part and stays below 10,000 parts.
 const singleObjectRequestLimit = 5<<30 - 5<<20
-const copyPartBytes = 1 << 30
+const copyPartBytes = 128 << 20
+const maxCopyParts = 10_000
 
 var stagingBuffers = semaphore.NewWeighted(stagingBufferBudget)
 
@@ -219,14 +221,29 @@ func (storage *s3BlobStore) commitMultipart(ctx context.Context, staged stagedBl
 			_ = core.AbortMultipartUpload(cleanup, storage.bucket, destination, upload)
 		}
 	}()
-	parts := make([]minio.CompletePart, 0, (staged.Size+copyPartBytes-1)/copyPartBytes)
-	for start := int64(0); start < staged.Size; start += copyPartBytes {
-		length := min(int64(copyPartBytes), staged.Size-start)
-		part, err := core.CopyObjectPart(ctx, storage.bucket, staged.Key, storage.bucket, destination, upload, len(parts)+1, start, length, nil)
-		if err != nil {
-			return err
+	partBytes := max(int64(copyPartBytes), (staged.Size+maxCopyParts-1)/maxCopyParts)
+	parts := make([]minio.CompletePart, (staged.Size+partBytes-1)/partBytes)
+	group, copies := errgroup.WithContext(ctx)
+	group.SetLimit(4)
+	for index := range parts {
+		if copies.Err() != nil {
+			break
 		}
-		parts = append(parts, part)
+		group.Go(func() error {
+			start := int64(index) * partBytes
+			length := min(partBytes, staged.Size-start)
+			part, err := core.CopyObjectPart(copies, storage.bucket, staged.Key, storage.bucket, destination, upload, index+1, start, length, nil)
+			if err == nil {
+				parts[index] = part
+			}
+			return err
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	// R2 has no UploadPartCopy source precondition. The staging key is owned by
 	// this upload, and we check its version again before making the copy visible.
