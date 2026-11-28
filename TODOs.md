@@ -246,6 +246,10 @@ records the proposal; implementation and actual-device savings remain open.
   starts causing repeat restores or rebuilds. Increase the internal budget only
   with sustained headroom above the worker floor through peak build and restore
   usage. See [storage measurement guidance](docs/ci-optimization/cache-storage.md).
+  November 28, Local Cache owns artifact lookup counts for the internal and
+  enrolled SSD locations. Verify mixed hits and misses using the disposable
+  APFS fixture. Report compiler RPC and hosted restores separately so a LayerFleet
+  dashboard can measure each unit with its own denominator.
   LayerCache release installation and full RelayPhone workload acceptance
   remain open, along with
   TypeScript NativeCache unification, relocation and legacy import.

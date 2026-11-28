@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/layercache/layercache/internal/removable"
@@ -21,6 +22,9 @@ type Pools struct {
 	active   *poolMount
 	closed   bool
 	prepare  func(context.Context, *Store) error
+	lookups  struct {
+		internalHits, attachedHits, misses, errors atomic.Uint64
+	}
 }
 
 type poolMount struct {
@@ -177,17 +181,31 @@ func (p *Pools) FreeSpace() (int64, int64, error) {
 }
 
 type PoolStatus struct {
-	Attached   bool   `json:"attached"`
-	Only       bool   `json:"onlyWhileAttached"`
-	WritesOnly bool   `json:"writesOnlyWhileAttached,omitempty"`
-	MaxBytes   int64  `json:"maxBytes"`
-	Stats      *Stats `json:"stats,omitempty"`
+	Attached   bool            `json:"attached"`
+	Only       bool            `json:"onlyWhileAttached"`
+	WritesOnly bool            `json:"writesOnlyWhileAttached,omitempty"`
+	MaxBytes   int64           `json:"maxBytes"`
+	Stats      *Stats          `json:"stats,omitempty"`
+	Lookups    PoolLookupStats `json:"lookups"`
+}
+
+// PoolLookupStats counts artifact lookups from this process, by actual location.
+// Reopens of a known digest and metadata-only probes are excluded.
+type PoolLookupStats struct {
+	InternalHits uint64 `json:"internalHits"`
+	AttachedHits uint64 `json:"attachedHits"`
+	Misses       uint64 `json:"misses"`
+	Errors       uint64 `json:"errors"`
 }
 
 func (p *Pools) Status(ctx context.Context) PoolStatus {
 	ssd, present, release := p.acquire(ctx)
 	defer release()
 	result := PoolStatus{Attached: ssd != nil || p.config.WritesOnly && present, Only: p.config.Only, WritesOnly: p.config.WritesOnly, MaxBytes: p.config.MaxBytes}
+	result.Lookups = PoolLookupStats{
+		InternalHits: p.lookups.internalHits.Load(), AttachedHits: p.lookups.attachedHits.Load(),
+		Misses: p.lookups.misses.Load(), Errors: p.lookups.errors.Load(),
+	}
 	if ssd != nil {
 		if stats, err := ssd.Stats(ctx); err == nil {
 			result.Stats = &stats
@@ -221,7 +239,18 @@ func (r *poolReader) Close() error {
 }
 
 func (p *Pools) Get(ctx context.Context, key Key) (Entry, io.ReadCloser, error) {
-	return p.get(ctx, key, "", 0)
+	entry, body, err := p.get(ctx, key, "", 0)
+	switch {
+	case err == nil && entry.poolStore == p.Internal:
+		p.lookups.internalHits.Add(1)
+	case err == nil:
+		p.lookups.attachedHits.Add(1)
+	case errors.Is(err, ErrNotFound):
+		p.lookups.misses.Add(1)
+	case !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded):
+		p.lookups.errors.Add(1)
+	}
+	return entry, body, err
 }
 
 // GetExact can serve an already-authorized queued publication across policy
