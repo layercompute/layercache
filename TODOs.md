@@ -607,9 +607,15 @@ records the proposal; implementation and actual-device savings remain open.
   The unit recovered a stopped Caddy fixture and passed its production HTTPS
   check while the running container kept its start time. The
   [external health check](https://github.com/layercompute/layercache/actions/runs/45588208216)
-  passed at `a9ab7f3215f8b9fdb314771b212d41abf053a42a`. Confirm that the startup
-  unit succeeds and the LayerCache endpoint stays healthy at the next host
-  reboot.
+  passed at `a9ab7f3215f8b9fdb314771b212d41abf053a42a`. A controlled November 25
+  host reboot confirmed automatic startup from a new boot ID. Systemd
+  completed the Caddy and hosted LayerCache units about 17 and 24 seconds
+  after kernel startup, respectively. The first gateway probe returned 502
+  while the backend started. All four public health endpoints subsequently
+  returned HTTP 200 and a GitHub-authenticated Turbo read matched the stored
+  size and SHA-256. The
+  [post-reboot external check](https://github.com/layercompute/layercache/actions/runs/45617427631)
+  passed at `94888b32ebcdfe27c45f07eef9159060c9ea8c74`.
 
 - [x] **Release the merged CLI capabilities as beta.7.**
   Owner: LayerCache release. The immutable beta.5 binary predates native Bazel,
